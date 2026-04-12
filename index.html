@@ -63,22 +63,20 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">人數</label>
-                        <select id="people" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
-                            <option value="2">2 位</option>
-                            <option value="4" selected>4 位</option>
-                            <option value="6">6 位</option>
-                            <option value="8">8 位</option>
-                            <option value="10">10 位以上</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">日期</label>
-                        <input type="date" id="date" required 
-                               class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
-                    </div>
-                </div>
+    <div>
+        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">總人數</label>
+        <input type="number" id="people" value="4" min="1" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
+    </div>
+    <div>
+        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">預訂桌數</label>
+        <select id="tables" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
+            <option value="1" selected>1 桌</option>
+            <option value="2">2 桌</option>
+            <option value="3">3 桌</option>
+            <option value="4">4 桌</option>
+        </select>
+    </div>
+</div>
 
                 <div>
                     <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">抵達時間</label>
@@ -125,14 +123,14 @@
             msg.classList.remove('hidden');
 
             const data = {
-                name: document.getElementById('name').value,
-                phone: document.getElementById('phone').value,
-                people: document.getElementById('people').value,
-                date: document.getElementById('date').value,
-                time: document.getElementById('time').value,
-                note: document.getElementById('note').value
-            };
-
+    name: document.getElementById('name').value,
+    phone: document.getElementById('phone').value,
+    people: document.getElementById('people').value,
+    tables: document.getElementById('tables').value, // 新增這一行
+    date: document.getElementById('date').value,
+    time: document.getElementById('time').value,
+    note: document.getElementById('note').value
+};
             fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
             .then(response => response.json())
             .then(result => {
