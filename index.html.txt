@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>水美土雞城 - 在線訂位系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #fdfbf7; } /* 溫馨的米白色背景 */
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-md mx-auto card p-6">
+        <header class="text-center mb-6">
+            <h1 class="text-2xl font-bold text-orange-800">水美土雞城</h1>
+            <p class="text-gray-600 text-sm">請填寫下方資訊，我們會為您預留座位</p>
+        </header>
+
+        <form id="bookingForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">姓名</label>
+                <input type="text" id="name" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">電話</label>
+                <input type="tel" id="phone" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">人數</label>
+                    <input type="number" id="people" min="1" value="4" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">日期</label>
+                    <input type="date" id="date" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">預計抵達時間</label>
+                <input type="time" id="time" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700">備註 (如：需兒童椅、慶生)</label>
+                <textarea id="note" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500"></textarea>
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full bg-orange-600 text-white font-bold py-3 rounded-md hover:bg-orange-700 transition duration-200 shadow-lg">
+                立即送出訂位
+            </button>
+        </form>
+
+        <div id="messageBox" class="hidden mt-4 p-4 rounded-md text-center"></div>
+    </div>
+
+    <script>
+        const scriptURL = 'YOUR_GOOGLE_SCRIPT_URL_HERE'; // <--- 請替換成你的 Google Script URL
+        const form = document.getElementById('bookingForm');
+        const btn = document.getElementById('submitBtn');
+        const msg = document.getElementById('messageBox');
+
+        form.addEventListener('submit', e => {
+            e.preventDefault();
+            btn.disabled = true;
+            btn.innerText = '處理中...';
+            msg.className = 'hidden mt-4 p-4 rounded-md text-center bg-blue-100 text-blue-700';
+            msg.innerText = '正在為您安排位置，請稍候...';
+            msg.classList.remove('hidden');
+
+            // 整理資料轉為 JSON
+            const data = {
+                name: document.getElementById('name').value,
+                phone: document.getElementById('phone').value,
+                people: document.getElementById('people').value,
+                date: document.getElementById('date').value,
+                time: document.getElementById('time').value,
+                note: document.getElementById('note').value
+            };
+
+            // 使用 fetch 發送到後端
+            fetch(scriptURL, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                msg.className = 'mt-4 p-4 rounded-md text-center bg-green-100 text-green-700';
+                msg.innerText = result.message;
+                form.reset();
+                btn.disabled = false;
+                btn.innerText = '立即送出訂位';
+            })
+            .catch(error => {
+                console.error('Error!', error.message);
+                msg.className = 'mt-4 p-4 rounded-md text-center bg-red-100 text-red-700';
+                msg.innerText = '連線失敗，請檢查網路或撥打電話預約。';
+                btn.disabled = false;
+                btn.innerText = '重試送出';
+            });
+        });
+    </script>
+</body>
+</html>
