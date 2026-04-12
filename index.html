@@ -7,97 +7,69 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Noto Sans TC', sans-serif;
-            background: linear-gradient(135deg, #fff5e6 0%, #ffecd2 100%);
-            min-height: 100vh;
-        }
-        .glass-card {
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 20px;
-            box-shadow: 0 15px 35px rgba(139, 69, 19, 0.1);
-        }
-        .input-focus:focus {
-            ring: 2px;
-            ring-color: #ea580c;
-            border-color: #ea580c;
-            outline: none;
-            box-shadow: 0 0 10px rgba(234, 88, 12, 0.2);
-            transition: all 0.3s ease;
-        }
-        .btn-gradient {
-            background: linear-gradient(to right, #ea580c, #c2410c);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .btn-gradient:active {
-            transform: scale(0.98);
-        }
+        body { font-family: 'Noto Sans TC', sans-serif; background: linear-gradient(135deg, #fff5e6 0%, #ffecd2 100%); min-height: 100vh; }
+        .glass-card { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(10px); border-radius: 20px; box-shadow: 0 15px 35px rgba(139, 69, 19, 0.1); }
+        .input-focus:focus { ring: 2px; ring-color: #ea580c; border-color: #ea580c; outline: none; box-shadow: 0 0 10px rgba(234, 88, 12, 0.2); }
     </style>
 </head>
 <body class="flex items-center justify-center p-4">
 
-    <div class="max-w-md w-full glass-card p-8 transition-all">
-        <header class="text-center mb-10">
-            <div class="inline-block p-3 rounded-full bg-orange-100 mb-4">
-                <span class="text-3xl">🐔</span>
-            </div>
-            <h1 class="text-3xl font-extrabold text-stone-800 tracking-tight">水美土雞城</h1>
-            <div class="h-1 w-16 bg-orange-500 mx-auto mt-2 rounded-full"></div>
-            <p class="text-stone-500 text-sm mt-4 font-light">台中外埔．傳承美味的溫暖時光</p>
+    <div class="max-w-md w-full glass-card p-8">
+        <header class="text-center mb-8">
+            <span class="text-4xl">🐔</span>
+            <h1 class="text-3xl font-extrabold text-stone-800 mt-2">水美土雞城</h1>
+            <p class="text-stone-500 text-sm font-light mt-2">台中外埔．預約美味時光</p>
         </header>
 
-        <form id="bookingForm" class="space-y-6">
-            <div class="grid grid-cols-1 gap-6">
-                <div class="relative">
-                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">預約人姓名</label>
-                    <input type="text" id="name" placeholder="王小明" required 
-                           class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
-                </div>
+        <form id="bookingForm" class="space-y-5">
+            <div>
+                <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">預約人姓名</label>
+                <input type="text" id="name" placeholder="王小明" required class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
+            </div>
 
-                <div class="relative">
-                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">聯絡電話</label>
-                    <input type="tel" id="phone" placeholder="0912-345-678" required 
-                           class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
-                </div>
+            <div>
+                <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">聯絡電話</label>
+                <input type="tel" id="phone" placeholder="0912-345-678" required class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
+            </div>
 
-                <div class="grid grid-cols-2 gap-4">
-    <div>
-        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">總人數</label>
-        <input type="number" id="people" value="4" min="1" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
-    </div>
-    <div>
-        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">預訂桌數</label>
-        <select id="tables" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
-            <option value="1" selected>1 桌</option>
-            <option value="2">2 桌</option>
-            <option value="3">3 桌</option>
-            <option value="4">4 桌</option>
-        </select>
-    </div>
-</div>
-
+            <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">抵達時間</label>
-                    <input type="time" id="time" required 
-                           class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">總人數</label>
+                    <input type="number" id="people" value="4" min="1" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
                 </div>
-
                 <div>
-                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">特殊需求</label>
-                    <textarea id="note" rows="2" placeholder="是否有過敏原或需要兒童椅？" 
-                              class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700"></textarea>
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">預訂桌數</label>
+                    <select id="tables" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
+                        <option value="1">1 桌</option>
+                        <option value="2">2 桌</option>
+                        <option value="3">3 桌</option>
+                        <option value="4">4 桌</option>
+                    </select>
                 </div>
             </div>
 
-            <button type="submit" id="submitBtn" 
-                    class="btn-gradient w-full text-white font-bold py-4 rounded-xl shadow-lg shadow-orange-200 flex items-center justify-center space-x-2">
-                <span>確認送出預訂</span>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">日期</label>
+                    <input type="date" id="date" required class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">時間</label>
+                    <input type="time" id="time" required class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
+                </div>
+            </div>
+
+            <div>
+                <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">備註</label>
+                <textarea id="note" rows="2" placeholder="是否有特殊需求？" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3"></textarea>
+            </div>
+
+            <button type="submit" id="submitBtn" class="w-full bg-orange-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-orange-700 transition-all">
+                確認送出預訂
             </button>
         </form>
 
-        <div id="messageBox" class="hidden mt-6 p-4 rounded-xl text-center text-sm font-medium animate-pulse"></div>
+        <div id="messageBox" class="hidden mt-6 p-4 rounded-xl text-center text-sm font-medium"></div>
     </div>
 
     <script>
@@ -108,42 +80,41 @@
         const btn = document.getElementById('submitBtn');
         const msg = document.getElementById('messageBox');
 
-        // 自動限制日期：最小為今天
-        const dateInput = document.getElementById('date');
-        const today = new Date().toISOString().split('T')[0];
-        dateInput.setAttribute('min', today);
+        // 限制只能選今天之後的日期
+        document.getElementById('date').setAttribute('min', new Date().toISOString().split('T')[0]);
 
         form.addEventListener('submit', e => {
             e.preventDefault();
             btn.disabled = true;
-            btn.innerHTML = '<svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>處理中...</span>';
-            
-            msg.className = 'mt-6 p-4 rounded-xl text-center text-blue-600 bg-blue-50';
-            msg.innerText = '正在連線數位櫃檯...';
+            btn.innerText = '處理中...';
             msg.classList.remove('hidden');
+            msg.className = 'mt-6 p-4 rounded-xl text-center text-blue-600 bg-blue-50';
+            msg.innerText = '正在確認桌位...';
 
             const data = {
-    name: document.getElementById('name').value,
-    phone: document.getElementById('phone').value,
-    people: document.getElementById('people').value,
-    tables: document.getElementById('tables').value, // 新增這一行
-    date: document.getElementById('date').value,
-    time: document.getElementById('time').value,
-    note: document.getElementById('note').value
-};
+                name: document.getElementById('name').value,
+                phone: document.getElementById('phone').value,
+                people: document.getElementById('people').value,
+                tables: document.getElementById('tables').value,
+                date: document.getElementById('date').value,
+                time: document.getElementById('time').value,
+                note: document.getElementById('note').value
+            };
+
             fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
-            .then(response => response.json())
-            .then(result => {
-                msg.className = 'mt-6 p-4 rounded-xl text-center ' + (result.status === 'success' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50');
-                msg.innerText = result.message;
-                if(result.status === 'success') form.reset();
+            .then(res => res.json())
+            .then(res => {
+                msg.className = 'mt-6 p-4 rounded-xl text-center ' + (res.status === 'success' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50');
+                msg.innerText = res.message;
+                if(res.status === 'success') form.reset();
                 btn.disabled = false;
                 btn.innerText = '確認送出預訂';
             })
-            .catch(error => {
-                msg.className = 'mt-6 p-4 rounded-xl text-center text-red-600 bg-red-50';
-                msg.innerText = '系統連線異常，請撥打電話預約。';
+            .catch(() => {
+                msg.innerText = '連線失敗，請檢查網路或撥打電話。';
                 btn.disabled = false;
-                btn.innerText = '重試送出';
             });
         });
+    </script>
+</body>
+</html>
