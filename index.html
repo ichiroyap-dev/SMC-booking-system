@@ -3,76 +3,127 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>水美土雞城 - 在線訂位系統</title>
+    <title>水美土雞城 - 在線訂位</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #fdfbf7; } /* 溫馨的米白色背景 */
-        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background: linear-gradient(135deg, #fff5e6 0%, #ffecd2 100%);
+            min-height: 100vh;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(139, 69, 19, 0.1);
+        }
+        .input-focus:focus {
+            ring: 2px;
+            ring-color: #ea580c;
+            border-color: #ea580c;
+            outline: none;
+            box-shadow: 0 0 10px rgba(234, 88, 12, 0.2);
+            transition: all 0.3s ease;
+        }
+        .btn-gradient {
+            background: linear-gradient(to right, #ea580c, #c2410c);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn-gradient:active {
+            transform: scale(0.98);
+        }
     </style>
 </head>
-<body class="p-4 md:p-8">
-    <div class="max-w-md mx-auto card p-6">
-        <header class="text-center mb-6">
-            <h1 class="text-2xl font-bold text-orange-800">水美土雞城</h1>
-            <p class="text-gray-600 text-sm">請填寫下方資訊，我們會為您預留座位</p>
+<body class="flex items-center justify-center p-4">
+
+    <div class="max-w-md w-full glass-card p-8 transition-all">
+        <header class="text-center mb-10">
+            <div class="inline-block p-3 rounded-full bg-orange-100 mb-4">
+                <span class="text-3xl">🐔</span>
+            </div>
+            <h1 class="text-3xl font-extrabold text-stone-800 tracking-tight">水美土雞城</h1>
+            <div class="h-1 w-16 bg-orange-500 mx-auto mt-2 rounded-full"></div>
+            <p class="text-stone-500 text-sm mt-4 font-light">台中外埔．傳承美味的溫暖時光</p>
         </header>
 
-        <form id="bookingForm" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700">姓名</label>
-                <input type="text" id="name" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
-            </div>
-
-            <div>
-                <label class="block text-sm font-medium text-gray-700">電話</label>
-                <input type="tel" id="phone" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
-            </div>
-
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">人數</label>
-                    <input type="number" id="people" min="1" value="4" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
+        <form id="bookingForm" class="space-y-6">
+            <div class="grid grid-cols-1 gap-6">
+                <div class="relative">
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">預約人姓名</label>
+                    <input type="text" id="name" placeholder="王小明" required 
+                           class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
                 </div>
+
+                <div class="relative">
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">聯絡電話</label>
+                    <input type="tel" id="phone" placeholder="0912-345-678" required 
+                           class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">人數</label>
+                        <select id="people" class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
+                            <option value="2">2 位</option>
+                            <option value="4" selected>4 位</option>
+                            <option value="6">6 位</option>
+                            <option value="8">8 位</option>
+                            <option value="10">10 位以上</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">日期</label>
+                        <input type="date" id="date" required 
+                               class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
+                    </div>
+                </div>
+
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">日期</label>
-                    <input type="date" id="date" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">抵達時間</label>
+                    <input type="time" id="time" required 
+                           class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700">
+                </div>
+
+                <div>
+                    <label class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">特殊需求</label>
+                    <textarea id="note" rows="2" placeholder="是否有過敏原或需要兒童椅？" 
+                              class="input-focus mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3 text-stone-700"></textarea>
                 </div>
             </div>
 
-            <div>
-                <label class="block text-sm font-medium text-gray-700">預計抵達時間</label>
-                <input type="time" id="time" required class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500">
-            </div>
-
-            <div>
-                <label class="block text-sm font-medium text-gray-700">備註 (如：需兒童椅、慶生)</label>
-                <textarea id="note" rows="2" class="mt-1 block w-full border border-gray-300 rounded-md p-2 shadow-sm focus:ring-orange-500 focus:border-orange-500"></textarea>
-            </div>
-
-            <button type="submit" id="submitBtn" class="w-full bg-orange-600 text-white font-bold py-3 rounded-md hover:bg-orange-700 transition duration-200 shadow-lg">
-                立即送出訂位
+            <button type="submit" id="submitBtn" 
+                    class="btn-gradient w-full text-white font-bold py-4 rounded-xl shadow-lg shadow-orange-200 flex items-center justify-center space-x-2">
+                <span>確認送出預訂</span>
             </button>
         </form>
 
-        <div id="messageBox" class="hidden mt-4 p-4 rounded-md text-center"></div>
+        <div id="messageBox" class="hidden mt-6 p-4 rounded-xl text-center text-sm font-medium animate-pulse"></div>
     </div>
 
     <script>
-        const scriptURL = 'https://script.google.com/macros/s/AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q/exec'; 
+        https://script.google.com/macros/s/AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q/exec
+        const scriptURL = 'YOUR_GOOGLE_SCRIPT_URL_HERE'; 
         
         const form = document.getElementById('bookingForm');
         const btn = document.getElementById('submitBtn');
         const msg = document.getElementById('messageBox');
 
+        // 自動限制日期：最小為今天
+        const dateInput = document.getElementById('date');
+        const today = new Date().toISOString().split('T')[0];
+        dateInput.setAttribute('min', today);
+
         form.addEventListener('submit', e => {
             e.preventDefault();
             btn.disabled = true;
-            btn.innerText = '處理中...';
-            msg.className = 'hidden mt-4 p-4 rounded-md text-center bg-blue-100 text-blue-700';
-            msg.innerText = '正在為您安排位置，請稍候...';
+            btn.innerHTML = '<svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span>處理中...</span>';
+            
+            msg.className = 'mt-6 p-4 rounded-xl text-center text-blue-600 bg-blue-50';
+            msg.innerText = '正在連線數位櫃檯...';
             msg.classList.remove('hidden');
 
-            // 整理資料轉為 JSON
             const data = {
                 name: document.getElementById('name').value,
                 phone: document.getElementById('phone').value,
@@ -82,34 +133,19 @@
                 note: document.getElementById('note').value
             };
 
-            // 使用 fetch 發送到後端
-            fetch(scriptURL, {
-                method: 'POST',
-                body: JSON.stringify(data)
-            })
+            fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
             .then(response => response.json())
             .then(result => {
-                msg.className = 'mt-4 p-4 rounded-md text-center bg-green-100 text-green-700';
+                msg.className = 'mt-6 p-4 rounded-xl text-center ' + (result.status === 'success' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50');
                 msg.innerText = result.message;
-                form.reset();
+                if(result.status === 'success') form.reset();
                 btn.disabled = false;
-                btn.innerText = '立即送出訂位';
+                btn.innerText = '確認送出預訂';
             })
             .catch(error => {
-                console.error('Error!', error.message);
-                msg.className = 'mt-4 p-4 rounded-md text-center bg-red-100 text-red-700';
-                msg.innerText = '連線失敗，請檢查網路或撥打電話預約。';
+                msg.className = 'mt-6 p-4 rounded-xl text-center text-red-600 bg-red-50';
+                msg.innerText = '系統連線異常，請撥打電話預約。';
                 btn.disabled = false;
                 btn.innerText = '重試送出';
             });
         });
-    </script>
-    // 1. 限制日期選擇器：最小為今天
-const dateInput = document.getElementById('date');
-const today = new Date().toISOString().split('T')[0];
-dateInput.setAttribute('min', today);
-
-// 2. 限制時間範圍 (假設中午 11:00-14:00, 晚上 17:00-20:00)
-// 雖然 HTML5 難以直接限制區間，但我們可以加一個簡單的提醒或清單
-</body>
-</html>
