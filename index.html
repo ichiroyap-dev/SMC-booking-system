@@ -104,5 +104,12 @@
             });
         });
     </script>
+    // 1. 限制日期選擇器：最小為今天
+const dateInput = document.getElementById('date');
+const today = new Date().toISOString().split('T')[0];
+dateInput.setAttribute('min', today);
+
+// 2. 限制時間範圍 (假設中午 11:00-14:00, 晚上 17:00-20:00)
+// 雖然 HTML5 難以直接限制區間，但我們可以加一個簡單的提醒或清單
 </body>
 </html>
