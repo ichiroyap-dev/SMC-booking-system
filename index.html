@@ -3,270 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>水美土雞城 - 預約式無菜單料理</title>
+    <title>水美土雞城 - 內用/外帶預約</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@700&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
-        body { 
-            font-family: 'Noto Sans TC', sans-serif; 
-            background: linear-gradient(135deg, #fdfbf7 0%, #f5e6d3 100%); 
-            min-height: 100vh;
-            color: #4a3728;
-        }
+        body { font-family: 'Noto Sans TC', sans-serif; background: linear-gradient(135deg, #fdfbf7 0%, #f5e6d3 100%); min-height: 100vh; color: #4a3728; }
         .brand-font { font-family: 'Noto Serif TC', serif; }
-        .glass-card { 
-            background: rgba(255, 255, 255, 0.9); 
-            backdrop-filter: blur(12px); 
-            border-radius: 24px; 
-            box-shadow: 0 20px 40px rgba(0,0,0,0.05); 
-        }
-        .key-badge { 
-            background: #4a3728; 
-            color: #f5e6d3; 
-            padding: 4px 12px; 
-            border-radius: 99px; 
-            font-size: 13px; 
-            font-weight: 700;
-            letter-spacing: 1px;
-        }
-        .rule-badge { background: #ea580c; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
-        .contact-link { color: #c2410c; text-decoration: underline; font-weight: bold; }
+        .glass-card { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(12px); border-radius: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.05); }
+        .tab-active { background: #4a3728; color: #f5e6d3; }
+        .tab-inactive { background: transparent; color: #a8a29e; }
     </style>
 </head>
-<body class="py-10 px-4 md:py-16">
-
-    <div class="max-w-3xl mx-auto">
-        <div class="glass-card mb-8 overflow-hidden">
-            <div class="bg-orange-50/50 p-8 md:p-12 text-center border-b border-orange-100/50">
-                <div class="inline-flex items-center space-x-3 mb-4">
-                    <div class="h-px w-6 bg-orange-300"></div>
-                    <h2 class="text-orange-800 font-bold tracking-widest text-sm brand-font">「來吃鄉土味，享受雞料理。」</h2>
-                    <div class="h-px w-6 bg-orange-300"></div>
-                </div>
-                
-                <div class="relative inline-block mb-6">
-                    <div class="absolute -top-6 -right-10 rotate-12">
-                        <span class="key-badge shadow-lg">(請先預訂)</span>
-                    </div>
-                    <h1 class="brand-font text-5xl md:text-6xl text-stone-900 leading-tight">水美土雞城</h1>
-                </div>
-
-                <div class="h-1.5 w-20 bg-orange-500 mx-auto rounded-full mb-8"></div>
-                
-                <div class="space-y-5 text-stone-700 leading-relaxed font-light text-base max-w-xl mx-auto text-justify md:text-center">
-                    <p>位於大甲附近水美山上的一處小屋，原本夫婦倆打算自養土雞，販售健康養生的滴雞精。因親朋好友提議，開始嘗試烹飪，客人的熱烈反應成就了今日的【水美土雞城】。</p>
-                    <div class="flex justify-center space-x-3 text-orange-600 font-medium italic pt-2">
-                        <span>#桶仔雞</span><span>#土雞料理</span><span>#鄉下料理</span>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="p-6 bg-white/50 text-center border-t border-white">
-                <p class="text-stone-600 text-sm flex items-center justify-center flex-wrap gap-2">
-                    <span class="mr-1">🍽️</span>我們是 <span class="font-bold text-stone-800">無菜單料理</span> 哦，都是以 <span class="badge rule-badge">提前預約式</span>、<span class="font-bold text-stone-800">土雞料理</span> 為主。
-                </p>
-            </div>
+<body class="py-10 px-4">
+    <div class="max-w-2xl mx-auto">
+        <div class="text-center mb-8">
+            <h1 class="brand-font text-4xl text-stone-900 mb-2">水美土雞城</h1>
+            <p class="text-orange-700 font-bold text-sm">「來吃鄉土味，享受雞料理。」</p>
         </div>
 
-        <div class="glass-card p-8 mb-8 grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
-            <div class="md:col-span-2">
-                <h3 class="brand-font text-2xl mb-5 flex items-center text-stone-800">
-                    <span class="mr-2">📝</span> 預約須知
-                </h3>
-                <ul class="space-y-3 text-sm text-stone-600">
-                    <li class="flex items-start">
-                        <span class="rule-badge mt-0.5 mr-2">桌菜</span> 
-                        <span>一桌 <b>$4500</b> / 10人（七菜一湯，共8道菜）。</span>
-                    </li>
-                    <li class="flex items-start">
-                        <span class="rule-badge mt-0.5 mr-2">散客</span> 
-                        <span>人頭 <b>$500</b>（內用 $2000 起桌），小孩不計費。</span>
-                    </li>
-                    <li class="bg-orange-50 p-3 rounded-xl text-orange-900 italic text-xs">
-                        💡 菜量隨人數調整。如有不吃辣、不喜香茅，請務必於下方備註告知。
-                    </li>
-                </ul>
-            </div>
-            
-            <div class="bg-stone-50 p-6 rounded-2xl border border-stone-100 text-center md:text-left">
-                <h4 class="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">歡迎預訂及詢問</h4>
-                <div class="space-y-3 text-sm">
-                    <div class="flex items-center justify-center md:justify-start">
-                        <span class="mr-2 text-lg">📞</span> 市話：<a href="tel:0426887895" class="contact-link ml-1">04-26887895</a>
-                    </div>
-                    <div class="flex items-center justify-center md:justify-start">
-                        <span class="mr-2 text-lg">📱</span> 手機：<a href="tel:0912623297" class="contact-link ml-1">0912-623297</a>
-                    </div>
-                </div>
-            </div>
+        <div class="glass-card mb-6 p-1 flex overflow-hidden">
+            <button id="tabDining" onclick="switchMode('dining')" class="flex-1 py-3 font-bold rounded-2xl transition-all tab-active">內用訂位</button>
+            <button id="tabTakeout" onclick="switchMode('takeout')" class="flex-1 py-3 font-bold rounded-2xl transition-all tab-inactive">外帶預約</button>
         </div>
 
-        <div class="glass-card p-8 mb-8">
-            <h3 class="brand-font text-2xl mb-6 flex items-center text-stone-800">
-                <span class="mr-2">📍</span> 交通與位置
-            </h3>
+        <div class="glass-card p-8 shadow-xl">
+            <h3 id="formTitle" class="brand-font text-2xl mb-6">📅 線上內用訂位</h3>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                <div class="space-y-5">
-                                        <div class="flex items-center space-x-4 bg-white p-4 rounded-2xl border border-stone-100">
-                        <div class="bg-orange-50 p-3 rounded-full text-2xl">🏆</div>
-                        <div>
-                            <p class="text-xs text-stone-400 font-bold uppercase tracking-widest">Google 評價推薦</p>
-                            <div class="flex items-center mt-1">
-                                <span class="text-stone-800 font-bold text-xl mr-2">4.4</span>
-                                <span class="text-yellow-500 tracking-widest text-sm">★★★★☆</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    
-                    <div class="text-stone-600 text-sm leading-relaxed space-y-2 pl-1">
-                        <p>🚙 <b>停車方便：</b>附有戶外停車區，讓您安心用餐。</p>
-                        <p>🌙 <b>夜間提醒：</b>山路夜間較暗，晚餐時段敬請放慢車速，小心駕駛。</p>
-                    </div>
-
-                    <a href="https://www.google.com/maps/search/?api=1&query=台中市外埔區水美土雞城" target="_blank" 
-                       class="inline-flex w-full md:w-auto items-center justify-center space-x-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold py-3 px-6 rounded-xl transition-all border border-stone-200">
-                        <span class="text-lg">🗺️</span>
-                        <span>開啟 Google Maps 導航</span>
-                    </a>
-                </div>
-
-                <div class="w-full h-48 md:h-full min-h-[200px] rounded-2xl overflow-hidden shadow-inner border border-stone-200">
-                    <iframe src="https://maps.google.com/maps?q=台中市外埔區水美土雞城&t=&z=15&ie=UTF8&iwloc=&output=embed" width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
-                </div>
-            </div>
-        </div>
-
-        <div class="glass-card p-8 md:p-10 mb-8" id="booking-section">
-            <h3 class="brand-font text-2xl mb-8 flex items-center text-stone-800">
-                <span class="mr-3">📅</span> 線上快速預訂申請
-            </h3>
-            <form id="bookingForm" class="grid grid-cols-1 gap-6">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <form id="bookingForm" class="space-y-5">
+                <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡姓名</label>
-                        <input type="text" id="name" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                        <label class="text-xs font-bold text-stone-400">聯絡姓名</label>
+                        <input type="text" id="name" required class="mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
                     </div>
                     <div>
-                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡電話</label>
-                        <input type="tel" id="phone" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                        <label class="text-xs font-bold text-stone-400">聯絡電話</label>
+                        <input type="tel" id="phone" required class="mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-5">
+                <div id="diningFields" class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預計人數</label>
-                        <input type="number" id="people" value="10" min="1" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5">
+                        <label class="text-xs font-bold text-stone-400">預計人數</label>
+                        <input type="number" id="people" value="10" min="1" class="mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
                     </div>
                     <div>
-                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預訂桌數</label>
-                        <select id="tables" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5">
-                            <option value="1" selected>1 桌</option>
-                            <option value="2">2 桌</option>
-                            <option value="3">3 桌</option>
+                        <label class="text-xs font-bold text-stone-400">預訂桌數</label>
+                        <select id="tables" class="mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
+                            <option value="1">1 桌</option><option value="2">2 桌</option><option value="3">3 桌</option>
                         </select>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-5">
+                <div id="takeoutFields" class="hidden space-y-3 bg-orange-50/50 p-4 rounded-2xl">
+                    <label class="text-xs font-bold text-orange-800">預訂品項</label>
+                    <div class="space-y-2 text-sm">
+                        <label class="flex items-center justify-between">
+                            <span>自養土雞滴雞精 ($220)</span>
+                            <input type="number" data-item="滴雞精" value="0" min="0" class="w-16 p-1 rounded border-stone-200 text-center">
+                        </label>
+                        <label class="flex items-center justify-between">
+                            <span>自製米血 ($90/斤)</span>
+                            <input type="number" data-item="米血" value="0" min="0" class="w-16 p-1 rounded border-stone-200 text-center">
+                        </label>
+                        <label class="flex items-center justify-between">
+                            <span>自養土雞 ($160/斤)</span>
+                            <input type="number" data-item="土雞" value="0" min="0" class="w-16 p-1 rounded border-stone-200 text-center">
+                        </label>
+                        <label class="flex items-center justify-between">
+                            <span>桶仔雞 (預約限定)</span>
+                            <input type="number" data-item="桶仔雞" value="0" min="0" class="w-16 p-1 rounded border-stone-200 text-center">
+                        </label>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
                     <div>
-                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預定日期</label>
-                        <input type="date" id="date" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5">
+                        <label id="dateLabel" class="text-xs font-bold text-stone-400">訂位日期</label>
+                        <input type="date" id="date" required class="mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
                     </div>
                     <div>
-                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">抵達時間</label>
-                        <input type="time" id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5">
+                        <label id="timeLabel" class="text-xs font-bold text-stone-400">抵達時間</label>
+                        <input type="time" id="time" required class="mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3">
                     </div>
                 </div>
 
                 <div>
-                    <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">備註 (如：口味需求、兒童椅)</label>
-                    <textarea id="note" rows="3" placeholder="例如：不吃辣、不要香茅..." class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition"></textarea>
+                    <label class="text-xs font-bold text-stone-400">其他需求 (備註)</label>
+                    <textarea id="note" rows="2" class="mt-1 block w-full bg-stone-50 border-stone-200 rounded-xl p-3"></textarea>
                 </div>
 
-                <button type="submit" id="submitBtn" class="w-full bg-stone-900 hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg transition-all text-lg tracking-widest mt-4">
-                    送出預約申請
-                </button>
+                <button type="submit" id="submitBtn" class="w-full bg-stone-900 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-black transition-all">送出預約申請</button>
             </form>
-            <div id="messageBox" class="hidden mt-8 p-5 rounded-xl text-center text-sm font-medium animate-pulse"></div>
+            <div id="messageBox" class="hidden mt-6 p-4 rounded-xl text-center text-sm font-medium"></div>
         </div>
-
-        <div class="glass-card p-6 text-center">
-            <h4 class="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">店內另售</h4>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                <div class="bg-orange-50 p-4 rounded-xl border border-orange-100">
-                    <p class="font-bold text-stone-800">自養土雞滴雞精</p>
-                    <p class="text-orange-700 font-bold text-xl mt-1">$220 <span class="text-xs font-normal text-stone-500">/ 150cc</span></p>
-                </div>
-                <div class="bg-orange-50 p-4 rounded-xl border border-orange-100">
-                    <p class="font-bold text-stone-800">自製米血</p>
-                    <p class="text-orange-700 font-bold text-xl mt-1">$90 <span class="text-xs font-normal text-stone-500">/ 一斤</span></p>
-                </div>
-                <div class="bg-orange-50 p-4 rounded-xl border border-orange-100">
-                    <p class="font-bold text-stone-800">自養土雞</p>
-                    <p class="text-orange-700 font-bold text-xl mt-1">$160 <span class="text-xs font-normal text-stone-500">/ 一斤</span></p>
-                </div>
-            </div>
-        </div>
-        
-        <footer class="mt-12 text-center text-stone-400 text-xs pb-8">
-            © SMC Turkey City. All Rights Reserved.
-        </footer>
     </div>
 
     <script>
-        // --- ⚠️ 部署前請務必檢查此處的 URL 是否正確 ---
+        let currentMode = 'dining';
         const scriptURL = 'https://script.google.com/macros/s/AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q/exec'; 
-        
-        const form = document.getElementById('bookingForm');
-        const btn = document.getElementById('submitBtn');
-        const msg = document.getElementById('messageBox');
 
-        // 自動限制日期選擇器最小為今天
-        const dateInput = document.getElementById('date');
-        const today = new Date().toISOString().split('T')[0];
-        dateInput.setAttribute('min', today);
+        function switchMode(mode) {
+            currentMode = mode;
+            const isDining = (mode === 'dining');
+            document.getElementById('formTitle').innerText = isDining ? '📅 線上內用訂位' : '🛍️ 線上外帶預約';
+            document.getElementById('dateLabel').innerText = isDining ? '訂位日期' : '取餐日期';
+            document.getElementById('timeLabel').innerText = isDining ? '抵達時間' : '取餐時間';
+            document.getElementById('diningFields').classList.toggle('hidden', !isDining);
+            document.getElementById('takeoutFields').classList.toggle('hidden', isDining);
+            document.getElementById('tabDining').className = `flex-1 py-3 font-bold rounded-2xl transition-all ${isDining ? 'tab-active' : 'tab-inactive'}`;
+            document.getElementById('tabTakeout').className = `flex-1 py-3 font-bold rounded-2xl transition-all ${isDining ? 'tab-inactive' : 'tab-active'}`;
+        }
 
         form.addEventListener('submit', e => {
             e.preventDefault();
             btn.disabled = true;
-            btn.innerText = '正在傳送預約申請...';
-            msg.className = 'mt-8 p-5 rounded-xl text-center text-blue-700 bg-blue-50 border border-blue-100';
-            msg.innerText = '正在聯繫山上小屋，請稍候...';
-            msg.classList.remove('hidden');
+            btn.innerText = '處理中...';
+            
+            // 整理外帶品項文字
+            let itemsStr = "";
+            if(currentMode === 'takeout') {
+                document.querySelectorAll('[data-item]').forEach(el => {
+                    if(el.value > 0) itemsStr += `${el.getAttribute('data-item')} x ${el.value}\n`;
+                });
+                if(!itemsStr) itemsStr = "未選擇具體品項 (見備註)";
+            }
 
             const data = {
+                type: currentMode,
                 name: document.getElementById('name').value,
                 phone: document.getElementById('phone').value,
                 people: document.getElementById('people').value,
                 tables: document.getElementById('tables').value,
                 date: document.getElementById('date').value,
                 time: document.getElementById('time').value,
-                note: document.getElementById('note').value
+                note: document.getElementById('note').value,
+                orderItems: itemsStr
             };
 
             fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
             .then(res => res.json())
             .then(res => {
+                msg.className = 'mt-6 p-4 rounded-xl text-center ' + (res.status === 'success' ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50');
+                msg.innerText = res.message;
+                msg.classList.remove('hidden');
+                if(res.status === 'success') form.reset();
                 btn.disabled = false;
                 btn.innerText = '送出預約申請';
-                
-                if (res.status === 'success') {
-                    msg.className = 'mt-8 p-5 rounded-xl text-center text-green-700 bg-green-50 border border-green-100';
-                    msg.innerText = res.message;
-                    form.reset();
-                    msg.scrollIntoView({ behavior: 'smooth' });
-                } else {
-                    msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
-                    msg.innerText = '抱歉，預約失敗：' + res.message;
-                }
-            })
-            .catch(error => {
-                btn.disabled = false;
-                btn.innerText = '重試送出';
-                msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
-                msg.innerText = '連線失敗，請撥打電話預約。';
             });
         });
     </script>
