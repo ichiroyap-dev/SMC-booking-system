@@ -159,8 +159,8 @@
                         <input type="text" id="name" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
                     </div>
                     <div>
-                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡電話</label>
-                        <input type="tel" id="phone" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                        <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡電話 <span class="text-orange-600">*</span></label>
+                        <input type="tel" id="phone" required placeholder="請填寫聯絡手機" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
                     </div>
                 </div>
 
@@ -221,12 +221,13 @@
                     <div>
                         <label id="timeLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">抵達時間</label>
                         <input type="time" id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                        <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold">⚠️ 桶仔雞現烤需 1 小時，請選擇一小時後的時間</p>
                     </div>
                 </div>
 
                 <div>
-                    <label id="noteLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">備註 (如：口味需求、兒童椅)</label>
-                    <textarea id="note" rows="3" placeholder="例如：不吃辣、不要香茅..." class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition"></textarea>
+                    <label id="noteLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">備註 (如：桌菜價位、口味需求、兒童椅)</label>
+                    <textarea id="note" rows="3" placeholder="例如：桌菜價位、不吃辣、不要香茅..." class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition"></textarea>
                 </div>
 
                 <button type="submit" id="submitBtn" class="w-full bg-[#291e16] hover:bg-black text-white font-bold py-4 rounded-xl shadow-lg transition-all text-lg tracking-widest mt-2">
@@ -242,46 +243,92 @@
     </div>
 
     <script>
-        // --- ⚠️ 部署前請務必檢查此處的 URL 是否正確 ---
+        // 維持老闆的 Google Apps Script 網址
         const scriptURL = 'https://script.google.com/macros/s/AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q/exec'; 
         
-        let currentMode = 'dining'; // 預設為內用
+        let currentMode = 'dining'; 
         const form = document.getElementById('bookingForm');
         const btn = document.getElementById('submitBtn');
         const msg = document.getElementById('messageBox');
+        
+        // 取得日期與時間節點
+        const dateInput = document.getElementById('date');
+        const timeInput = document.getElementById('time');
+        const timeWarning = document.getElementById('timeWarning');
 
         // 限制日期最小為今天
-        document.getElementById('date').setAttribute('min', new Date().toISOString().split('T')[0]);
+        const todayStr = new Date().toISOString().split('T')[0];
+        dateInput.setAttribute('min', todayStr);
+
+        // --- 動態時間限制邏輯開始 ---
+        function updateTimeConstraint() {
+            const now = new Date();
+            const selectedDate = dateInput.value;
+            
+            if (selectedDate === todayStr) {
+                // 如果選今天，計算目前時間 + 60分鐘
+                const hourLater = new Date(now.getTime() + 60 * 60 * 1000);
+                const hours = String(hourLater.getHours()).padStart(2, '0');
+                const minutes = String(hourLater.getMinutes()).padStart(2, '0');
+                const minTime = `${hours}:${minutes}`;
+                
+                timeInput.setAttribute('min', minTime);
+                timeWarning.classList.remove('hidden');
+            } else {
+                // 如果選未來日期，解除時間限制
+                timeInput.removeAttribute('min');
+                timeWarning.classList.add('hidden');
+            }
+        }
+
+        // 監聽日期改變時，動態更新時間限制
+        dateInput.addEventListener('change', updateTimeConstraint);
+        window.onload = updateTimeConstraint;
+        // --- 動態時間限制邏輯結束 ---
 
         function switchMode(mode) {
             currentMode = mode;
             const isDining = (mode === 'dining');
             
-            // 更新圖示與文字
             document.getElementById('formTitleIcon').innerText = isDining ? '📅' : '🛍️';
             document.getElementById('formTitleText').innerText = isDining ? '線上快速預訂申請' : '線上外帶預約表單';
             document.getElementById('dateLabel').innerText = isDining ? '預定日期' : '取餐日期';
             document.getElementById('timeLabel').innerText = isDining ? '抵達時間' : '取餐時間';
             document.getElementById('noteLabel').innerText = isDining ? '備註 (如：訂桌價位、口味需求、兒童椅)' : '備註 (其他需求或客製化包裝)';
             
-            // 顯示/隱藏專屬欄位
             document.getElementById('diningFields').classList.toggle('hidden', !isDining);
             document.getElementById('takeoutFields').classList.toggle('hidden', isDining);
             
-            // 更新切換按鈕樣式
             document.getElementById('tabDining').className = `flex-1 py-4 font-bold rounded-2xl transition-all ${isDining ? 'tab-active shadow-md' : 'tab-inactive'}`;
             document.getElementById('tabTakeout').className = `flex-1 py-4 font-bold rounded-2xl transition-all ${isDining ? 'tab-inactive' : 'tab-active shadow-md'}`;
         }
 
         form.addEventListener('submit', e => {
             e.preventDefault();
+
+            // --- 送出前的二次防呆檢查 (防止客人直接用鍵盤硬打不合理時間) ---
+            const now = new Date();
+            const selectedDate = dateInput.value;
+            const selectedTime = timeInput.value;
+            
+            if (selectedDate === todayStr) {
+                const bookingDateTime = new Date(`${selectedDate}T${selectedTime}`);
+                const diffInMins = (bookingDateTime - now) / (1000 * 60);
+                
+                // 寬容度設為 55 分鐘，避免客人在最後一刻卡住
+                if (diffInMins < 55) {
+                    alert('🐔 桶仔雞現烤需約一小時，請選擇一小時以後的時間取餐，感謝您的耐心等待。');
+                    return; // 終止送出程序
+                }
+            }
+            // --- 檢查結束 ---
+
             btn.disabled = true;
             btn.innerText = '正在傳送資料...';
             msg.className = 'mt-8 p-5 rounded-xl text-center text-blue-700 bg-blue-50 border border-blue-100';
             msg.innerText = '正在聯繫山上小屋，請稍候...';
             msg.classList.remove('hidden');
 
-            // 整理外帶品項
             let itemsStr = "";
             if(currentMode === 'takeout') {
                 document.querySelectorAll('[data-item]').forEach(el => {
