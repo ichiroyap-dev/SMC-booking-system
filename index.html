@@ -221,7 +221,7 @@
                     <div>
                         <label id="timeLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">抵達時間</label>
                         <input type="time" id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                        <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold">⚠️ 桶仔雞現烤需 1 小時，請選擇一小時後的時間</p>
+                        <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold">⚠️ 桶仔雞現烤需 1.5 小時，請選擇 90 分鐘後的時間</p>
                     </div>
                 </div>
 
@@ -266,8 +266,8 @@
             const selectedDate = dateInput.value;
             
             if (selectedDate === todayStr) {
-                // 如果選今天，計算目前時間 + 60分鐘
-                const hourLater = new Date(now.getTime() + 60 * 60 * 1000);
+                // 如果選今天，計算目前時間 + 90分鐘
+                const hourLater = new Date(now.getTime() + 90 * 60 * 1000);
                 const hours = String(hourLater.getHours()).padStart(2, '0');
                 const minutes = String(hourLater.getMinutes()).padStart(2, '0');
                 const minTime = `${hours}:${minutes}`;
@@ -315,9 +315,9 @@
                 const bookingDateTime = new Date(`${selectedDate}T${selectedTime}`);
                 const diffInMins = (bookingDateTime - now) / (1000 * 60);
                 
-                // 寬容度設為 55 分鐘，避免客人在最後一刻卡住
-                if (diffInMins < 55) {
-                    alert('🐔 桶仔雞現烤需約一小時，請選擇一小時以後的時間取餐，感謝您的耐心等待。');
+                // 寬容度設為 85 分鐘 (90分鐘減去5分鐘緩衝)
+                if (diffInMins < 85) {
+                    alert('🐔 桶仔雞現烤需約一個半小時，請選擇 90 分鐘以後的時間取餐，感謝您的耐心等待 :)');
                     return; // 終止送出程序
                 }
             }
