@@ -166,8 +166,8 @@
                 </div>
 
                 <div>
-                    <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 (用於接收確認信) <span class="text-orange-600">*</span></label>
-                    <input type="email" id="email" required placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                    <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填，用於接收確認信)</span></label>
+                    <input type="email" id="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
                 </div>
 
                 <div id="diningFields" class="grid grid-cols-2 gap-5 transition-all">
@@ -249,6 +249,7 @@
     </div>
 
     <script>
+        // 🔴 請確保下方的 URL 是您最新部署的 Apps Script 網址
         const scriptURL = 'https://script.google.com/macros/s/AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q/exec'; 
         
         let currentMode = 'dining'; 
@@ -356,7 +357,7 @@
                 type: currentMode,
                 name: document.getElementById('name').value,
                 phone: document.getElementById('phone').value,
-                email: document.getElementById('email').value, // 加入 Email 取值
+                email: document.getElementById('email').value, // 取得選填的 Email
                 people: document.getElementById('people').value,
                 tables: document.getElementById('tables').value,
                 date: document.getElementById('date').value,
@@ -373,7 +374,14 @@
                 
                 if (res.status === 'success') {
                     msg.className = 'mt-8 p-5 rounded-xl text-center text-green-700 bg-green-50 border border-green-100';
-                    msg.innerText = res.message + " 確認信已寄出，請留意您的信箱。";
+                    
+                    // 根據客人是否有填 Email，顯示不同的成功訊息
+                    if (data.email) {
+                        msg.innerText = res.message + " 確認信已寄出，請留意您的信箱。";
+                    } else {
+                        msg.innerText = res.message;
+                    }
+                    
                     form.reset();
                     document.querySelectorAll('[data-item]').forEach(el => el.value = "0");
                     msg.scrollIntoView({ behavior: 'smooth' });
