@@ -165,6 +165,11 @@
                     </div>
                 </div>
 
+                <div>
+                    <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 (用於接收確認信) <span class="text-orange-600">*</span></label>
+                    <input type="email" id="email" required placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                </div>
+
                 <div id="diningFields" class="grid grid-cols-2 gap-5 transition-all">
                     <div>
                         <label class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預計人數</label>
@@ -255,7 +260,7 @@
         const timeInput = document.getElementById('time');
         const timeWarning = document.getElementById('timeWarning');
 
-        // 取得精準的台灣當地日期 (修復時區隱患)
+        // 取得精準的台灣當地日期
         function getLocalTodayStr() {
             const now = new Date();
             const tzOffset = now.getTimezoneOffset() * 60000;
@@ -274,12 +279,10 @@
                 const currentHour = now.getHours();
                 
                 if (currentHour >= 13) {
-                    // 超過下午一點，今天全面鎖死
                     timeInput.setAttribute('min', '23:59'); 
                     timeWarning.innerHTML = "⚠️ 今日線上預訂已全數截止。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問。</span>";
                     timeWarning.classList.remove('hidden');
                 } else {
-                    // 還有機會訂今天的晚餐 (限制只能選 15:00 以後)
                     timeInput.setAttribute('min', '15:00');
                     timeWarning.innerHTML = "⚠️ 今日午餐線上預訂已截止 (僅可訂晚餐)。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問。</span>";
                     timeWarning.classList.remove('hidden');
@@ -322,13 +325,11 @@
                 const currentHour = now.getHours();
                 const selectedHour = parseInt(selectedTime.split(':')[0]);
                 
-                // 規則一：不論幾點，都不能線上訂今天的午餐 (15:00 前)
                 if (selectedHour < 15) {
                     alert('🐔 【預訂失敗】線上午餐需提前一天預訂。\n如需當天臨時訂位，請直接來電詢問 04-26887895，感謝您！');
                     return; 
                 }
                 
-                // 規則二：今天線上晚餐必須在 13:00 前送出
                 if (currentHour >= 13) {
                     alert('🐔 【預訂失敗】今日線上晚餐需於 13:00 前完成預訂。\n如需當天臨時訂位，請直接來電詢問 04-26887895，感謝您！');
                     return; 
@@ -355,6 +356,7 @@
                 type: currentMode,
                 name: document.getElementById('name').value,
                 phone: document.getElementById('phone').value,
+                email: document.getElementById('email').value, // 加入 Email 取值
                 people: document.getElementById('people').value,
                 tables: document.getElementById('tables').value,
                 date: document.getElementById('date').value,
@@ -371,7 +373,7 @@
                 
                 if (res.status === 'success') {
                     msg.className = 'mt-8 p-5 rounded-xl text-center text-green-700 bg-green-50 border border-green-100';
-                    msg.innerText = res.message;
+                    msg.innerText = res.message + " 確認信已寄出，請留意您的信箱。";
                     form.reset();
                     document.querySelectorAll('[data-item]').forEach(el => el.value = "0");
                     msg.scrollIntoView({ behavior: 'smooth' });
