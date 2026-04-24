@@ -32,6 +32,7 @@
         .rule-badge { background: #ea580c; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
         .contact-link { color: #c2410c; text-decoration: underline; font-weight: bold; }
         
+        /* 切換按鈕的專屬樣式 */
         .tab-active { background: #4a3728; color: #f5e6d3; }
         .tab-inactive { background: transparent; color: #a8a29e; border: 1px solid transparent; }
         .tab-inactive:hover { color: #4a3728; background: rgba(74, 55, 40, 0.05); }
@@ -86,7 +87,8 @@
                         <span class="rule-badge mt-0.5 mr-2">散客</span> 
                         <span>人頭 <b>$500</b>（內用 $2000 起桌），國小以下小孩不計費。</span>
                     </li>
-                    <li class="bg-orange-50 p-3 rounded-xl text-orange-900 italic text-xs border border-orange-100">
+                    <li class="bg-orange-50 p-3 rounded-xl text-orange-900 italic text-xs border border-orange-100 leading-relaxed">
+                        💡 線上預訂：午餐需前一日，晚餐需於13:00前。如需當天臨時訂位，請直接來電詢問。<br>
                         💡 菜量隨人數調整。如有不吃辣、不喜香茅，請務必於下方備註告知。
                     </li>
                 </ul>
@@ -220,7 +222,7 @@
                     <div>
                         <label id="timeLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">抵達時間</label>
                         <input type="time" id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                        <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold">⚠️ 今日預訂：午餐需前一日，晚餐需於13:00前。</p>
+                        <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold leading-relaxed"></p>
                     </div>
                 </div>
 
@@ -274,12 +276,12 @@
                 if (currentHour >= 13) {
                     // 超過下午一點，今天全面鎖死
                     timeInput.setAttribute('min', '23:59'); 
-                    timeWarning.innerText = "⚠️ 今日預訂已全數截止。請選擇明日以後的日期。";
+                    timeWarning.innerHTML = "⚠️ 今日線上預訂已全數截止。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問。</span>";
                     timeWarning.classList.remove('hidden');
                 } else {
                     // 還有機會訂今天的晚餐 (限制只能選 15:00 以後)
                     timeInput.setAttribute('min', '15:00');
-                    timeWarning.innerText = "⚠️ 今日午餐預訂已截止。目前僅可預訂今日晚餐 (15:00 後時段)。";
+                    timeWarning.innerHTML = "⚠️ 今日午餐線上預訂已截止 (僅可訂晚餐)。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問。</span>";
                     timeWarning.classList.remove('hidden');
                 }
             } else {
@@ -320,15 +322,15 @@
                 const currentHour = now.getHours();
                 const selectedHour = parseInt(selectedTime.split(':')[0]);
                 
-                // 規則一：不論幾點，都不能訂今天的午餐 (15:00 前)
+                // 規則一：不論幾點，都不能線上訂今天的午餐 (15:00 前)
                 if (selectedHour < 15) {
-                    alert('🐔 【預訂失敗】午餐需提前一天預訂。請選擇明日以後的日期，或改為預訂今日晚餐。');
+                    alert('🐔 【預訂失敗】線上午餐需提前一天預訂。\n如需當天臨時訂位，請直接來電詢問 04-26887895，感謝您！');
                     return; 
                 }
                 
-                // 規則二：今天晚餐必須在 13:00 前送出
+                // 規則二：今天線上晚餐必須在 13:00 前送出
                 if (currentHour >= 13) {
-                    alert('🐔 【預訂失敗】今日晚餐需於 13:00 前完成預訂。目前已停止接單，請選擇明日以後的日期。');
+                    alert('🐔 【預訂失敗】今日線上晚餐需於 13:00 前完成預訂。\n如需當天臨時訂位，請直接來電詢問 04-26887895，感謝您！');
                     return; 
                 }
             }
