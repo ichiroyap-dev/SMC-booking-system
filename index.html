@@ -9,7 +9,7 @@
     
     <link href="https://awards.infcdn.net/2024/badge-circledLeaves27.css" rel="stylesheet"/>
     
-    <link rel="icon" type="image/png" href="FAVICON.png">
+    <link rel="icon" type="image/png" href="favicon.png">
     
     <style>
         body { 
@@ -336,7 +336,7 @@
                     timeWarning.classList.remove('hidden');
                 } else {
                     timeInput.setAttribute('min', '15:00');
-                    timeWarning.innerHTML = "⚠️ 今日午餐線上預訂已截止 (僅可訂晚餐)。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問.</span>";
+                    timeWarning.innerHTML = "⚠️ 今日午餐線上預訂已截止 (僅可訂晚餐)。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問。</span>";
                     timeWarning.classList.remove('hidden');
                 }
             } else {
@@ -366,7 +366,7 @@
                 document.getElementById('formTitleText').innerText = isDining ? '線上快速預訂申請' : '線上外帶預約表單';
                 document.getElementById('dateLabel').innerText = isDining ? '預定日期' : '取餐日期';
                 document.getElementById('timeLabel').innerText = isDining ? '抵達時間' : '取餐時間';
-                document.getElementById('noteLabel').innerText = isDining ? '備註 (如：口味需求、兒童椅)';
+                document.getElementById('noteLabel').innerText = isDining ? '備註 (如：口味需求、兒童椅)' : '備註 (其他需求或客製化包裝)';
                 
                 document.getElementById('diningFields').classList.toggle('hidden', !isDining);
                 document.getElementById('takeoutFields').classList.toggle('hidden', isDining);
@@ -468,7 +468,7 @@
             
             cancelBtn.disabled = true;
             cancelBtn.innerText = '正在處理取消程序...';
-            msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
+            msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-800 border border-red-100';
             msg.innerText = '正在向山上小屋申請取消，請稍候...';
             msg.classList.remove('hidden');
 
