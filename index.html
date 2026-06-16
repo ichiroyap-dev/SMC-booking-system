@@ -9,7 +9,7 @@
     
     <link href="https://awards.infcdn.net/2024/badge-circledLeaves27.css" rel="stylesheet"/>
     
-    <link rel="icon" type="image/png" href="FAVICON.png">
+    <link rel="icon" type="image/png" href="favicon.png">
     
     <style>
         body { 
@@ -94,6 +94,7 @@
                     <li class="bg-orange-50 p-3 rounded-xl text-orange-900 italic text-xs border border-orange-100 leading-relaxed">
                         💡 線上預訂：午餐需前一日，晚餐需於13:00前。如需當天臨時訂位，請直接來電詢問。<br>
                         💡 線上取消：午餐需於前一日21:00前，晚餐需於當日13:30前。逾時請直接來電。<br>
+                        💡 固定公休：<b>每週三固定公休</b>，線上系統不開放公休日預訂申請。<br>
                         💡 菜量隨人數調整。如有不吃辣、不喜香茅，請務必於下方備註告知。
                     </li>
                 </ul>
@@ -255,7 +256,9 @@
                     </div>
                     <div>
                         <label id="timeLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">抵達時間</label>
-                        <input type="time" id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                        <select id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                            <option value="" disabled selected>請先選擇日期</option>
+                        </select>
                         <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold leading-relaxed"></p>
                     </div>
                 </div>
@@ -311,7 +314,7 @@
         const msg = document.getElementById('messageBox');
         
         const dateInput = document.getElementById('date');
-        const timeInput = document.getElementById('time');
+        const timeSelect = document.getElementById('time');
         const timeWarning = document.getElementById('timeWarning');
 
         function getLocalTodayStr() {
@@ -323,25 +326,58 @@
         const todayStr = getLocalTodayStr();
         dateInput.setAttribute('min', todayStr);
 
+        // 💡 核心升級：根據日期動態產生每半小時一班、且排除公休的時間下拉選單
         function updateTimeConstraint() {
             const now = new Date();
             const selectedDate = dateInput.value;
             
+            timeSelect.innerHTML = "";
+            
+            if (!selectedDate) {
+                timeSelect.innerHTML = '<option value="" disabled selected>請先選擇日期</option>';
+                return;
+            }
+            
+            // 星期三固定公休阻擋邏輯
+            const dateParts = selectedDate.split('-');
+            const checkDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+            if (checkDate.getDay() === 3) {
+                timeWarning.innerHTML = "🐔 星期三為本店固定公休日，線上系統不開放預訂。如有特殊需求請直接來電詢問。";
+                timeWarning.classList.remove('hidden');
+                timeSelect.innerHTML = '<option value="" disabled selected>週三公休不開放</option>';
+                return;
+            }
+            
+            // 規格化的 30 分鐘定點班表
+            const lunchSlots = ['11:30', '12:00', '12:30', '13:00', '13:30'];
+            const dinnerSlots = ['17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30'];
+            let availableSlots = [];
+            
             if (selectedDate === todayStr) {
                 const currentHour = now.getHours();
-                
                 if (currentHour >= 13) {
-                    timeInput.setAttribute('min', '23:59'); 
-                    timeWarning.innerHTML = "⚠️ 今日線上預訂已全數截止。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問。</span>";
+                    timeWarning.innerHTML = "⚠️ 今日線上預訂已全數截止。<br><span class='text-stone-600'>如需當天臨時訂位，請直接來電詢問。</span>";
                     timeWarning.classList.remove('hidden');
                 } else {
-                    timeInput.setAttribute('min', '15:00');
-                    timeWarning.innerHTML = "⚠️ 今日午餐線上預訂已截止 (僅可訂晚餐)。<br><span class='text-stone-600'>如需當天臨時訂位，請來電詢問。</span>";
+                    timeWarning.innerHTML = "⚠️ 今日午餐線上預訂已截止 (目前僅開放預訂今日晚餐)。";
                     timeWarning.classList.remove('hidden');
+                    availableSlots = [...dinnerSlots];
                 }
             } else {
-                timeInput.removeAttribute('min');
                 timeWarning.classList.add('hidden');
+                availableSlots = [...lunchSlots, ...dinnerSlots];
+            }
+            
+            if (availableSlots.length === 0) {
+                timeSelect.innerHTML = '<option value="" disabled selected>今日預訂已截止</option>';
+            } else {
+                timeSelect.innerHTML = '<option value="" disabled selected>請選擇取餐/抵達時間</option>';
+                availableSlots.forEach(slot => {
+                    const opt = document.createElement('option');
+                    opt.value = slot;
+                    opt.innerText = slot;
+                    timeSelect.appendChild(opt);
+                });
             }
         }
 
@@ -382,8 +418,13 @@
 
             const now = new Date();
             const selectedDate = dateInput.value;
-            const selectedTime = timeInput.value;
+            const selectedTime = timeSelect.value;
             
+            if (!selectedTime) {
+                alert('請選擇抵達或取餐時間！');
+                return;
+            }
+
             if (selectedDate === todayStr) {
                 const currentHour = now.getHours();
                 const selectedHour = parseInt(selectedTime.split(':')[0]);
@@ -424,7 +465,7 @@
                 people: document.getElementById('people').value,
                 tables: document.getElementById('tables').value,
                 date: document.getElementById('date').value,
-                time: document.getElementById('time').value,
+                time: selectedTime,
                 note: document.getElementById('note').value,
                 orderItems: itemsStr
             };
@@ -449,6 +490,7 @@
                     msg.innerHTML = successHtml;
                     form.reset();
                     document.querySelectorAll('[data-item]').forEach(el => el.value = "0");
+                    updateTimeConstraint();
                     msg.scrollIntoView({ behavior: 'smooth' });
                 } else {
                     msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
