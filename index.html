@@ -704,6 +704,12 @@
             </form>
 
             <div id="messageBox" role="status" aria-live="polite" class="hidden mt-8 p-5 rounded-xl text-center text-sm font-medium animate-pulse"></div>
+            <section id="bookingReceipt" aria-labelledby="receiptTitle" class="hidden mt-5 p-5 rounded-xl border border-stone-200 bg-stone-50">
+                <h3 id="receiptTitle" class="font-bold text-stone-800">最近一次預約收件紀錄</h3>
+                <pre id="receiptContent" class="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed font-sans text-stone-700"></pre>
+                <button type="button" id="saveReceiptBtn" class="mt-4 rounded-xl bg-[#291e16] px-5 py-3 font-bold text-white">下載編號與摘要</button>
+                <p class="mt-3 text-xs leading-relaxed text-stone-500">請下載或截圖保存；日後線上取消需要訂單編號。此處記錄送出內容，後續異動請以店家回覆為準。</p>
+            </section>
         </div>
 
         <!-- 頁尾區塊 -->
@@ -751,6 +757,54 @@
         const btn = document.getElementById('submitBtn');
         const cancelBtn = document.getElementById('cancelSubmitBtn');
         const msg = document.getElementById('messageBox');
+        const receiptPanel = document.getElementById('bookingReceipt');
+        const receiptContent = document.getElementById('receiptContent');
+        let receiptText = '';
+
+        function emailNotice(data) {
+            return data.email.trim()
+                ? '電子郵件：已提供信箱；目前回覆未提供寄送狀態。未收到信不代表申請失敗，請勿因此重送。'
+                : '電子郵件：未填寫，不影響本次申請；請保存編號與摘要。';
+        }
+
+        function showReceipt(data, orderId) {
+            const details = data.type === 'takeout'
+                ? `送出品項：\n${data.orderItems.trim()}`
+                : `送出人數：${data.people}\n送出桌數：${data.tables}`;
+            receiptText = [
+                '水美土雞城｜預約申請收件紀錄',
+                `訂單編號：${orderId}`,
+                `申請類型：${data.type === 'takeout' ? '外帶' : '內用'}`,
+                `預約日期與時間（送出內容）：${data.date} ${data.time}`,
+                details,
+                `送出備註：${data.note.trim() || '無'}`,
+                emailNotice(data),
+                '此紀錄列出本次送出內容；後續異動請以店家回覆為準。',
+                '聯絡電話：04-26887895'
+            ].join('\n');
+            receiptContent.textContent = receiptText;
+            receiptPanel.classList.remove('hidden');
+        }
+
+        document.getElementById('saveReceiptBtn').addEventListener('click', () => {
+            if (!receiptText) return;
+            const url = URL.createObjectURL(new Blob(['\uFEFF', receiptText], { type: 'text/plain;charset=utf-8' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = '水美土雞城-預約收件紀錄.txt';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 0);
+        });
+
+        function showUncertainResult(button, action, responseMessage) {
+            button.disabled = true;
+            button.innerText = `請先來電確認${action}結果`;
+            msg.className = 'mt-8 p-5 rounded-xl text-left text-red-700 bg-red-50 border border-red-100 leading-relaxed whitespace-pre-line';
+            msg.textContent = `目前無法確認${action}結果，系統可能已收到資料。請勿重複送出，請致電 04-26887895 確認。`
+                + (typeof responseMessage === 'string' && responseMessage ? `\n系統回覆：${responseMessage}` : '');
+        }
         
         const dateInput = document.getElementById('date');
         const timeSelect = document.getElementById('time');
@@ -826,7 +880,6 @@
             const isTakeout = (mode === 'takeout');
             const isCancel = (mode === 'cancel');
             
-            msg.classList.add('hidden');
             form.classList.toggle('hidden', isCancel);
             cancelForm.classList.toggle('hidden', !isCancel);
             
@@ -859,6 +912,7 @@
 
         form.addEventListener('submit', e => {
             e.preventDefault();
+            if (btn.disabled) return;
 
             const now = new Date();
             const selectedDate = dateInput.value;
@@ -917,40 +971,37 @@
             fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
             .then(res => res.json())
             .then(res => {
-                btn.disabled = false;
-                btn.innerText = '送出預約申請';
-                
-                if (res.status === 'success') {
-                    msg.className = 'mt-8 p-6 rounded-xl text-left text-green-800 bg-green-50 border border-green-100 leading-relaxed';
-                    
-                    let successHtml = `🎉 <b>${res.message}</b><br><br>` +
-                                      `🔑 您的專屬<b>【訂單編號】</b>為：<span class="text-xl text-orange-700 font-bold tracking-wider bg-orange-100/50 px-2 py-0.5 rounded">${res.orderId}</span><br>` +
-                                      `⚠️ <span class="text-red-700 font-bold">請務必截圖保存編號！</span>日後若需線上取消預約，必須提供此編號進行比對。`;
-                    
-                    if (data.email) {
-                        successHtml += "<br>📧 確認信已同步寄出，請留意您的電子信箱。";
+                if (res && res.status === 'success') {
+                    msg.className = 'mt-8 p-6 rounded-xl text-left text-green-800 bg-green-50 border border-green-100 leading-relaxed whitespace-pre-line';
+                    const orderId = typeof res.orderId === 'string' || typeof res.orderId === 'number'
+                        ? String(res.orderId).trim() : '';
+                    if (!orderId) {
+                        btn.innerText = '請來電確認訂單編號';
+                        msg.textContent = '系統已回覆預約申請收件成功，但未提供訂單編號。請勿重送，請致電 04-26887895 確認。\n' + emailNotice(data);
+                        return;
                     }
-                    
-                    msg.innerHTML = successHtml;
+                    msg.textContent = '預約申請已收件。\n'
+                        + (typeof res.message === 'string' && res.message ? `系統回覆：${res.message}\n` : '')
+                        + emailNotice(data);
+                    showReceipt(data, orderId);
+                    btn.disabled = false;
+                    btn.innerText = '送出預約申請';
                     form.reset();
                     document.querySelectorAll('[data-item]').forEach(el => el.value = "0");
                     updateTimeConstraint();
                     msg.scrollIntoView({ behavior: 'smooth' });
                 } else {
-                    msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
-                    msg.innerText = '抱歉，處理失敗：' + res.message;
+                    showUncertainResult(btn, '預約申請', res && res.message);
                 }
             })
             .catch(error => {
-                btn.disabled = false;
-                btn.innerText = '重試送出';
-                msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
-                msg.innerText = '連線失敗，請檢查網路或撥打電話聯繫。';
+                showUncertainResult(btn, '預約申請');
             });
         });
 
         cancelForm.addEventListener('submit', e => {
             e.preventDefault();
+            if (cancelBtn.disabled) return;
             
             cancelBtn.disabled = true;
             cancelBtn.innerText = '正在處理取消程序...';
@@ -967,24 +1018,19 @@
             fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
             .then(res => res.json())
             .then(res => {
-                cancelBtn.disabled = false;
-                cancelBtn.innerText = '確認取消此筆預約';
-                
-                if (res.status === 'success') {
+                if (res && res.status === 'success') {
+                    cancelBtn.disabled = false;
+                    cancelBtn.innerText = '確認取消此筆預約';
                     msg.className = 'mt-8 p-5 rounded-xl text-center text-green-700 bg-green-50 border border-green-100';
                     msg.innerText = res.message;
                     cancelForm.reset();
                     msg.scrollIntoView({ behavior: 'smooth' });
                 } else {
-                    msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
-                    msg.innerText = '取消失敗：' + res.message;
+                    showUncertainResult(cancelBtn, '取消申請', res && res.message);
                 }
             })
             .catch(error => {
-                cancelBtn.disabled = false;
-                cancelBtn.innerText = '重試送出';
-                msg.className = 'mt-8 p-5 rounded-xl text-center text-red-700 bg-red-50 border border-red-100';
-                msg.innerText = '連線失敗，請檢查網路或撥打電話聯繫。';
+                showUncertainResult(cancelBtn, '取消申請');
             });
         });
     </script>
