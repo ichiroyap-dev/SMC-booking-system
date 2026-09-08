@@ -69,7 +69,36 @@
           "opens": "17:30",
           "closes": "21:00"
         }
-      ]
+      ],
+      "amenityFeature": {
+        "@type": "LocationFeatureSpecification",
+        "name": "戶外停車區",
+        "value": true
+      },
+      "potentialAction": {
+        "@type": "ReserveAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://www.sweetmeichicken.com/#booking-section",
+          "actionPlatform": [
+            "https://schema.org/DesktopWebPlatform",
+            "https://schema.org/MobileWebPlatform"
+          ]
+        }
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "@id": "https://www.sweetmeichicken.com/#website",
+      "url": "https://www.sweetmeichicken.com/",
+      "name": "水美土雞城",
+      "alternateName": "SweetMei Chicken Restaurant",
+      "inLanguage": "zh-Hant-TW",
+      "description": "台中市外埔區預約式無菜單土雞料理官方網站，可線上申請內用訂位與外帶預約。",
+      "publisher": { "@id": "https://www.sweetmeichicken.com/#restaurant" }
     }
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -111,6 +140,20 @@
         .rule-badge { background: #ea580c; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
         .contact-link { color: #c2410c; text-decoration: underline; font-weight: bold; white-space: nowrap; }
         #booking-section { scroll-margin-top: 16px; }
+        .skip-link {
+            position: absolute;
+            left: 1rem;
+            top: -3.5rem;
+            z-index: 50;
+            border-radius: 999px;
+            background: #291e16;
+            color: #fff8ed;
+            padding: 0.6rem 1rem;
+            font-weight: 700;
+        }
+        .skip-link:focus { top: 1rem; }
+        .site-nav a { color: #5c4634; }
+        .site-nav a[aria-current="page"] { color: #b4511b; font-weight: 700; }
         .quick-action {
             min-height: 48px;
             display: inline-flex;
@@ -357,8 +400,19 @@
     </style>
 </head>
 <body class="py-10 px-4 md:py-16">
+    <a class="skip-link" href="#booking-section">跳至預約表單</a>
 
     <div class="max-w-6xl mx-auto">
+        <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p class="brand-font text-xl text-stone-800">水美土雞城</p>
+            <nav class="site-nav flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label="主要">
+                <a href="./" aria-current="page">首頁</a>
+                <a href="faq.html">常見問題</a>
+                <a href="#booking-section">線上預約</a>
+            </nav>
+        </header>
+
+        <main id="main-content">
         <!-- 品牌主視覺：讓招牌烤雞成為第一眼焦點 -->
         <section id="brand-hero" class="hero-shell glass-card mb-8" aria-labelledby="brand-title">
             <div class="hero-copy">
@@ -391,12 +445,12 @@
         </section>
 
         <!-- 預約須知 -->
-        <div id="booking-notice" class="glass-card p-8 mb-8 grid grid-cols-1 md:grid-cols-3 gap-8 items-center">
+        <section id="booking-notice" class="glass-card p-8 mb-8 grid grid-cols-1 md:grid-cols-3 gap-8 items-center" aria-labelledby="booking-notice-title">
             <div class="md:col-span-2">
                 <p class="section-kicker mb-2">BEFORE YOU BOOK</p>
-                <h3 class="brand-font text-2xl mb-5 flex items-center text-stone-800">
+                <h2 id="booking-notice-title" class="brand-font text-2xl mb-5 flex items-center text-stone-800">
                     <span class="mr-2">📝</span> 預約內用須知
-                </h3>
+                </h2>
                 <ul class="space-y-3 text-sm text-stone-600">
                     <li class="flex items-start">
                         <span class="rule-badge mt-0.5 mr-2">桌菜</span> 
@@ -416,7 +470,7 @@
             </div>
             
             <div class="bg-stone-50 p-6 rounded-2xl border border-stone-100 text-center md:text-left">
-                <h4 class="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">歡迎預訂及詢問</h4>
+                <h3 class="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">歡迎預訂及詢問</h3>
                 <div class="space-y-3 text-sm">
                     <div class="flex items-center justify-center md:justify-start">
                         <span class="mr-2 text-lg">📞</span> 市話：<a href="tel:0426887895" class="contact-link ml-1">04-26887895</a>
@@ -424,15 +478,18 @@
                     <div class="flex items-center justify-center md:justify-start">
                         <span class="mr-2 text-lg">📱</span> 手機：<a href="tel:0912623297" class="contact-link ml-1">0912-623297</a>
                     </div>
+                    <p class="pt-2 text-xs text-stone-500">
+                        <a href="faq.html" class="contact-link">查看常見問題</a>
+                    </p>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- 招牌料理：先讓第一次來訪的客人知道要吃什麼 -->
         <section id="signature-dishes" class="signature-section glass-card mb-8" aria-labelledby="signature-title">
             <div class="signature-intro">
                 <p class="section-kicker signature-kicker mb-3">SIGNATURE DISHES</p>
-                <h3 id="signature-title" class="brand-font text-3xl sm:text-4xl leading-tight mb-4">為了一隻招牌雞，值得專程來一趟。</h3>
+                <h2 id="signature-title" class="brand-font text-3xl sm:text-4xl leading-tight mb-4">為了一隻招牌雞，值得專程來一趟。</h2>
                 <p class="signature-description max-w-2xl leading-8">水美土雞城位於台中外埔，以預約式無菜單土雞料理為主。先選好用餐方式與人數，我們再依需求安排，讓每一桌都吃得剛好。</p>
             </div>
 
@@ -481,7 +538,7 @@
         <!-- 來店體驗：用已確認資訊降低第一次上山用餐的不確定感 -->
         <section class="visit-section glass-card p-8 mb-8" aria-labelledby="visit-title">
             <p class="section-kicker mb-2">PLAN YOUR VISIT</p>
-            <h3 id="visit-title" class="brand-font text-2xl text-stone-800">一趟好好吃飯的安排</h3>
+            <h2 id="visit-title" class="brand-font text-2xl text-stone-800">一趟好好吃飯的安排</h2>
             <div class="arrival-grid text-sm">
                 <div class="arrival-item">
                     <p class="arrival-number mb-2">01 · LOCATION</p>
@@ -502,11 +559,11 @@
         </section>
 
         <!-- 📍 交通與位置 -->
-        <div id="location-section" class="glass-card p-8 mb-8">
+        <section id="location-section" class="glass-card p-8 mb-8" aria-labelledby="location-title">
             <p class="section-kicker mb-2">FIND US</p>
-            <h3 class="brand-font text-2xl mb-6 flex items-center text-stone-800">
+            <h2 id="location-title" class="brand-font text-2xl mb-6 flex items-center text-stone-800">
                 <span class="mr-2">📍</span> 交通與位置
-            </h3>
+            </h2>
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
                 <div class="space-y-5">
@@ -553,7 +610,7 @@
                     <iframe title="水美土雞城 Google 地圖（台中市外埔區二崁路658巷88號）" src="https://www.google.com/maps/embed?pb=!1m14!1m8!1m3!1d227.2145309260676!2d120.6287298!3d24.3314227!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x346911f1a73f9003%3A0x789454e7001b740c!2z5rC0576O5Zyf6Zue5Z-O!5e0!3m2!1szh-TW!2stw!4v1776048429266!5m2!1szh-TW!2stw" width="600" height="450" style="border:0;" allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- 頁籤切換區 -->
         <div id="booking-tabs" class="glass-card booking-tabs mb-6 p-1 flex" role="tablist" aria-label="預約類型">
@@ -564,7 +621,7 @@
 
         <div class="glass-card booking-form-card p-6 md:p-10 mb-8" id="booking-section">
             <p class="section-kicker mb-2">MAKE A RESERVATION</p>
-            <h3 id="formTitle" class="brand-font text-2xl mb-8 flex items-center text-stone-800" aria-live="polite">
+            <h2 id="formTitle" class="brand-font text-2xl mb-8 flex items-center text-stone-800" aria-live="polite">
                 <span class="mr-3" id="formTitleIcon">📅</span> <span id="formTitleText">線上快速預訂申請</span>
             </h3>
             
@@ -716,8 +773,17 @@
             </section>
         </div>
 
+        </main>
+
         <!-- 頁尾區塊 -->
         <footer class="mt-12 text-center text-stone-400 text-xs tracking-wide leading-relaxed space-y-2 pb-10">
+            <nav class="text-sm text-stone-500 mb-3" aria-label="頁尾">
+                <a href="./" aria-current="page" class="hover:underline">首頁</a>
+                <span class="mx-2 text-stone-300">|</span>
+                <a href="faq.html" class="hover:underline">常見問題</a>
+                <span class="mx-2 text-stone-300">|</span>
+                <a href="#booking-section" class="hover:underline">線上預約</a>
+            </nav>
             <p class="font-medium text-stone-500">
                 水 美 土 雞 城 SweetMei Chicken Restaurant <span class="mx-1 text-stone-300">|</span> 
                 營業時間：中午 11:30 - 14:00 晚上 17:30 - 21:00（每週三公休）<span class="mx-1 text-stone-300">|</span> 
