@@ -1,0 +1,20 @@
+{
+  "response": {
+    "solar_power": 18240,
+    "energy_left": 23328.0,
+    "total_pack_energy": 27000,
+    "percentage_charged": 86.4,
+    "backup_capable": true,
+    "battery_power": -3180,
+    "load_power": 12410,
+    "grid_status": "Active",
+    "grid_services_active": false,
+    "grid_power": -2650,
+    "grid_services_power": 0,
+    "generator_power": 0,
+    "island_status": "on_grid",
+    "storm_mode_active": false,
+    "timestamp": "2026-09-09T11:42:00+08:00",
+    "wall_connectors": []
+  }
+}
