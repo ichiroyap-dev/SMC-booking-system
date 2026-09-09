@@ -1,0 +1,4 @@
+# Secrets — never commit Tesla / Google keys into this public site repo
+.env
+*.pem
+*.key

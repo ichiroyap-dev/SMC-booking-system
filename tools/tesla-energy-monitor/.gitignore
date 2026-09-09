@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+tokens.json
+*.pem
+*.key
+*credentials*.json
+*service-account*.json
+google-sa.json
+__pycache__/
+.venv/
+venv/
+*.pyc
+.pytest_cache/
+.mypy_cache/
