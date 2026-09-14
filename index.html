@@ -693,7 +693,7 @@
 
             <div id="diningSubmitNotice" class="mb-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950 leading-7">
                 <ul class="space-y-1.5 list-disc pl-5">
-                    <li>送出申請僅代表收件，尚未確認留位；本店會再電話確認，請保持電話暢通。</li>
+                    <li>送出後資料會寫入訂位表並保留座位；本店會再電話確認細節，請保持電話暢通。</li>
                     <li>各價位（含散客）原則含烤雞一隻；桌菜每桌各一隻；兩桌原則兩隻。加購第2隻起每隻 NT$1,000。</li>
                     <li>內用低消每桌 NT$2,000。</li>
                     <li>幼兒園及以下不收費，可兒童椅；國小及以上份量與收費建議兩位約一位成人。</li>
@@ -718,7 +718,7 @@
                     </div>
                     <div>
                         <dt class="font-bold text-stone-800">送出申請就是訂位成功嗎？</dt>
-                        <dd>否。線上或 LINE「已收到」僅代表資料已進入，並未留位。電子郵件若填寫，只用來發收件通知，正式確認以本店電話為準。</dd>
+                        <dd>送出後若已寫入訂位表，即已保留座位；本店仍會再電話確認細節（人數、口味、時間等），請保持電話暢通。郵件／畫面上的「已收到」是收件通知，細節以電話確認為準。</dd>
                     </div>
                     <div>
                         <dt class="font-bold text-stone-800">沒預約可以直接來店內用嗎？</dt>
@@ -743,7 +743,7 @@
                 <div>
                     <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
                     <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式留位仍以電話確認。</p>
+                    <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
                 </div>
 
                 <div id="diningFields" class="space-y-4 transition-all">
@@ -892,7 +892,7 @@
                 <h3 id="receiptTitle" class="font-bold text-stone-800">預約申請已收到</h3>
                 <pre id="receiptContent" class="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed font-sans text-stone-700"></pre>
                 <button type="button" id="saveReceiptBtn" class="mt-4 rounded-xl bg-[#291e16] px-5 py-3 font-bold text-white">下載編號與摘要</button>
-                <p class="mt-3 text-xs leading-relaxed text-stone-500">尚未確認留位。本店會再電話確認，請保持電話暢通。請下載或截圖保存訂單編號。若要改期、改人數或沒有編號，請直接電話或 LINE，不必先取消再重訂。</p>
+                <p class="mt-3 text-xs leading-relaxed text-stone-500">資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。請下載或截圖保存訂單編號。若要改期、改人數或沒有編號，請直接電話或 LINE，不必先取消再重訂。</p>
             </section>
         </div>
 
@@ -935,7 +935,7 @@
                     <p><b>資料類別：</b>姓名、聯絡電話、電子郵件（選填）、預約日期時間、用餐或取餐需求及訂單編號。</p>
                     <p><b>利用期間、地區、對象及方式：</b>自蒐集日起至預約服務完成及必要之帳務、客服或爭議處理期間止；於台灣地區由水美土雞城及提供本預約系統所必要之受託服務商，以電子或人工方式處理及利用。</p>
                     <p><b>當事人權利：</b>您可依法請求查詢、閱覽、製給複製本、補充、更正、停止蒐集處理利用或刪除；請致電 <a href="tel:0426887895" class="contact-link">04-26887895</a> 聯繫。</p>
-                    <p><b>不提供資料的影響：</b>必要欄位若未提供，將無法完成線上預約或取消；電子郵件為選填，不提供不影響申請，但無法收到電子郵件收件通知。正式確認仍以本店電話為準。</p>
+                    <p><b>不提供資料的影響：</b>必要欄位若未提供，將無法完成線上預約或取消；電子郵件為選填，不提供不影響申請，但無法收到電子郵件收件通知。正式細節仍以電話確認為準。</p>
                 </div>
             </details>
         </footer>
@@ -965,12 +965,12 @@
 
         function emailNotice(data) {
             return data.email.trim()
-                ? '電子郵件：已提供信箱，僅用於收件通知，不代表訂位已確認。正式確認以本店電話為準。未收到信請勿因此重送。'
-                : '電子郵件：未填寫，不影響本次申請；正式確認以本店電話為準，請保存編號與摘要。';
+                ? '電子郵件：已提供信箱，僅用於收件／訂單通知，細節以電話確認為準。未收到信請勿因此重送。'
+                : '電子郵件：未填寫，不影響本次申請；細節以電話確認為準，請保存編號與摘要。';
         }
 
         const receivedTitle = '預約申請已收到';
-        const receivedBody = '尚未確認留位。本店會再電話確認，請保持電話暢通。';
+        const receivedBody = '資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。';
 
         function guestFacingBackendMessage(message) {
             if (typeof message !== 'string' || !message.trim()) return '';
@@ -985,7 +985,7 @@
             receiptText = [
                 '水美土雞城｜' + receivedTitle,
                 receivedBody,
-                '正式確認以本店電話為準；收件通知不是留位確認。',
+                '郵件／畫面上的「已收到」是收件通知，細節以電話確認為準。',
                 `訂單編號：${orderId}`,
                 `申請類型：${data.type === 'takeout' ? '外帶' : '內用'}`,
                 `預約日期與時間（送出內容）：${data.date} ${data.time}`,
