@@ -1501,6 +1501,8 @@
             form.classList.toggle('hidden', isCancel);
             cancelForm.classList.toggle('hidden', !isCancel);
             document.getElementById('bookingSubmitNotice').classList.toggle('hidden', isCancel);
+            const formKicker = document.querySelector('#booking-section > .section-kicker');
+            if (formKicker) formKicker.classList.toggle('hidden', isCancel);
             
             if (isCancel) {
                 document.getElementById('formTitleIcon').innerText = '❌';
