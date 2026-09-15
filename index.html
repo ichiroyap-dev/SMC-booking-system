@@ -158,7 +158,8 @@
         .rule-badge { background: #ea580c; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
         .contact-link { color: #c2410c; text-decoration: underline; font-weight: bold; white-space: nowrap; }
         #booking-section,
-        #takeout { scroll-margin-top: 16px; }
+        #takeout,
+        #cancel { scroll-margin-top: 16px; }
         .skip-link {
             position: absolute;
             left: 1rem;
@@ -192,6 +193,7 @@
             border-radius: 14px;
             padding: 12px 16px;
             font-weight: 700;
+            white-space: nowrap;
             transition: transform 0.2s ease, background-color 0.2s ease;
         }
         .quick-action:hover { transform: translateY(-1px); }
@@ -292,6 +294,21 @@
             border: 1px solid rgba(122, 78, 42, 0.12);
             background: linear-gradient(135deg, #fffdf8 0%, #f7efe4 100%);
         }
+        .booking-tablist { display: flex; }
+        .mobile-tab { white-space: nowrap; }
+        .booking-cancel-slot { text-align: center; padding: 0.1rem 0.5rem 0.4rem; }
+        .booking-cancel-btn {
+            font-size: 0.8125rem;
+            color: #78716c;
+            text-decoration: underline;
+            text-underline-offset: 4px;
+            background: none;
+            border: 0;
+            padding: 0.35rem 0.5rem;
+            cursor: pointer;
+        }
+        .booking-cancel-btn:hover { color: #44403c; }
+        .booking-cancel-btn.is-active { color: #9a3412; font-weight: 700; }
         .booking-form-card {
             background: linear-gradient(145deg, #fffdf8 0%, #f9f2e8 100%);
             border-color: rgba(122, 78, 42, 0.12);
@@ -515,7 +532,8 @@
             .hero-photo { order: 0; min-height: 0; height: 168px; }
             .hero-photo img { object-position: center 58%; }
             .hero-photo-caption { display: none; }
-            .hero-copy nav { margin-bottom: 0.65rem; }
+            .hero-booking-cta { display: none !important; }
+            .booking-form-card { padding: 1.25rem; }
             .takeout-row { flex-wrap: wrap; }
             .takeout-stepper { margin-left: auto; }
             .signature-grid { grid-template-columns: 1fr; }
@@ -552,7 +570,7 @@
             <div class="hero-copy">
                 <p class="hero-eyebrow mb-5">TAICHUNG · WAIPU · RESERVATION ONLY</p>
                 <h1 id="brand-title" class="hero-title brand-font text-5xl sm:text-6xl md:text-7xl leading-tight mb-5">水美土雞城</h1>
-                <nav aria-label="快速預約" class="grid grid-cols-2 gap-3 max-w-xl mb-5">
+                <nav aria-label="快速預約" class="hero-booking-cta hidden md:grid grid-cols-2 gap-3 max-w-xl mb-5">
                     <a href="#booking-section" onclick="switchMode('dining')" class="quick-action hero-primary">
                         內用訂位
                     </a>
@@ -578,41 +596,13 @@
         </section>
 
         <!-- 預約須知 -->
-        <section id="booking-notice" class="glass-card p-8 mb-8 grid grid-cols-1 md:grid-cols-3 gap-8 items-center" aria-labelledby="booking-notice-title">
+        <section id="booking-notice" class="glass-card p-6 md:p-8 mb-8 grid grid-cols-1 md:grid-cols-3 gap-6 items-center" aria-labelledby="booking-notice-title">
             <div class="md:col-span-2">
-                <p class="section-kicker mb-2">BEFORE YOU BOOK</p>
-                <h2 id="booking-notice-title" class="brand-font text-2xl mb-5 flex items-center text-stone-800">
-                    <span class="mr-2">📝</span> 預約內用須知
+                <p class="section-kicker mb-2">CONTACT</p>
+                <h2 id="booking-notice-title" class="brand-font text-2xl mb-3 flex items-center text-stone-800">
+                    聯絡本店
                 </h2>
-                <ul class="space-y-3 text-sm text-stone-600">
-                    <li class="flex items-start">
-                        <span class="rule-badge mt-0.5 mr-2">桌菜</span> 
-                        <span>桌菜方案 <b>$4500／$5000／$5500</b>，菜量依人數調整（非僅限 10 人桌）。</span>
-                    </li>
-                    <li class="flex items-start">
-                        <span class="rule-badge mt-0.5 mr-2">烤雞</span>
-                        <span>各價位（含散客）原則每桌／每方案含烤雞一隻；兩桌原則兩隻。加購第2隻起每隻 <b>NT$1,000</b>。</span>
-                    </li>
-                    <li class="flex items-start">
-                        <span class="rule-badge mt-0.5 mr-2">低消</span>
-                        <span>內用低消<b>每桌 NT$2,000</b>。</span>
-                    </li>
-                    <li class="flex items-start">
-                        <span class="rule-badge mt-0.5 mr-2">散客</span> 
-                        <span>人頭 <b>$500</b>。散客方案原則含烤雞一隻。</span>
-                    </li>
-                    <li class="flex items-start">
-                        <span class="rule-badge mt-0.5 mr-2">兒童</span>
-                        <span>幼兒園及以下不收費，可提供兒童椅。國小及以上份量與收費建議每兩位合計約一位成人，可再討論。</span>
-                    </li>
-                    <li class="bg-orange-50 p-3 rounded-xl text-orange-900 italic text-xs border border-orange-100 leading-relaxed">
-                        💡 線上預訂：午餐需前一日，晚餐需於13:00前。如需當天臨時訂位，請直接來電詢問。<br>
-                        💡 線上取消：午餐需於前一日21:00前，晚餐需於當日13:30前。逾時請直接來電。<br>
-                        💡 固定公休：<b>每週三固定公休</b>，線上系統不開放公休日預訂申請。<br>
-                        💡 未預約臨時來店：可視當日情況接內用，不一定有雞；安排前請先確認料理與價格。<br>
-                        💡 菜量隨人數調整。如有不吃辣、不喜香茅，請務必於下方備註告知。
-                    </li>
-                </ul>
+                <p class="text-sm text-stone-600 leading-7">送出後資料會寫入訂位表並保留座位；本店會再電話確認細節。價位、烤雞、兒童與低消見訂位表單，或<a href="faq.html" class="contact-link">常見問題</a>。</p>
             </div>
             
             <div class="bg-stone-50 p-6 rounded-2xl border border-stone-100 text-center md:text-left">
@@ -673,12 +663,19 @@
                     </article>
                     <article class="dish-item">
                         <div>
-                            <h3 class="dish-title">桌菜與散客料理</h3>
-                            <p class="dish-copy mt-1">可選散客或桌菜方案；菜量依人數調整，不是只有 10 人桌。</p>
+                            <h3 class="dish-title">散客料理</h3>
+                            <p class="dish-copy mt-1">人頭計價，原則含烤雞一隻；菜量依實際人數安排。</p>
                         </div>
-                        <p class="dish-price">$4500 起</p>
+                        <p class="dish-price">$500／位</p>
                     </article>
-                    <a href="#takeout" onclick="switchMode('takeout')" class="quick-action mt-6 w-full bg-[#4a2c18] text-white hover:bg-[#2b1a10]">先選日期與人數，再安排料理</a>
+                    <article class="dish-item">
+                        <div>
+                            <h3 class="dish-title">桌菜方案</h3>
+                            <p class="dish-copy mt-1">每桌原則含烤雞一隻；菜量依實際人數安排。</p>
+                        </div>
+                        <p class="dish-price">$4500／$5000／$5500</p>
+                    </article>
+                    <a href="#booking-section" onclick="switchMode('dining')" class="quick-action mt-6 w-full bg-[#4a2c18] text-white hover:bg-[#2b1a10]">先選日期與人數，再安排料理</a>
                 </div>
             </div>
 
@@ -766,61 +763,46 @@
         </section>
 
         <!-- 頁籤切換區 -->
-        <div id="booking-tabs" class="glass-card booking-tabs mb-6 p-1 flex" role="tablist" aria-label="預約類型">
-            <button type="button" role="tab" aria-selected="true" aria-controls="bookingForm" id="tabDining" onclick="switchMode('dining')" class="mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all tab-active">內用訂位</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="bookingForm" id="tabTakeout" onclick="switchMode('takeout')" class="mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all tab-inactive">外帶預約</button>
-            <button type="button" role="tab" aria-selected="false" aria-controls="cancelForm" id="tabCancel" onclick="switchMode('cancel')" class="mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all tab-inactive">取消／變更</button>
+        <div id="booking-tabs" class="glass-card booking-tabs mb-6">
+            <div class="booking-tablist p-1" role="tablist" aria-label="預約類型">
+                <button type="button" role="tab" aria-selected="true" aria-controls="bookingForm" id="tabDining" onclick="switchMode('dining')" class="mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all tab-active">內用訂位</button>
+                <button type="button" role="tab" aria-selected="false" aria-controls="bookingForm" id="tabTakeout" onclick="switchMode('takeout')" class="mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all tab-inactive">外帶預約</button>
+            </div>
+            <p class="booking-cancel-slot">
+                <button type="button" id="tabCancel" onclick="switchMode('cancel')" class="booking-cancel-btn" aria-controls="cancelForm">取消／變更預約</button>
+            </p>
         </div>
 
         <div class="glass-card booking-form-card p-6 md:p-10 mb-8" id="booking-section">
             <span id="takeout" class="sr-only">外帶預約表單</span>
-            <p class="section-kicker mb-2">MAKE A RESERVATION</p>
-            <h2 id="formTitle" class="brand-font text-2xl mb-6 flex items-center text-stone-800" aria-live="polite">
-                <span class="mr-3" id="formTitleIcon">📅</span> <span id="formTitleText">線上快速預訂申請</span>
+            <span id="cancel" class="sr-only">取消或變更預約</span>
+            <p class="section-kicker mb-1">MAKE A RESERVATION</p>
+            <h2 id="formTitle" class="brand-font text-2xl mb-3 flex items-center text-stone-800" aria-live="polite">
+                <span class="mr-3" id="formTitleIcon">📅</span> <span id="formTitleText">內用訂位</span>
             </h2>
 
-            <div id="diningSubmitNotice" class="mb-5 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950 leading-7">
-                <ul class="space-y-1.5 list-disc pl-5">
-                    <li>送出後資料會寫入訂位表並保留座位；本店會再電話確認細節，請保持電話暢通。</li>
-                    <li>各價位（含散客）原則含烤雞一隻；桌菜每桌各一隻；兩桌原則兩隻。加購第2隻起每隻 NT$1,000。</li>
-                    <li>內用低消每桌 NT$2,000。</li>
-                    <li>幼兒園及以下不收費，可兒童椅；國小及以上份量與收費建議兩位約一位成人。</li>
-                    <li>未預約臨時來店可視當日接內用，不一定有雞；安排前請先確認料理與價格。</li>
-                </ul>
-            </div>
-
-            <details id="bookingRulesFaq" class="mb-8 rounded-xl border border-stone-200 bg-white/80 p-4 text-sm text-stone-700">
-                <summary class="cursor-pointer font-bold text-stone-800">完整用餐規則（展開）</summary>
-                <dl class="mt-3 space-y-3 leading-7">
-                    <div>
-                        <dt class="font-bold text-stone-800">哪些方案含烤雞？幾隻？</dt>
-                        <dd>散客與桌菜 $4500／$5000／$5500 皆原則含烤雞一隻（以每桌／每方案計）。兩桌原則兩隻。加購第2隻起每隻 NT$1,000。實際安排以電話確認為準。</dd>
-                    </div>
-                    <div>
-                        <dt class="font-bold text-stone-800">低消怎麼算？</dt>
-                        <dd>內用低消每桌 NT$2,000。</dd>
-                    </div>
-                    <div>
-                        <dt class="font-bold text-stone-800">兒童怎麼計費？有兒童椅嗎？</dt>
-                        <dd>幼兒園及以下不收費，可提供兒童椅。國小及以上份量與收費建議每兩位合計約一位成人，可再討論。</dd>
-                    </div>
-                    <div>
-                        <dt class="font-bold text-stone-800">送出申請就是訂位成功嗎？</dt>
-                        <dd>送出後若已寫入訂位表，即已保留座位；本店仍會再電話確認細節（人數、口味、時間等），請保持電話暢通。郵件／畫面上的「已收到」是收件通知，細節以電話確認為準。</dd>
-                    </div>
-                    <div>
-                        <dt class="font-bold text-stone-800">沒預約可以直接來店內用嗎？</dt>
-                        <dd>未預約臨時來店，可視當日情況接內用，但不一定有雞。安排前請先確認料理與價格。</dd>
-                    </div>
-                </dl>
-            </details>
+            <p id="bookingSubmitNotice" class="mb-4 text-sm text-stone-600 leading-7">送出後資料會寫入訂位表並保留座位；本店會再電話確認細節，請保持電話暢通。午餐需前一日、晚餐需當日 13:00 前完成線上預訂。</p>
             
             <!-- 預訂表單 (內用與外帶) -->
             <form id="bookingForm" class="grid grid-cols-1 gap-6">
+                <div class="mobile-single-column grid grid-cols-2 gap-5">
+                    <div>
+                        <label for="date" id="dateLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預定日期</label>
+                        <input type="date" id="date" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                    </div>
+                    <div>
+                        <label for="time" id="timeLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">抵達時間</label>
+                        <select id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                            <option value="" disabled selected>請先選擇日期</option>
+                        </select>
+                        <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold leading-relaxed"></p>
+                    </div>
+                </div>
+
                 <div id="diningFields" class="space-y-4 transition-all">
                     <fieldset>
                         <legend class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">用餐類型 <span class="text-orange-600">*</span></legend>
-                        <p class="mt-1.5 mb-2 text-[11px] leading-5 text-stone-500">請先選擇散客、桌菜或大型聚餐。人數與方案為主；桌數用來估算烤雞與場地，不是限定每桌 10 人。</p>
+                        <p class="mt-1.5 mb-2 text-[11px] leading-5 text-stone-500">請先選擇散客、桌菜或大型聚餐。菜量依實際人數安排。</p>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2" role="radiogroup" aria-label="用餐類型">
                             <label class="choice-card">
                                 <input type="radio" name="partyType" value="casual" class="sr-only">
@@ -857,20 +839,20 @@
                             <label class="choice-card">
                                 <input type="radio" name="diningPlan" value="4500" class="sr-only">
                                 <span class="choice-title">$4500</span>
-                                <span class="choice-desc">約 10 人參考　原則含雞一隻</span>
+                                <span class="choice-desc">菜量依人數安排　原則含雞一隻</span>
                             </label>
                             <label class="choice-card">
                                 <input type="radio" name="diningPlan" value="5000" class="sr-only">
                                 <span class="choice-title">$5000</span>
-                                <span class="choice-desc">約 10 人參考　原則含雞一隻</span>
+                                <span class="choice-desc">菜量依人數安排　原則含雞一隻</span>
                             </label>
                             <label class="choice-card">
                                 <input type="radio" name="diningPlan" value="5500" class="sr-only">
                                 <span class="choice-title">$5500</span>
-                                <span class="choice-desc">約 10 人參考　原則含雞一隻</span>
+                                <span class="choice-desc">菜量依人數安排　原則含雞一隻</span>
                             </label>
                         </div>
-                        <p class="text-[11px] leading-5 text-stone-500">「約 10 人」是菜量參考，不是限定每桌 10 人。實際菜量依人數調整。</p>
+                        <p class="text-[11px] leading-5 text-stone-500">菜量依實際人數安排。</p>
                     </div>
 
                     <div id="diningDetails" class="hidden space-y-4">
@@ -882,15 +864,15 @@
                             <div>
                                 <label for="kidsKinder" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">幼兒園及以下</label>
                                 <input type="number" id="kidsKinder" min="0" value="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
-                                <p class="mt-1 text-[11px] text-stone-500">不收費，可兒童椅</p>
+                                <p class="mt-1 text-[11px] text-stone-500">不收費，可提供兒童椅</p>
                             </div>
                             <div>
                                 <label for="kidsElem" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">國小及以上</label>
                                 <input type="number" id="kidsElem" min="0" value="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
-                                <p class="mt-1 text-[11px] text-stone-500">份量與收費約 2 位＝1 成人</p>
+                                <p class="mt-1 text-[11px] text-stone-500">份量與收費約 2 位＝1 成人，可再討論</p>
                             </div>
                         </div>
-                        <p class="text-sm text-stone-700">合計人數 <b id="peopleDisplay" aria-live="polite">—</b>　<span class="text-[11px] text-stone-500">（散客不會預填 10 人）</span></p>
+                        <p class="text-sm text-stone-700">合計人數 <b id="peopleDisplay" aria-live="polite">—</b></p>
                         <input type="hidden" id="people" value="">
 
                         <div class="mobile-single-column grid grid-cols-2 gap-5">
@@ -918,26 +900,9 @@
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div>
-                        <label for="name" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡姓名 <span class="text-orange-600">*</span></label>
-                        <input type="text" id="name" autocomplete="name" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    </div>
-                    <div>
-                        <label for="phone" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡電話 <span class="text-orange-600">*</span></label>
-                        <input type="tel" id="phone" autocomplete="tel" inputmode="tel" required placeholder="請填寫聯絡手機" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    </div>
-                </div>
-
-                <div>
-                    <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
-                    <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
-                </div>
-
-                <div id="takeoutFields" class="hidden space-y-4 bg-orange-50/50 p-6 rounded-2xl border border-orange-100">
+                <div id="takeoutFields" class="hidden space-y-4 bg-orange-50/50 p-4 sm:p-6 rounded-2xl border border-orange-100">
                     <p class="text-xs font-bold text-orange-800 uppercase tracking-widest">預訂品項與數量</p>
-                    <p class="text-[11px] text-stone-500 leading-5 -mt-2">用 ＋／− 調整數量。按斤品項為估重下單、到店實秤。</p>
+                    <p class="text-[11px] text-stone-500 leading-5 -mt-2">用 ＋／− 調整數量。</p>
                     <div id="takeoutItemList" class="space-y-3 text-sm text-stone-700">
                         <p class="takeout-cat mt-0">招牌烤雞</p>
                         <div class="takeout-row is-signature">
@@ -954,7 +919,7 @@
                         <p class="takeout-cat">外帶桌菜（原則每桌含烤雞一隻）</p>
                         <div class="takeout-row">
                             <div class="takeout-row-info">
-                                <span class="takeout-name">外帶桌菜 $4500</span>
+                                <span class="takeout-name">外帶桌菜</span>
                                 <span class="takeout-meta">NT$4,500／桌</span>
                             </div>
                             <div class="takeout-stepper">
@@ -965,7 +930,7 @@
                         </div>
                         <div class="takeout-row">
                             <div class="takeout-row-info">
-                                <span class="takeout-name">外帶桌菜 $5000</span>
+                                <span class="takeout-name">外帶桌菜</span>
                                 <span class="takeout-meta">NT$5,000／桌</span>
                             </div>
                             <div class="takeout-stepper">
@@ -976,7 +941,7 @@
                         </div>
                         <div class="takeout-row">
                             <div class="takeout-row-info">
-                                <span class="takeout-name">外帶桌菜 $5500</span>
+                                <span class="takeout-name">外帶桌菜</span>
                                 <span class="takeout-meta">NT$5,500／桌</span>
                             </div>
                             <div class="takeout-stepper">
@@ -1057,9 +1022,9 @@
                     <div id="takeoutSummary" class="takeout-summary" aria-live="polite">
                         <p class="font-bold text-orange-950 text-sm">目前訂單</p>
                         <ul id="takeoutSummaryList" class="mt-2 space-y-1 text-stone-700"></ul>
-                        <p id="takeoutSummaryEmpty" class="mt-2 text-sm text-stone-500">尚未選擇品項。招牌桶仔雞在最上方。</p>
+                        <p id="takeoutSummaryEmpty" class="mt-2 text-sm text-stone-500">尚未選擇品項。</p>
                         <p id="takeoutSummaryTotal" class="mt-3 hidden text-sm font-bold text-orange-950"></p>
-                        <p class="mt-2 text-[11px] text-stone-500 leading-5">按斤品項為估重下單／到店實秤，預估金額僅供參考。</p>
+                        <p id="takeoutWeighNote" class="mt-2 hidden text-[11px] text-stone-500 leading-5">按斤品項為估重下單／到店實秤，預估金額僅供參考。</p>
                     </div>
                     <div>
                         <label for="customItem" class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">其他加點品項（選填）</label>
@@ -1067,18 +1032,21 @@
                     </div>
                 </div>
 
-                <div class="mobile-single-column grid grid-cols-2 gap-5">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
-                        <label for="date" id="dateLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預定日期</label>
-                        <input type="date" id="date" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                        <label for="name" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡姓名 <span class="text-orange-600">*</span></label>
+                        <input type="text" id="name" autocomplete="name" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
                     </div>
                     <div>
-                        <label for="time" id="timeLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">抵達時間</label>
-                        <select id="time" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                            <option value="" disabled selected>請先選擇日期</option>
-                        </select>
-                        <p id="timeWarning" class="text-[11px] text-orange-600 mt-1.5 hidden font-bold leading-relaxed"></p>
+                        <label for="phone" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡電話 <span class="text-orange-600">*</span></label>
+                        <input type="tel" id="phone" autocomplete="tel" inputmode="tel" required placeholder="請填寫聯絡手機" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
                     </div>
+                </div>
+
+                <div>
+                    <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
+                    <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                    <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
                 </div>
 
                 <div>
@@ -1098,35 +1066,23 @@
 
             <!-- 取消預約表單 -->
             <form id="cancelForm" class="hidden grid grid-cols-1 gap-6">
-                <div class="bg-amber-50 p-4 rounded-xl text-amber-950 text-sm border border-amber-200 leading-relaxed">
-                    <p class="font-bold">記得截圖訂單編號</p>
-                    <p class="mt-1">送出成功畫面會顯示訂單編號，請先截圖或下載摘要。線上取消需要「預訂手機＋專屬訂單編號」。</p>
-                    <p class="mt-2 text-xs text-amber-900/80">本站沒有查詢訂單的專頁；沒有編號仍可電話或 LINE 辦理，不必先取消再重訂。</p>
-                </div>
-                <div class="bg-stone-50 p-4 rounded-xl text-stone-800 text-sm border border-stone-200 leading-relaxed">
-                    <p class="font-bold mb-2">找不到編號，或要改日期、人數、桌數？</p>
-                    <p>請直接來電或 LINE，告知<b>姓名＋電話＋用餐／取餐日期</b>，本店可代查。變更請走這條路，<b>不必先取消再重訂</b>。</p>
-                    <p class="mt-2">
-                        市話 <a href="tel:0426887895" class="contact-link">04-2688-7895</a>
-                        <span class="mx-1 text-stone-400">·</span>
-                        手機 <a href="tel:0912623297" class="contact-link">0912-623297</a>
-                        <span class="mx-1 text-stone-400">·</span>
-                        LINE <a href="https://line.me/R/ti/p/@xwg4507a" target="_blank" rel="noopener noreferrer" class="contact-link">@xwg4507a</a>
-                    </p>
-                    <details class="mt-3 text-xs text-stone-600">
-                        <summary class="cursor-pointer font-bold text-stone-700">打電話代查時，請準備這些資料</summary>
-                        <ul class="mt-2 list-disc pl-5 space-y-1 leading-6">
-                            <li>預約姓名</li>
-                            <li>聯絡電話（訂位時填的號碼）</li>
-                            <li>用餐或取餐日期，以及中午／晚上時段</li>
-                        </ul>
-                    </details>
-                </div>
-                <div class="bg-red-50 p-4 rounded-xl text-red-900 text-xs border border-red-100 leading-relaxed mb-2">
-                    ⚠️ <b>若要走線上取消，時限如下：</b><br>
-                    • 中午用餐/取餐時段：需於 <b>前一天晚上 21:00 前</b> 完成線上取消。<br>
-                    • 晚上用餐/取餐時段：需於 <b>當天中午 13:30 前</b> 完成線上取消。<br>
-                    • 逾時線上系統將自動鎖定，請改以市話或 LINE 聯繫山小屋。
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="rounded-xl border border-stone-200 bg-white p-4 text-sm text-stone-700 leading-relaxed">
+                        <p class="font-bold text-stone-800 mb-1">線上取消</p>
+                        <p>已有訂單編號時，請填預訂手機與訂單編號。</p>
+                        <p class="mt-2 text-xs text-stone-500">中午時段須於前一天 21:00 前；晚上時段須於當日 13:30 前。逾時請改走電話或 LINE。</p>
+                    </div>
+                    <div class="rounded-xl border border-stone-200 bg-stone-50 p-4 text-sm text-stone-700 leading-relaxed">
+                        <p class="font-bold text-stone-800 mb-1">變更或找不到編號</p>
+                        <p>請電話或 LINE，告知<b>姓名、電話與原訂日期</b>。不必先取消再重訂。</p>
+                        <p class="mt-2">
+                            市話 <a href="tel:0426887895" class="contact-link">04-2688-7895</a>
+                            <span class="mx-1 text-stone-400">·</span>
+                            手機 <a href="tel:0912623297" class="contact-link">0912-623297</a>
+                            <span class="mx-1 text-stone-400">·</span>
+                            LINE <a href="https://line.me/R/ti/p/@xwg4507a" target="_blank" rel="noopener noreferrer" class="contact-link">@xwg4507a</a>
+                        </p>
+                    </div>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div>
@@ -1152,7 +1108,7 @@
                 <h3 id="receiptTitle" class="font-bold text-stone-800">預約申請已收到</h3>
                 <pre id="receiptContent" class="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed font-sans text-stone-700"></pre>
                 <button type="button" id="saveReceiptBtn" class="mt-4 rounded-xl bg-[#291e16] px-5 py-3 font-bold text-white">下載編號與摘要</button>
-                <p class="mt-3 text-xs leading-relaxed text-stone-500">資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。<b>記得截圖訂單編號</b>，或下載摘要。若要改期、改人數或沒有編號，請用姓名＋電話＋日期直接電話或 LINE，不必先取消再重訂。</p>
+                <p class="mt-3 text-xs leading-relaxed text-stone-500">資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。請下載或截圖保存訂單編號，線上取消時需要。若要改期、改人數或沒有編號，請用姓名、電話與原訂日期直接電話或 LINE，不必先取消再重訂。</p>
             </section>
         </div>
 
@@ -1267,13 +1223,13 @@
                 tablesInput.max = 3;
                 if (!tablesInput.value || parseInt(tablesInput.value, 10) > 3 || parseInt(tablesInput.value, 10) < 1) tablesInput.value = 1;
                 tablesLabel.textContent = '預估桌數';
-                tablesHint.textContent = '散客人數為主；桌數用來估算場地與烤雞，不是限定每桌 10 人。原則 1 桌含烤雞一隻，低消每桌 NT$2,000。';
+                tablesHint.textContent = '散客人數為主；桌數用來估算場地與烤雞。原則 1 桌含烤雞一隻，低消每桌 NT$2,000。菜量依實際人數安排。';
             } else if (type === 'banquet') {
                 tablesInput.min = 1;
                 tablesInput.max = 3;
                 if (!tablesInput.value || parseInt(tablesInput.value, 10) > 3 || parseInt(tablesInput.value, 10) < 1) tablesInput.value = 1;
                 tablesLabel.textContent = '預估桌數（1–3 桌）';
-                tablesHint.textContent = '人數與方案為主；桌數用來估算烤雞（每桌原則一隻）。不是限定每桌 10 人。超過 3 桌請改選大型聚餐。';
+                tablesHint.textContent = '菜量依實際人數安排。桌數用來估算烤雞（每桌原則一隻）。超過 3 桌請改選大型聚餐。';
             }
             syncDiningPeople();
         }
@@ -1356,6 +1312,8 @@
             }
             empty.classList.toggle('hidden', count > 0);
             totalEl.classList.toggle('hidden', count === 0);
+            const weighNote = document.getElementById('takeoutWeighNote');
+            if (weighNote) weighNote.classList.toggle('hidden', !hasWeigh);
             if (count > 0) {
                 totalEl.textContent = hasWeigh
                     ? `預估小計 ${formatNtd(total)}（含按斤估重，到店實秤）`
@@ -1412,7 +1370,7 @@
                 details,
                 `送出備註：${data.note.trim() || '無'}`,
                 emailNotice(data),
-                '記得截圖或下載保存訂單編號。若要改期、改人數或沒有編號，請用姓名＋電話＋日期直接電話或 LINE，不必先取消再重訂。',
+                '請下載或截圖保存訂單編號，線上取消時需要。若要改期、改人數或沒有編號，請用姓名、電話與原訂日期直接電話或 LINE，不必先取消再重訂。',
                 '聯絡電話：04-26887895　LINE：@xwg4507a'
             ].join('\n');
             receiptContent.textContent = receiptText;
@@ -1506,7 +1464,35 @@
 
         dateInput.addEventListener('change', updateTimeConstraint);
 
-        function switchMode(mode) {
+        function hashForMode(mode) {
+            if (mode === 'takeout') return '#takeout';
+            if (mode === 'cancel') return '#cancel';
+            return '#booking-section';
+        }
+
+        function modeFromLocation() {
+            const hash = (window.location.hash || '').replace('#', '').toLowerCase();
+            const params = new URLSearchParams(window.location.search);
+            const modeParam = (params.get('mode') || params.get('type') || '').toLowerCase();
+            if (hash === 'takeout' || hash === 'takeoutfields' || hash === 'tabtakeout' || modeParam === 'takeout' || modeParam === 'pickup') return 'takeout';
+            if (hash === 'cancel' || hash === 'cancelform' || hash === 'tabcancel' || modeParam === 'cancel') return 'cancel';
+            if (hash === 'booking-section' || hash === 'dining' || hash === 'bookingform' || hash === 'tabdining' || modeParam === 'dining') return 'dining';
+            if (!hash && !modeParam) return 'dining';
+            return null;
+        }
+
+        function syncModeHash(mode) {
+            const target = hashForMode(mode);
+            if ((window.location.hash || '') === target) return;
+            if (history.pushState) {
+                history.pushState({ bookingMode: mode }, '', target);
+            } else {
+                window.location.hash = target;
+            }
+        }
+
+        function switchMode(mode, options) {
+            options = options || {};
             currentMode = mode;
             const isDining = (mode === 'dining');
             const isTakeout = (mode === 'takeout');
@@ -1514,15 +1500,14 @@
             
             form.classList.toggle('hidden', isCancel);
             cancelForm.classList.toggle('hidden', !isCancel);
-            document.getElementById('diningSubmitNotice').classList.toggle('hidden', !isDining);
-            document.getElementById('bookingRulesFaq').classList.toggle('hidden', !isDining);
+            document.getElementById('bookingSubmitNotice').classList.toggle('hidden', isCancel);
             
             if (isCancel) {
                 document.getElementById('formTitleIcon').innerText = '❌';
                 document.getElementById('formTitleText').innerText = '取消或變更預約';
             } else {
                 document.getElementById('formTitleIcon').innerText = isDining ? '📅' : '🛍️';
-                document.getElementById('formTitleText').innerText = isDining ? '線上快速預訂申請' : '線上外帶預約表單';
+                document.getElementById('formTitleText').innerText = isDining ? '內用訂位' : '外帶預約';
                 document.getElementById('dateLabel').innerText = isDining ? '預定日期' : '取餐日期';
                 document.getElementById('timeLabel').innerText = isDining ? '抵達時間' : '取餐時間';
                 document.getElementById('noteLabel').innerText = isDining ? '其他備註（選填）' : '其他備註（選填，如客製包裝）';
@@ -1531,38 +1516,32 @@
                 document.getElementById('takeoutFields').classList.toggle('hidden', isDining);
             }
             
-            document.getElementById('tabDining').className = `flex-1 py-4 font-bold rounded-2xl transition-all ${isDining ? 'tab-active shadow-md' : 'tab-inactive'}`;
-            document.getElementById('tabTakeout').className = `mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all ${isTakeout ? 'tab-active shadow-md' : 'tab-inactive'}`;
-            document.getElementById('tabCancel').className = `mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all ${isCancel ? 'bg-red-800 text-white shadow-md' : 'tab-inactive'}`;
-
             const tabDining = document.getElementById('tabDining');
             const tabTakeout = document.getElementById('tabTakeout');
             const tabCancel = document.getElementById('tabCancel');
-            tabDining.classList.add('mobile-tab');
+            tabDining.className = `mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all ${isDining ? 'tab-active shadow-md' : 'tab-inactive'}`;
+            tabTakeout.className = `mobile-tab flex-1 py-4 font-bold rounded-2xl transition-all ${isTakeout ? 'tab-active shadow-md' : 'tab-inactive'}`;
+            tabCancel.className = isCancel ? 'booking-cancel-btn is-active' : 'booking-cancel-btn';
             tabDining.setAttribute('aria-selected', String(isDining));
             tabTakeout.setAttribute('aria-selected', String(isTakeout));
-            tabCancel.setAttribute('aria-selected', String(isCancel));
+            tabCancel.setAttribute('aria-pressed', String(isCancel));
+
+            if (!options.skipHash) syncModeHash(mode);
         }
 
-        function applyBookingHash() {
-            const hash = (window.location.hash || '').replace('#', '').toLowerCase();
-            const params = new URLSearchParams(window.location.search);
-            const modeParam = (params.get('mode') || params.get('type') || '').toLowerCase();
-            if (hash === 'takeout' || hash === 'takeoutfields' || hash === 'tabtakeout' || modeParam === 'takeout' || modeParam === 'pickup') {
-                switchMode('takeout');
-                if (bookingSection) bookingSection.scrollIntoView();
-            } else if (hash === 'cancel' || hash === 'cancelform' || hash === 'tabcancel' || modeParam === 'cancel') {
-                switchMode('cancel');
-                if (bookingSection) bookingSection.scrollIntoView();
-            } else if (hash === 'booking-section' || hash === 'dining' || hash === 'bookingform' || hash === 'tabdining' || modeParam === 'dining') {
-                switchMode('dining');
-            }
+        function applyBookingHash(options) {
+            options = options || {};
+            const mode = modeFromLocation();
+            if (!mode) return;
+            switchMode(mode, { skipHash: true });
+            if (options.scroll && bookingSection) bookingSection.scrollIntoView();
         }
 
-        window.addEventListener('hashchange', applyBookingHash);
+        window.addEventListener('hashchange', () => applyBookingHash({ scroll: true }));
+        window.addEventListener('popstate', () => applyBookingHash());
         window.onload = function() {
             updateTimeConstraint();
-            applyBookingHash();
+            applyBookingHash({ scroll: Boolean(window.location.hash) });
             updateDiningUI();
             updateTakeoutSummary();
         };
@@ -1592,7 +1571,7 @@
                 }
                 const counts = syncDiningPeople();
                 if (!counts.total) {
-                    alert('請填寫成人或兒童人數。散客不會預填 10 人。');
+                    alert('請填寫成人或兒童人數。');
                     return;
                 }
                 const tableCount = parseInt(document.getElementById('tables').value, 10) || 0;
