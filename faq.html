@@ -233,7 +233,8 @@
         .skip-link:focus { top: 1rem; }
         .site-nav a { color: #5c4634; }
         .site-nav a[aria-current="page"] { color: #b4511b; font-weight: 700; }
-        /* 品牌 LOGO 區：正式 logo 檔到位後，只需把 .brand-logo 的 src 換成 logo.png（放在 repo 根目錄，與 favicon.png 同層）。 */
+        /* 品牌 LOGO：logo.png（repo 根目錄，透明底橫式，公雞＋紅字「水美土雞城」）。
+           若 logo.png 尚未上傳，onerror 會退回 favicon.png 公雞圖＋文字字標，不會出現破圖。 */
         .brand-lockup {
             display: inline-flex;
             align-items: center;
@@ -243,21 +244,30 @@
             line-height: 1;
         }
         .brand-logo {
-            width: 46px;
-            height: 46px;
-            flex-shrink: 0;
+            display: block;
+            height: 64px;
+            width: auto;
+            max-width: min(280px, 72vw);
             object-fit: contain;
-            border-radius: 12px;
-            background: #fff;
-            border: 1px solid rgba(94, 62, 36, 0.14);
-            box-shadow: 0 4px 12px rgba(71, 43, 20, 0.08);
+            object-position: left center;
         }
         .brand-wordmark {
+            display: none;
             font-size: 1.25rem;
             font-weight: 700;
             letter-spacing: 0.06em;
             white-space: nowrap;
         }
+        .brand-lockup--fallback .brand-logo {
+            width: 46px;
+            height: 46px;
+            max-width: none;
+            border-radius: 12px;
+            background: #fff;
+            border: 1px solid rgba(94, 62, 36, 0.14);
+            box-shadow: 0 4px 12px rgba(71, 43, 20, 0.08);
+        }
+        .brand-lockup--fallback .brand-wordmark { display: inline; }
         .faq-item {
             border-bottom: 1px solid rgba(94, 62, 36, 0.12);
         }
@@ -288,7 +298,8 @@
         @media (max-width: 479px) {
             body { padding-left: 12px; padding-right: 12px; padding-bottom: 24px; }
             .glass-card { border-radius: 18px; }
-            .brand-logo { width: 42px; height: 42px; border-radius: 11px; }
+            .brand-logo { height: 48px; }
+            .brand-lockup--fallback .brand-logo { width: 42px; height: 42px; border-radius: 11px; }
             .brand-wordmark { font-size: 1.15rem; }
         }
     </style>
@@ -298,7 +309,8 @@
 
     <header class="max-w-3xl mx-auto mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <a href="./" class="brand-lockup">
-            <img src="favicon.png" class="brand-logo" alt="水美土雞城" width="46" height="46" decoding="async">
+            <img src="logo.png" class="brand-logo" alt="水美土雞城" width="264" height="64" decoding="async"
+                 onerror="this.onerror=null;this.src='favicon.png';this.closest('.brand-lockup').classList.add('brand-lockup--fallback');">
             <span class="brand-wordmark brand-font" aria-hidden="true">水美土雞城</span>
         </a>
         <nav class="site-nav flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label="主要">
