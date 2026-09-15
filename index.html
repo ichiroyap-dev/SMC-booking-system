@@ -542,22 +542,35 @@
         .takeout-summary li { display: flex; justify-content: space-between; gap: 0.75rem; font-size: 13px; }
         .takeout-row.is-signature { border-left: 4px solid #f97316; }
 
+        /* 手機與小平板：主視覺改為上下堆疊，照片區維持 3:4 原圖比例，整隻烤雞完整呈現（不裁切）。 */
+        @media (max-width: 767px) {
+            .hero-shell { grid-template-columns: 1fr; }
+            .hero-copy::after { display: none; }
+            .hero-photo {
+                order: 0;
+                min-height: 0;
+                height: auto;
+                aspect-ratio: 3 / 4;
+            }
+            .hero-photo img { object-fit: contain; object-position: center; }
+            .hero-photo::before { background: linear-gradient(180deg, rgba(64, 37, 22, 0.35), transparent 16%); }
+            .hero-booking-cta { display: none !important; }
+        }
+
         @media (max-width: 479px) {
             body { padding-left: 12px; padding-right: 12px; padding-bottom: 24px; }
             .glass-card { border-radius: 18px; }
             .mobile-single-column { grid-template-columns: minmax(0, 1fr) !important; }
             .mobile-tab { padding-left: 8px; padding-right: 8px; font-size: 14px; white-space: nowrap; }
-            .hero-shell { grid-template-columns: 1fr; }
+            .brand-logo { width: 42px; height: 42px; border-radius: 11px; }
+            .brand-wordmark { font-size: 1.15rem; }
             .hero-copy { padding: 1.15rem 1.15rem 1.35rem; }
             .hero-eyebrow,
             .hero-story,
             .hero-divider { display: none; }
             .hero-subtitle { font-size: 0.92rem; line-height: 1.55; margin-bottom: 0.65rem; }
             .hero-title { font-size: 2rem; line-height: 1.15; margin-bottom: 0.85rem; }
-            .hero-photo { order: 0; min-height: 0; height: 168px; }
-            .hero-photo img { object-position: center 58%; }
             .hero-photo-caption { display: none; }
-            .hero-booking-cta { display: none !important; }
             .booking-form-card { padding: 1.25rem; }
             .takeout-row { flex-wrap: wrap; }
             .takeout-stepper { margin-left: auto; }
@@ -597,7 +610,7 @@
         <section id="brand-hero" class="hero-shell glass-card mb-8" aria-labelledby="brand-title">
             <div class="hero-copy">
                 <p class="hero-eyebrow mb-5">TAICHUNG · WAIPU · RESERVATION ONLY</p>
-                <h1 id="brand-title" class="hero-title brand-font text-5xl sm:text-6xl md:text-7xl leading-tight mb-5">水美土雞城</h1>
+                <h1 id="brand-title" class="hero-title brand-font text-5xl sm:text-6xl md:text-[3.25rem] lg:text-7xl leading-tight mb-5">水美土雞城</h1>
                 <nav aria-label="快速預約" class="hero-booking-cta hidden md:grid grid-cols-2 gap-3 max-w-xl mb-5">
                     <a href="#booking-section" onclick="switchMode('dining')" class="quick-action hero-primary">
                         內用訂位
