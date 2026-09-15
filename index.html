@@ -817,23 +817,6 @@
             
             <!-- 預訂表單 (內用與外帶) -->
             <form id="bookingForm" class="grid grid-cols-1 gap-6">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div>
-                        <label for="name" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡姓名 <span class="text-orange-600">*</span></label>
-                        <input type="text" id="name" autocomplete="name" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    </div>
-                    <div>
-                        <label for="phone" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡電話 <span class="text-orange-600">*</span></label>
-                        <input type="tel" id="phone" autocomplete="tel" inputmode="tel" required placeholder="請填寫聯絡手機" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    </div>
-                </div>
-
-                <div>
-                    <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
-                    <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
-                </div>
-
                 <div id="diningFields" class="space-y-4 transition-all">
                     <fieldset>
                         <legend class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">用餐類型 <span class="text-orange-600">*</span></legend>
@@ -933,6 +916,23 @@
                             </div>
                         </fieldset>
                     </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <label for="name" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡姓名 <span class="text-orange-600">*</span></label>
+                        <input type="text" id="name" autocomplete="name" required class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                    </div>
+                    <div>
+                        <label for="phone" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">聯絡電話 <span class="text-orange-600">*</span></label>
+                        <input type="tel" id="phone" autocomplete="tel" inputmode="tel" required placeholder="請填寫聯絡手機" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                    </div>
+                </div>
+
+                <div>
+                    <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
+                    <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                    <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
                 </div>
 
                 <div id="takeoutFields" class="hidden space-y-4 bg-orange-50/50 p-6 rounded-2xl border border-orange-100">
@@ -1514,8 +1514,8 @@
             
             form.classList.toggle('hidden', isCancel);
             cancelForm.classList.toggle('hidden', !isCancel);
-            document.getElementById('diningSubmitNotice').classList.toggle('hidden', isCancel);
-            document.getElementById('bookingRulesFaq').classList.toggle('hidden', isCancel);
+            document.getElementById('diningSubmitNotice').classList.toggle('hidden', !isDining);
+            document.getElementById('bookingRulesFaq').classList.toggle('hidden', !isDining);
             
             if (isCancel) {
                 document.getElementById('formTitleIcon').innerText = '❌';
