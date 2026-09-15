@@ -268,6 +268,10 @@
             letter-spacing: 0.025em;
             text-shadow: 0 2px 10px rgba(0,0,0,0.16);
         }
+        @media (min-width: 768px) {
+            /* 桌面標題維持一行，避免「城」單獨落到下一行。 */
+            .hero-title { white-space: nowrap; }
+        }
         .hero-subtitle { color: #f1d7b3; }
         .hero-story { color: rgba(255, 248, 237, 0.78); }
         .hero-photo {
@@ -360,6 +364,15 @@
         #booking-notice {
             background: linear-gradient(135deg, #faf1e5 0%, #f3e3d1 100%);
             border-color: rgba(181, 102, 43, 0.14);
+            min-width: 0;
+        }
+        #booking-notice > * { min-width: 0; }
+        /* 768px 三欄會讓電話 nowrap 溢出；改到 lg 再並排，不隱藏 overflow。 */
+        @media (max-width: 1023px) {
+            #booking-notice {
+                grid-template-columns: minmax(0, 1fr) !important;
+            }
+            #booking-notice > .lg\:col-span-2 { grid-column: auto; }
         }
         .signature-section {
             overflow: hidden;
@@ -518,7 +531,7 @@
         .takeout-row-info { min-width: 0; }
         .takeout-name { display: block; font-weight: 700; color: #44403c; }
         .takeout-row.is-signature .takeout-name { color: #9a3412; }
-        .takeout-meta { display: block; font-size: 11px; color: #a8a29e; font-weight: 400; margin-top: 0.15rem; }
+        .takeout-meta { display: block; font-size: 11px; color: #57534e; font-weight: 400; margin-top: 0.15rem; }
         .takeout-stepper { display: inline-flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
         .step-btn {
             width: 40px;
@@ -568,20 +581,24 @@
         }
 
         @media (max-width: 479px) {
-            body { padding-left: 12px; padding-right: 12px; padding-bottom: 24px; }
+            body { padding: 1.1rem 12px 24px; }
             .glass-card { border-radius: 18px; }
             .mobile-single-column { grid-template-columns: minmax(0, 1fr) !important; }
             .mobile-tab { padding-left: 8px; padding-right: 8px; font-size: 14px; white-space: nowrap; }
             .brand-logo { height: 48px; }
             .brand-lockup--fallback .brand-logo { width: 42px; height: 42px; border-radius: 11px; }
             .brand-wordmark { font-size: 1.15rem; }
-            .hero-copy { padding: 1.15rem 1.15rem 1.35rem; }
+            header { margin-bottom: 0.75rem; }
+            .mobile-top-cta { margin-bottom: 0.55rem; }
+            #brand-hero { margin-bottom: 1.25rem; }
+            .hero-copy { padding: 0.85rem 1rem 0.95rem; }
             .hero-eyebrow,
             .hero-story,
             .hero-divider { display: none; }
-            .hero-subtitle { font-size: 0.92rem; line-height: 1.55; margin-bottom: 0.65rem; }
-            .hero-title { font-size: 2rem; line-height: 1.15; margin-bottom: 0.85rem; }
+            .hero-subtitle { font-size: 0.88rem; line-height: 1.45; margin-bottom: 0.45rem; }
+            .hero-title { font-size: 1.7rem; line-height: 1.08; margin-bottom: 0.45rem; }
             .hero-photo-caption { display: none; }
+            .hero-copy .flex.flex-wrap { font-size: 0.75rem; gap: 0.35rem 0.85rem; }
             .booking-form-card { padding: 1.25rem; }
             .takeout-row { flex-wrap: wrap; }
             .takeout-stepper { margin-left: auto; }
@@ -591,6 +608,8 @@
             #booking-notice,
             #location-section,
             section[aria-labelledby="visit-title"] { padding: 1.5rem; }
+            #booking-notice { min-width: 0; }
+            #booking-notice > * { min-width: 0; }
             .map-frame { height: 300px; }
         }
     </style>
@@ -622,7 +641,7 @@
         <section id="brand-hero" class="hero-shell glass-card mb-8" aria-labelledby="brand-title">
             <div class="hero-copy">
                 <p class="hero-eyebrow mb-5">TAICHUNG · WAIPU · RESERVATION ONLY</p>
-                <h1 id="brand-title" class="hero-title brand-font text-5xl sm:text-6xl md:text-[3.25rem] lg:text-7xl leading-tight mb-5">水美土雞城</h1>
+                <h1 id="brand-title" class="hero-title brand-font text-5xl sm:text-6xl md:text-[2.85rem] lg:text-6xl xl:text-7xl leading-tight mb-5">水美土雞城</h1>
                 <nav aria-label="快速預約" class="hero-booking-cta hidden md:grid grid-cols-2 gap-3 max-w-xl mb-5">
                     <a href="#booking-section" onclick="switchMode('dining')" class="quick-action hero-primary">
                         內用訂位
@@ -649,22 +668,22 @@
         </section>
 
         <!-- 預約須知 -->
-        <section id="booking-notice" class="glass-card p-6 md:p-8 mb-8 grid grid-cols-1 md:grid-cols-3 gap-6 items-center" aria-labelledby="booking-notice-title">
-            <div class="md:col-span-2">
+        <section id="booking-notice" class="glass-card p-6 md:p-8 mb-8 grid grid-cols-1 lg:grid-cols-3 gap-6 items-center" aria-labelledby="booking-notice-title">
+            <div class="lg:col-span-2 min-w-0">
                 <p class="section-kicker mb-2">CONTACT</p>
                 <h2 id="booking-notice-title" class="brand-font text-2xl mb-3 flex items-center text-stone-800">
                     聯絡本店
                 </h2>
-                <p class="text-sm text-stone-600 leading-7">送出後資料會寫入訂位表並保留座位；本店會再電話確認細節。價位、烤雞、兒童與低消見訂位表單，或<a href="faq.html" class="contact-link">常見問題</a>。</p>
+                <p class="text-sm text-stone-600 leading-7">電話、LINE 與社群如下。價位、烤雞、兒童與低消見訂位表單或<a href="faq.html" class="contact-link">常見問題</a>。</p>
             </div>
             
-            <div class="bg-stone-50 p-6 rounded-2xl border border-stone-100 text-center md:text-left">
+            <div class="bg-stone-50 p-6 rounded-2xl border border-stone-100 text-center lg:text-left min-w-0">
                 <h3 class="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">歡迎預訂及詢問</h3>
                 <div class="space-y-3 text-sm">
-                    <div class="flex items-center justify-center md:justify-start">
+                    <div class="flex flex-wrap items-center justify-center lg:justify-start">
                         <span class="mr-2 text-lg">📞</span> 市話：<a href="tel:0426887895" class="contact-link ml-1">04-26887895</a>
                     </div>
-                    <div class="flex items-center justify-center md:justify-start">
+                    <div class="flex flex-wrap items-center justify-center lg:justify-start">
                         <span class="mr-2 text-lg">📱</span> 手機：<a href="tel:0912623297" class="contact-link ml-1">0912-623297</a>
                     </div>
                     <p class="pt-2 text-xs text-stone-500 space-y-1">
@@ -876,14 +895,13 @@
                     </fieldset>
 
                     <div id="largePartyPanel" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 leading-7">
-                        <p class="font-bold">大型聚餐請先聯繫本店，不要只填 1–3 桌。</p>
-                        <p class="mt-1">超過 3 桌、特殊場地或客製流程，請先來電或 LINE，我們再依人數安排。</p>
+                        <p class="font-bold">超過 3 桌或有特殊需求，請填預估桌數，並來電或 LINE。</p>
+                        <p class="mt-1">送出後會寫入訂位表並保留座位；本店會再電話確認人數、場地與菜色。</p>
                         <p class="mt-2">
                             市話 <a href="tel:0426887895" class="contact-link">04-2688-7895</a>
                             <span class="mx-1 text-amber-400">·</span>
                             LINE <a href="https://line.me/R/ti/p/@xwg4507a" target="_blank" rel="noopener noreferrer" class="contact-link">@xwg4507a</a>
                         </p>
-                        <p class="mt-2 text-xs text-amber-900/80">也可先留下聯絡與日期送出，備註會標示【大型聚餐】；場地仍以電話確認為準。</p>
                     </div>
 
                     <div id="planPanel" class="hidden space-y-2">
@@ -940,6 +958,7 @@
                             </div>
                         </div>
                         <p id="tablesHint" class="text-[11px] leading-5 text-stone-500">桌數用來估算烤雞與場地。每桌／每方案原則含烤雞一隻，兩桌原則兩隻。</p>
+                        <p id="banquetSummary" class="hidden text-sm text-stone-800 leading-6 font-medium" aria-live="polite"></p>
 
                         <fieldset>
                             <legend class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">常見需求（可複選）</legend>
@@ -1161,7 +1180,7 @@
                 <h3 id="receiptTitle" class="font-bold text-stone-800">預約申請已收到</h3>
                 <pre id="receiptContent" class="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed font-sans text-stone-700"></pre>
                 <button type="button" id="saveReceiptBtn" class="mt-4 rounded-xl bg-[#291e16] px-5 py-3 font-bold text-white">下載編號與摘要</button>
-                <p class="mt-3 text-xs leading-relaxed text-stone-500">資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。請下載或截圖保存訂單編號，線上取消時需要。若要改期、改人數或沒有編號，請用姓名、電話與原訂日期直接電話或 LINE，不必先取消再重訂。</p>
+                <p id="receiptFollowup" class="mt-3 text-xs leading-relaxed text-stone-500">資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。請下載或截圖保存訂單編號，線上取消時需要。若要改期、改人數或沒有編號，請用姓名、電話與原訂日期直接電話或 LINE，不必先取消再重訂。</p>
             </section>
         </div>
 
@@ -1270,7 +1289,7 @@
                 tablesInput.max = 20;
                 if (!tablesInput.value || parseInt(tablesInput.value, 10) < 4) tablesInput.value = 4;
                 tablesLabel.textContent = '預估桌數（4 桌以上）';
-                tablesHint.textContent = '大型聚餐請填預估桌數，並請同時來電或 LINE，不要只靠 1–3 桌選單。';
+                tablesHint.textContent = '請填預估桌數，並來電或 LINE。送出後即保留座位；電話確認人數、場地與菜色。';
             } else if (type === 'casual') {
                 tablesInput.min = 1;
                 tablesInput.max = 3;
@@ -1285,6 +1304,27 @@
                 tablesHint.textContent = '菜量依實際人數安排。桌數用來估算烤雞（每桌原則一隻）。超過 3 桌請改選大型聚餐。';
             }
             syncDiningPeople();
+            updateBanquetSummary();
+        }
+
+        function updateBanquetSummary() {
+            const el = document.getElementById('banquetSummary');
+            if (!el) return;
+            const type = selectedRadio('partyType');
+            const plan = selectedRadio('diningPlan');
+            const tables = Math.max(0, parseInt(document.getElementById('tables').value, 10) || 0);
+            const extra = Math.max(0, parseInt(document.getElementById('extraChicken').value, 10) || 0);
+            const extraPart = extra ? `；另加購${extra}隻${extra * 1000}元` : '';
+            let text = '';
+            if (type === 'banquet' && plan && tables) {
+                text = `${plan}元×${tables}桌，原則含烤雞${tables}隻${extraPart}`;
+            } else if (type === 'casual' && tables) {
+                text = `散客，${tables}桌，原則含烤雞1隻${extraPart}`;
+            } else if (type === 'large' && tables) {
+                text = `大型聚餐，預估${tables}桌；人數、場地與菜色以電話確認${extraPart}`;
+            }
+            el.textContent = text;
+            el.classList.toggle('hidden', !text);
         }
 
         function planCode(partyType, plan, adults) {
@@ -1313,7 +1353,7 @@
             } else if (partyType === 'casual') {
                 lines.push(`用餐類型：散客｜方案代碼：${code}｜人頭NT$500｜原則含烤雞一隻`);
             } else if (partyType === 'large') {
-                lines.push(`用餐類型：大型聚餐｜方案代碼：${code}｜請回電確認場地（勿僅以1–3桌計）`);
+                lines.push(`用餐類型：大型聚餐｜方案代碼：${code}｜請回電確認人數、場地與菜色`);
             }
 
             lines.push(`成人${counts.adults} 幼兒園及以下${counts.kidsKinder} 國小及以上${counts.kidsElem}｜合計${counts.total}人｜桌數${tables}`);
@@ -1380,6 +1420,9 @@
         ['adults', 'kidsKinder', 'kidsElem'].forEach((id) => {
             document.getElementById(id).addEventListener('input', syncDiningPeople);
         });
+        ['tables', 'extraChicken'].forEach((id) => {
+            document.getElementById(id).addEventListener('input', updateBanquetSummary);
+        });
         document.getElementById('takeoutFields').addEventListener('click', (e) => {
             const btn = e.target.closest('[data-step]');
             if (!btn) return;
@@ -1401,7 +1444,15 @@
         }
 
         const receivedTitle = '預約申請已收到';
-        const receivedBody = '資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。';
+        const diningSubmitNotice = '送出後資料會寫入訂位表並保留座位；本店會再電話確認細節，請保持電話暢通。午餐需前一日、晚餐需當日 13:00 前完成線上預訂。';
+        const takeoutSubmitNotice = '送出後，本店會再來電確認品項、數量與取餐細節，請保持電話暢通。午餐需前一日、晚餐需當日 13:00 前完成線上預訂。';
+        const diningReceivedBody = '資料已寫入訂位表並保留座位。本店會再電話確認細節，請保持電話暢通。';
+        const takeoutReceivedBody = '送出後，本店會再來電確認品項、數量與取餐細節，請保持電話暢通。';
+        const receiptExtra = '請下載或截圖保存訂單編號，線上取消時需要。若要改期、改人數或沒有編號，請用姓名、電話與原訂日期直接電話或 LINE，不必先取消再重訂。';
+
+        function receivedBodyFor(type) {
+            return type === 'takeout' ? takeoutReceivedBody : diningReceivedBody;
+        }
 
         function guestFacingBackendMessage(message) {
             if (typeof message !== 'string' || !message.trim()) return '';
@@ -1413,9 +1464,12 @@
             const details = data.type === 'takeout'
                 ? `送出品項：\n${data.orderItems.trim()}`
                 : `送出人數：${data.people}\n送出桌數：${data.tables}`;
+            const holdNote = receivedBodyFor(data.type);
+            const followup = document.getElementById('receiptFollowup');
+            if (followup) followup.textContent = holdNote + receiptExtra;
             receiptText = [
                 '水美土雞城｜' + receivedTitle,
-                receivedBody,
+                holdNote,
                 '郵件／畫面上的「已收到」是收件通知，細節以電話確認為準。',
                 `訂單編號：${orderId}`,
                 `申請類型：${data.type === 'takeout' ? '外帶' : '內用'}`,
@@ -1553,7 +1607,10 @@
             
             form.classList.toggle('hidden', isCancel);
             cancelForm.classList.toggle('hidden', !isCancel);
-            document.getElementById('bookingSubmitNotice').classList.toggle('hidden', isCancel);
+            const submitNotice = document.getElementById('bookingSubmitNotice');
+            submitNotice.classList.toggle('hidden', isCancel);
+            if (isTakeout) submitNotice.textContent = takeoutSubmitNotice;
+            else if (isDining) submitNotice.textContent = diningSubmitNotice;
             const formKicker = document.querySelector('#booking-section > .section-kicker');
             if (formKicker) formKicker.classList.toggle('hidden', isCancel);
             
@@ -1697,13 +1754,13 @@
                     if (!orderId) {
                         btn.innerText = '請來電確認訂單編號';
                         msg.textContent = receivedTitle + '\n'
-                            + receivedBody + '\n'
+                            + receivedBodyFor(data.type) + '\n'
                             + '系統已收到申請，但未提供訂單編號。請勿重送，請致電 04-26887895 確認。\n'
                             + emailNotice(data);
                         return;
                     }
                     msg.textContent = receivedTitle + '\n'
-                        + receivedBody + '\n'
+                        + receivedBodyFor(data.type) + '\n'
                         + guestFacingBackendMessage(res.message)
                         + emailNotice(data);
                     showReceipt(data, orderId);
