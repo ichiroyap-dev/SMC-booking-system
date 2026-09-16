@@ -58,10 +58,11 @@ assert(html.includes('填寫Email接收通知（選填）'), 'Email 收合');
 assert(html.includes('有兒童同行'), '兒童收合');
 assert(html.includes('口味與其他需求（選填）'), '口味收合');
 assert(html.includes('國小及以上約兩人折算一位大人'), '國小店規維持兩人折算一位大人');
+assert(html.includes('有人會把較小的約三位小孩算一位大人，不自動計費'), '國小份量可電話調整的軟性說明');
 assert(!html.includes('尚可討論'), '勿改成尚可討論');
-assert(!html.includes('三人折'), '表單不含三人折一位');
-assert(!html.includes('三位折'), '表單不含三位折一位');
-assert(!/3\s*位.{0,16}(大人|成人)/.test(html), '表單不含 3 孩折算例子');
+assert(!html.includes('三人折'), '表單不以三人折一位當店規標語');
+assert(!html.includes('三位折'), '表單不以三位折一位當店規標語');
+assert(!html.includes('每桌最多12'), '表單不暗示每桌硬性上限 12');
 assert(html.includes('素食為向外部店家訂購的個人套餐，每份300／500元，另計費用'), '素食外訂文案');
 assert(html.includes('script.google.com/macros'), 'booking endpoint unchanged');
 assert(/Dining extras[\s\S]*vegetarian[\s\S]*`note` only/.test(html) || html.includes('vegetarian) are written into `note` only'), '素食走備註、不擴後端欄位');
@@ -89,15 +90,17 @@ const faqNeedles = [
     '素食客人不另收桌菜加人費',
     '國小及以上約兩人折算一位大人',
     '人頭計價每人',
+    '有時可再擠 13–14 位',
+    '不是每桌人數上限',
+    '有人會把較小的約三位小孩算一位大人',
 ];
 for (const needle of faqNeedles) {
     assert(faq.includes(needle), `FAQ 缺少：${needle}`);
 }
 assert(!faq.includes('每桌最多12'), 'FAQ 不新增每桌人數上限');
 assert(!faq.includes('可再討論'), 'FAQ 國小說明不改成可再討論');
-assert(!faq.includes('三人折'), 'FAQ 不含三人折一位');
-assert(!faq.includes('三位折'), 'FAQ 不含三位折一位');
-assert(!/3\s*位.{0,16}(大人|成人)/.test(faq), 'FAQ 不含 3 孩折算例子');
+assert(!faq.includes('三人折'), 'FAQ 不以三人折一位當店規標語');
+assert(!faq.includes('三位折'), 'FAQ 不以三位折一位當店規標語');
 assert((faq.match(/同行有人吃素，可以安排嗎？/g) || []).length >= 2, 'FAQ 正文與 JSON-LD 皆有素食題');
 
 if (failures.length) {
