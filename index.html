@@ -519,6 +519,46 @@
             color: #9a3412;
             font-weight: 700;
         }
+        .form-disclose {
+            border: 1px solid rgba(94, 62, 36, 0.14);
+            border-radius: 14px;
+            background: #fafaf9;
+            padding: 0.75rem 0.95rem;
+        }
+        .form-disclose > summary {
+            cursor: pointer;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            font-size: 13px;
+            font-weight: 700;
+            color: #44403c;
+            min-height: 28px;
+        }
+        .form-disclose > summary::-webkit-details-marker { display: none; }
+        .form-disclose > summary .disclose-hint {
+            font-weight: 500;
+            color: #9a3412;
+            margin-left: 0.15rem;
+        }
+        .form-disclose > summary::after {
+            content: '+';
+            flex-shrink: 0;
+            width: 1.25rem;
+            text-align: center;
+            color: #78716c;
+            font-weight: 700;
+        }
+        .form-disclose[open] > summary::after { content: '−'; }
+        .form-disclose .disclose-body { margin-top: 0.75rem; }
+        .veg-panel {
+            border: 1px solid rgba(94, 62, 36, 0.14);
+            border-radius: 14px;
+            background: #fff;
+            padding: 0.9rem 1rem;
+        }
         .takeout-row {
             display: flex;
             justify-content: space-between;
@@ -876,11 +916,11 @@
                 <div id="diningFields" class="space-y-4 transition-all">
                     <fieldset>
                         <legend class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">用餐類型 <span class="text-orange-600">*</span></legend>
-                        <p class="mt-1.5 mb-2 text-[11px] leading-5 text-stone-500">請先選擇散客、桌菜或大型聚餐。菜量依實際人數安排。</p>
+                        <p class="mt-1.5 mb-2 text-[11px] leading-5 text-stone-500">請先選擇人頭計價、桌菜或大型聚餐。菜量依實際人數安排。</p>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-2" role="radiogroup" aria-label="用餐類型">
                             <label class="choice-card">
                                 <input type="radio" name="partyType" value="casual" class="sr-only">
-                                <span class="choice-title">散客</span>
+                                <span class="choice-title">人頭計價</span>
                                 <span class="choice-desc">人頭 NT$500　原則每桌含烤雞一隻<br>低消每桌 NT$2,000</span>
                             </label>
                             <label class="choice-card">
@@ -925,52 +965,80 @@
                                 <span class="choice-desc">菜量依人數安排　原則含雞一隻</span>
                             </label>
                         </div>
-                        <p class="text-[11px] leading-5 text-stone-500">菜量依實際人數安排。</p>
+                        <p id="banquetExtraPersonHint" class="text-[11px] leading-5 text-stone-600">超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。</p>
                     </div>
 
                     <div id="diningDetails" class="hidden space-y-4">
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div>
-                                <label for="adults" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">成人 <span class="text-orange-600">*</span></label>
-                                <input type="number" id="adults" min="0" inputmode="numeric" placeholder="請填" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
-                            </div>
-                            <div>
-                                <label for="kidsKinder" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">幼兒園及以下</label>
-                                <input type="number" id="kidsKinder" min="0" value="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
-                                <p class="mt-1 text-[11px] text-stone-500">不收費，可提供兒童椅</p>
-                            </div>
-                            <div>
-                                <label for="kidsElem" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">國小及以上</label>
-                                <input type="number" id="kidsElem" min="0" value="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
-                                <p class="mt-1 text-[11px] text-stone-500">份量與收費約 2 位＝1 成人，可再討論</p>
-                            </div>
+                        <div>
+                            <label for="adults" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">成人 <span class="text-orange-600">*</span></label>
+                            <input type="number" id="adults" min="0" inputmode="numeric" placeholder="請填" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
                         </div>
+
+                        <details class="form-disclose" id="kidsPanel">
+                            <summary>有兒童同行<span id="kidsDiscloseHint" class="disclose-hint"></span></summary>
+                            <div class="disclose-body grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="kidsKinder" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">幼兒園及以下</label>
+                                    <input type="number" id="kidsKinder" min="0" value="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
+                                    <p class="mt-1 text-[11px] text-stone-500">不收費，可提供兒童椅；兒童計入實際到店人數。</p>
+                                </div>
+                                <div>
+                                    <label for="kidsElem" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">國小及以上</label>
+                                    <input type="number" id="kidsElem" min="0" value="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
+                                    <p class="mt-1 text-[11px] text-stone-500">國小及以上約兩人折算一位大人。細節由電話確認。</p>
+                                </div>
+                            </div>
+                        </details>
+
                         <p class="text-sm text-stone-700">合計人數 <b id="peopleDisplay" aria-live="polite">—</b></p>
                         <input type="hidden" id="people" value="">
 
-                        <div class="mobile-single-column grid grid-cols-2 gap-5">
-                            <div>
-                                <label for="tables" id="tablesLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預估桌數</label>
-                                <input type="number" id="tables" value="1" min="1" max="3" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
+                        <div id="vegPanel" class="veg-panel space-y-2">
+                            <label class="flex items-start gap-3 text-sm text-stone-700 cursor-pointer">
+                                <input type="checkbox" id="hasVegetarian" class="mt-0.5 h-5 w-5 flex-shrink-0 accent-orange-600">
+                                <span class="font-bold">有素食需求</span>
+                            </label>
+                            <div id="vegCountWrap" class="hidden">
+                                <label for="vegetarianCount" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">素食人數</label>
+                                <input type="number" id="vegetarianCount" min="1" inputmode="numeric" placeholder="請填" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
+                                <p class="mt-1 text-[11px] text-stone-500">已含在上方用餐人數，請勿重複加總。</p>
                             </div>
-                            <div>
-                                <label for="extraChicken" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">加購烤雞</label>
+                            <p class="text-[11px] leading-5 text-stone-600">素食為向外部店家訂購的個人套餐，每份300／500元，另計費用；份數、價位及飲食需求由電話確認。素食客人不另收桌菜加人費。</p>
+                            <p class="text-[11px] leading-5 text-stone-500">勾選僅表示有需求，不代表餐點已安排完成。送出後仍會保留座位，細節由電話確認。</p>
+                        </div>
+
+                        <div>
+                            <label for="tables" id="tablesLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">預估桌數</label>
+                            <input type="number" id="tables" value="1" min="1" max="3" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
+                        </div>
+                        <p id="tablesHint" class="text-[11px] leading-5 text-stone-500">請填預估桌數。桌數用來估算烤雞與場地；每桌／每方案原則含烤雞一隻。桌數不依人數自動決定。</p>
+
+                        <details class="form-disclose" id="extraChickenPanel">
+                            <summary>加購烤雞（選填）<span id="chickenDiscloseHint" class="disclose-hint"></span></summary>
+                            <div class="disclose-body">
+                                <label for="extraChicken" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">加購隻數</label>
                                 <input type="number" id="extraChicken" value="0" min="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
                                 <p class="mt-1 text-[11px] text-stone-500">含雞以外的加購；第2隻起每隻 NT$1,000</p>
                             </div>
-                        </div>
-                        <p id="tablesHint" class="text-[11px] leading-5 text-stone-500">請填預估桌數。桌數用來估算烤雞與場地；每桌／每方案原則含烤雞一隻。</p>
+                        </details>
+
                         <p id="banquetSummary" class="hidden text-sm text-stone-800 leading-6 font-medium" aria-live="polite" data-tables="" data-included-chicken="" data-extra-chicken=""></p>
 
-                        <fieldset>
-                            <legend class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">常見需求（可複選）</legend>
-                            <div id="commonNeeds" class="mt-2 flex flex-wrap gap-2">
-                                <label class="need-chip"><input type="checkbox" value="不吃辣" class="accent-orange-600">不吃辣</label>
-                                <label class="need-chip"><input type="checkbox" value="不喜香茅" class="accent-orange-600">不喜香茅</label>
-                                <label class="need-chip"><input type="checkbox" value="需要兒童椅" class="accent-orange-600">需要兒童椅</label>
-                                <label class="need-chip"><input type="checkbox" value="口味清淡" class="accent-orange-600">口味清淡</label>
+                        <details class="form-disclose" id="needsPanel">
+                            <summary>口味與其他需求（選填）<span id="needsDiscloseHint" class="disclose-hint"></span></summary>
+                            <div class="disclose-body space-y-3">
+                                <fieldset>
+                                    <legend class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">常見需求（可複選）</legend>
+                                    <div id="commonNeeds" class="mt-2 flex flex-wrap gap-2">
+                                        <label class="need-chip"><input type="checkbox" value="不吃辣" class="accent-orange-600">不吃辣</label>
+                                        <label class="need-chip"><input type="checkbox" value="不喜香茅" class="accent-orange-600">不喜香茅</label>
+                                        <label class="need-chip"><input type="checkbox" value="需要兒童椅" class="accent-orange-600">需要兒童椅</label>
+                                        <label class="need-chip"><input type="checkbox" value="口味清淡" class="accent-orange-600">口味清淡</label>
+                                    </div>
+                                </fieldset>
+                                <div id="diningNoteSlot"></div>
                             </div>
-                        </fieldset>
+                        </details>
                     </div>
                 </div>
 
@@ -1117,15 +1185,20 @@
                     </div>
                 </div>
 
-                <div>
-                    <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
-                    <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
-                    <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
-                </div>
+                <details class="form-disclose" id="emailPanel">
+                    <summary>填寫Email接收通知（選填）<span id="emailDiscloseHint" class="disclose-hint"></span></summary>
+                    <div class="disclose-body">
+                        <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
+                        <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
+                        <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
+                    </div>
+                </details>
 
-                <div>
-                    <label for="note" id="noteLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">其他備註（選填）</label>
-                    <textarea id="note" rows="2" placeholder="有其他需要再填；常見需求可直接勾選上方選項。" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition"></textarea>
+                <div id="noteHome">
+                    <div id="noteFieldWrap">
+                        <label for="note" id="noteLabel" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">其他備註（選填）</label>
+                        <textarea id="note" rows="2" placeholder="有其他需要再填；常見需求可直接勾選上方選項。" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition"></textarea>
+                    </div>
                 </div>
 
                 <label class="flex items-start gap-3 text-sm text-stone-600 leading-relaxed cursor-pointer">
@@ -1233,9 +1306,11 @@
 
     <script>
         // Submit payload stays backend-compatible: action/type/name/phone/email/people/tables/date/time/note/orderItems.
-        // Dining extras (plan, adults/kids, add-on chicken, common needs) are written into `note` only.
+        // Dining extras (plan, adults/kids, add-on chicken, common needs, vegetarian) are written into `note` only.
         // Compact aliases in note: 桌菜價位：4500｜方案代碼：4.5k2a ；散客4a ；大型Na.
-        // people = adult + kindergarten + elementary totals. tables = 1–3 or ≥4 for 大型聚餐.
+        // Display label「人頭計價」= backend partyType `casual` (data/plan codes unchanged).
+        // people = adult + kindergarten + elementary totals. Vegetarian count is a subset; do not add it again.
+        // tables = 1–3 or ≥4 for 大型聚餐; never auto-set from headcount.
         // Takeout orderItems still uses existing data-item labels (桶仔雞, 外帶桌菜(4500), …).
         const scriptURL = 'https://script.google.com/macros/s/AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q/exec'; 
 
@@ -1304,6 +1379,8 @@
             }
             if (tablesHint && !type) tablesHint.textContent = diningHintText('', 0);
             syncDiningPeople();
+            syncVegetarianUI();
+            placeNoteField();
             updateBanquetSummary();
         }
 
@@ -1327,23 +1404,91 @@
             return Math.max(0, parseInt(document.getElementById('extraChicken').value, 10) || 0);
         }
 
+        function extraChickenPart(extra) {
+            return extra ? `；另加購${extra}隻${extra * 1000}元` : '';
+        }
+
+        function banquetSummaryText(plan, tables, included, extra) {
+            return `桌菜基本費用：${plan}元×${tables}桌；原則含烤雞${included}隻${extraChickenPart(extra)}。加人及素食套餐費用另計，由電話確認。`;
+        }
+
+        function casualSummaryText(tables, included, extra) {
+            return `人頭計價，${tables}桌，原則含烤雞${included}隻${extraChickenPart(extra)}`;
+        }
+
+        function largeSummaryText(tables, extra) {
+            return `大型聚餐，預估${tables}桌${extraChickenPart(extra)}`;
+        }
+
+        function vegetarianNoteLine(hasVegetarian, count) {
+            if (!hasVegetarian) return '';
+            const n = Math.max(0, parseInt(count, 10) || 0);
+            return `素食需求：是｜素食人數：${n}｜外訂個人套餐每份300／500元另計；份數、價位及飲食需求由電話確認（已含在合計人數，勿重複加總）`;
+        }
+
+        function discloseHint(kind, count) {
+            const n = Math.max(0, parseInt(count, 10) || 0);
+            if (!n) return '';
+            if (kind === '兒童') return `（兒童${n}位）`;
+            if (kind === '烤雞') return `（烤雞${n}隻）`;
+            return '';
+        }
+
         function diningHintText(type, included) {
             if (type === 'large') {
-                return '請填預估桌數（4 桌以上）。桌數用來估算場地與烤雞。';
+                return '請填預估桌數（4 桌以上）。桌數用來估算場地與烤雞。桌數不依人數自動決定。';
             }
             if (type === 'casual') {
                 const chicken = included
                     ? `目前原則含烤雞${included}隻（每桌一隻）`
                     : '原則每桌含烤雞一隻';
-                return `請填預估桌數（1–3 桌）。人數為主；桌數用來估算場地與烤雞。${chicken}，低消每桌 NT$2,000。`;
+                return `請填預估桌數（1–3 桌）。人數為主；桌數用來估算場地與烤雞，不依人數自動決定。${chicken}，低消每桌 NT$2,000。`;
             }
             if (type === 'banquet') {
                 const chicken = included
                     ? `目前原則含烤雞${included}隻（每桌一隻）`
                     : '每桌原則一隻';
-                return `請填預估桌數（1–3 桌）。桌數用來估算烤雞。${chicken}。超過 3 桌請改選大型聚餐。`;
+                return `請填預估桌數（1–3 桌）。桌數用來估算烤雞，不依人數自動決定。${chicken}。超過 3 桌請改選大型聚餐。`;
             }
-            return '請填預估桌數。桌數用來估算烤雞與場地；每桌／每方案原則含烤雞一隻。';
+            return '請填預估桌數。桌數用來估算烤雞與場地；每桌／每方案原則含烤雞一隻。桌數不依人數自動決定。';
+        }
+
+        function hasVegetarianNeed() {
+            const el = document.getElementById('hasVegetarian');
+            return !!(el && el.checked);
+        }
+
+        function vegetarianCountValue() {
+            return Math.max(0, parseInt(document.getElementById('vegetarianCount').value, 10) || 0);
+        }
+
+        function syncVegetarianUI() {
+            const wrap = document.getElementById('vegCountWrap');
+            if (wrap) wrap.classList.toggle('hidden', !hasVegetarianNeed());
+        }
+
+        function updateDiscloseHints() {
+            const counts = syncDiningPeople();
+            const kidsHint = document.getElementById('kidsDiscloseHint');
+            const chickenHint = document.getElementById('chickenDiscloseHint');
+            const emailHint = document.getElementById('emailDiscloseHint');
+            const needsHint = document.getElementById('needsDiscloseHint');
+            if (kidsHint) kidsHint.textContent = discloseHint('兒童', counts.kidsKinder + counts.kidsElem);
+            if (chickenHint) chickenHint.textContent = discloseHint('烤雞', extraChickenCount());
+            const emailVal = (document.getElementById('email') && document.getElementById('email').value.trim()) || '';
+            if (emailHint) emailHint.textContent = emailVal ? '（已填）' : '';
+            const needCount = document.querySelectorAll('#commonNeeds input:checked').length;
+            const noteFilled = (document.getElementById('note') && document.getElementById('note').value.trim()) || '';
+            if (needsHint) needsHint.textContent = (needCount || noteFilled) ? '（已填）' : '';
+        }
+
+        function placeNoteField() {
+            const wrap = document.getElementById('noteFieldWrap');
+            const diningSlot = document.getElementById('diningNoteSlot');
+            const home = document.getElementById('noteHome');
+            if (!wrap || !diningSlot || !home) return;
+            if (currentMode === 'dining') diningSlot.appendChild(wrap);
+            else home.appendChild(wrap);
         }
 
         function updateBanquetSummary() {
@@ -1353,15 +1498,14 @@
             const plan = selectedRadio('diningPlan');
             const tables = estimatedTableCount();
             const extra = extraChickenCount();
-            const extraPart = extra ? `；另加購${extra}隻${extra * 1000}元` : '';
             const included = includedChickenCount(type, tables);
             let text = '';
             if (type === 'banquet' && plan && tables) {
-                text = `${plan}元×${tables}桌，原則含烤雞${included}隻${extraPart}`;
+                text = banquetSummaryText(plan, tables, included, extra);
             } else if (type === 'casual' && tables) {
-                text = `散客，${tables}桌，原則含烤雞${included}隻${extraPart}`;
+                text = casualSummaryText(tables, included, extra);
             } else if (type === 'large' && tables) {
-                text = `大型聚餐，預估${tables}桌${extraPart}`;
+                text = largeSummaryText(tables, extra);
             }
             el.textContent = text;
             el.dataset.tables = String(tables);
@@ -1371,6 +1515,7 @@
 
             const tablesHint = document.getElementById('tablesHint');
             if (tablesHint && type) tablesHint.textContent = diningHintText(type, included);
+            updateDiscloseHints();
         }
 
         function planCode(partyType, plan, adults) {
@@ -1401,6 +1546,8 @@
             }
 
             lines.push(`成人${counts.adults} 幼兒園及以下${counts.kidsKinder} 國小及以上${counts.kidsElem}｜合計${counts.total}人｜桌數${tables}`);
+            const vegLine = vegetarianNoteLine(hasVegetarianNeed(), vegetarianCountValue());
+            if (vegLine) lines.push(vegLine);
             if (includedChicken) lines.push(`原則含烤雞${includedChicken}隻（每桌／每方案一隻）`);
             if (extraChicken) lines.push(`加購烤雞：${extraChicken}隻（第2隻起 NT$1000）`);
             if (needs.length) lines.push(`常見需求：${needs.join('、')}`);
@@ -1460,15 +1607,26 @@
 
         document.getElementById('diningFields').addEventListener('change', (e) => {
             if (e.target.name === 'partyType' || e.target.name === 'diningPlan') updateDiningUI();
+            if (e.target.id === 'hasVegetarian') {
+                syncVegetarianUI();
+                updateDiscloseHints();
+            }
+            if (e.target.closest('#commonNeeds')) updateDiscloseHints();
         });
         ['adults', 'kidsKinder', 'kidsElem'].forEach((id) => {
-            document.getElementById(id).addEventListener('input', syncDiningPeople);
+            document.getElementById(id).addEventListener('input', () => {
+                syncDiningPeople();
+                updateDiscloseHints();
+            });
         });
         ['tables', 'extraChicken'].forEach((id) => {
             const node = document.getElementById(id);
             node.addEventListener('input', updateBanquetSummary);
             node.addEventListener('change', updateBanquetSummary);
         });
+        document.getElementById('vegetarianCount').addEventListener('input', updateDiscloseHints);
+        document.getElementById('email').addEventListener('input', updateDiscloseHints);
+        document.getElementById('note').addEventListener('input', updateDiscloseHints);
         document.getElementById('takeoutFields').addEventListener('click', (e) => {
             const btn = e.target.closest('[data-step]');
             if (!btn) return;
@@ -1675,6 +1833,7 @@
                 
                 document.getElementById('diningFields').classList.toggle('hidden', !isDining);
                 document.getElementById('takeoutFields').classList.toggle('hidden', isDining);
+                placeNoteField();
             }
             
             const tabDining = document.getElementById('tabDining');
@@ -1723,7 +1882,7 @@
             if (currentMode === 'dining') {
                 const partyType = selectedRadio('partyType');
                 if (!partyType) {
-                    alert('請先選擇用餐類型：散客、桌菜或大型聚餐。');
+                    alert('請先選擇用餐類型：人頭計價、桌菜或大型聚餐。');
                     return;
                 }
                 if (partyType === 'banquet' && !selectedRadio('diningPlan')) {
@@ -1735,9 +1894,13 @@
                     alert('請填寫成人或兒童人數。');
                     return;
                 }
+                if (hasVegetarianNeed() && vegetarianCountValue() < 1) {
+                    alert('請填寫素食人數。素食人數已含在上方用餐人數，請勿重複加總。');
+                    return;
+                }
                 const tableCount = parseInt(document.getElementById('tables').value, 10) || 0;
                 if (partyType !== 'large' && (tableCount < 1 || tableCount > 3)) {
-                    alert('散客與桌菜請填 1–3 桌。超過 3 桌請改選大型聚餐，並先來電或 LINE。');
+                    alert('人頭計價與桌菜請填 1–3 桌。超過 3 桌請改選大型聚餐，並先來電或 LINE。');
                     return;
                 }
                 if (partyType === 'large' && tableCount < 4) {
@@ -1819,6 +1982,7 @@
                     document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
                     document.getElementById('tables').value = '1';
                     document.getElementById('extraChicken').value = '0';
+                    document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
                     updateDiningUI();
                     updateTakeoutSummary();
                     updateTimeConstraint();

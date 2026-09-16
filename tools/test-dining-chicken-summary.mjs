@@ -41,7 +41,7 @@ function extraPart(extra) {
 
 function expectedCasualSummary(tables, extra) {
     const included = includedChickenCount('casual', tables);
-    return `散客，${tables}桌，原則含烤雞${included}隻${extraPart(extra)}`;
+    return `人頭計價，${tables}桌，原則含烤雞${included}隻${extraPart(extra)}`;
 }
 
 function assert(cond, message) {
