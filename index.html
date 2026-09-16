@@ -960,7 +960,7 @@
                             </div>
                         </div>
                         <p id="tablesHint" class="text-[11px] leading-5 text-stone-500">請填預估桌數。桌數用來估算烤雞與場地；每桌／每方案原則含烤雞一隻。</p>
-                        <p id="banquetSummary" class="hidden text-sm text-stone-800 leading-6 font-medium" aria-live="polite"></p>
+                        <p id="banquetSummary" class="hidden text-sm text-stone-800 leading-6 font-medium" aria-live="polite" data-tables="" data-included-chicken="" data-extra-chicken=""></p>
 
                         <fieldset>
                             <legend class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">常見需求（可複選）</legend>
@@ -1291,31 +1291,59 @@
                 tablesInput.max = 20;
                 if (!tablesInput.value || parseInt(tablesInput.value, 10) < 4) tablesInput.value = 4;
                 tablesLabel.textContent = '預估桌數（4 桌以上）';
-                tablesHint.textContent = '請填預估桌數（4 桌以上）。桌數用來估算場地與烤雞。';
             } else if (type === 'casual') {
                 tablesInput.min = 1;
                 tablesInput.max = 3;
                 if (!tablesInput.value || parseInt(tablesInput.value, 10) > 3 || parseInt(tablesInput.value, 10) < 1) tablesInput.value = 1;
                 tablesLabel.textContent = '預估桌數';
-                tablesHint.textContent = '請填預估桌數（1–3 桌）。人數為主；桌數用來估算場地與烤雞。原則每桌含烤雞一隻，低消每桌 NT$2,000。';
             } else if (type === 'banquet') {
                 tablesInput.min = 1;
                 tablesInput.max = 3;
                 if (!tablesInput.value || parseInt(tablesInput.value, 10) > 3 || parseInt(tablesInput.value, 10) < 1) tablesInput.value = 1;
                 tablesLabel.textContent = '預估桌數（1–3 桌）';
-                tablesHint.textContent = '請填預估桌數（1–3 桌）。桌數用來估算烤雞（每桌原則一隻）。超過 3 桌請改選大型聚餐。';
             }
+            if (tablesHint && !type) tablesHint.textContent = diningHintText('', 0);
             syncDiningPeople();
             updateBanquetSummary();
         }
 
-        function estimatedTableCount() {
-            return Math.max(0, parseInt(document.getElementById('tables').value, 10) || 0);
+        function parsePositiveInt(value) {
+            const n = parseInt(value, 10);
+            return Number.isFinite(n) && n > 0 ? n : 0;
         }
 
+        function estimatedTableCount() {
+            return parsePositiveInt(document.getElementById('tables').value);
+        }
+
+        // 散客／桌菜：原則含烤雞數 = 預估桌數（每桌／每方案一隻）。加購另計。
         function includedChickenCount(partyType, tables) {
             if (partyType !== 'banquet' && partyType !== 'casual') return 0;
-            return Math.max(1, tables || 1);
+            const n = parsePositiveInt(tables);
+            return n >= 1 ? n : 0;
+        }
+
+        function extraChickenCount() {
+            return Math.max(0, parseInt(document.getElementById('extraChicken').value, 10) || 0);
+        }
+
+        function diningHintText(type, included) {
+            if (type === 'large') {
+                return '請填預估桌數（4 桌以上）。桌數用來估算場地與烤雞。';
+            }
+            if (type === 'casual') {
+                const chicken = included
+                    ? `目前原則含烤雞${included}隻（每桌一隻）`
+                    : '原則每桌含烤雞一隻';
+                return `請填預估桌數（1–3 桌）。人數為主；桌數用來估算場地與烤雞。${chicken}，低消每桌 NT$2,000。`;
+            }
+            if (type === 'banquet') {
+                const chicken = included
+                    ? `目前原則含烤雞${included}隻（每桌一隻）`
+                    : '每桌原則一隻';
+                return `請填預估桌數（1–3 桌）。桌數用來估算烤雞。${chicken}。超過 3 桌請改選大型聚餐。`;
+            }
+            return '請填預估桌數。桌數用來估算烤雞與場地；每桌／每方案原則含烤雞一隻。';
         }
 
         function updateBanquetSummary() {
@@ -1324,7 +1352,7 @@
             const type = selectedRadio('partyType');
             const plan = selectedRadio('diningPlan');
             const tables = estimatedTableCount();
-            const extra = Math.max(0, parseInt(document.getElementById('extraChicken').value, 10) || 0);
+            const extra = extraChickenCount();
             const extraPart = extra ? `；另加購${extra}隻${extra * 1000}元` : '';
             const included = includedChickenCount(type, tables);
             let text = '';
@@ -1336,7 +1364,13 @@
                 text = `大型聚餐，預估${tables}桌${extraPart}`;
             }
             el.textContent = text;
+            el.dataset.tables = String(tables);
+            el.dataset.includedChicken = String(included);
+            el.dataset.extraChicken = String(extra);
             el.classList.toggle('hidden', !text);
+
+            const tablesHint = document.getElementById('tablesHint');
+            if (tablesHint && type) tablesHint.textContent = diningHintText(type, included);
         }
 
         function planCode(partyType, plan, adults) {
@@ -1352,7 +1386,7 @@
             const counts = syncDiningPeople();
             const tables = document.getElementById('tables').value;
             const extraChicken = Math.max(0, parseInt(document.getElementById('extraChicken').value, 10) || 0);
-            const includedChicken = includedChickenCount(partyType, parseInt(tables, 10) || 0);
+            const includedChicken = includedChickenCount(partyType, parsePositiveInt(tables));
             const needs = Array.from(document.querySelectorAll('#commonNeeds input:checked')).map((el) => el.value);
             const extra = document.getElementById('note').value.trim();
             const code = planCode(partyType, plan, counts.adults);
@@ -1431,7 +1465,9 @@
             document.getElementById(id).addEventListener('input', syncDiningPeople);
         });
         ['tables', 'extraChicken'].forEach((id) => {
-            document.getElementById(id).addEventListener('input', updateBanquetSummary);
+            const node = document.getElementById(id);
+            node.addEventListener('input', updateBanquetSummary);
+            node.addEventListener('change', updateBanquetSummary);
         });
         document.getElementById('takeoutFields').addEventListener('click', (e) => {
             const btn = e.target.closest('[data-step]');
