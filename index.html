@@ -965,7 +965,7 @@
                                 <span class="choice-desc">菜量依人數安排　原則含雞一隻</span>
                             </label>
                         </div>
-                        <p id="banquetExtraPersonHint" class="text-[11px] leading-5 text-stone-600">超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。</p>
+                        <p id="banquetExtraPersonHint" class="text-[11px] leading-5 text-stone-600">每桌超過10位成人吃桌菜時，該桌超出部分每位加收300元；兒童及素食搭配由電話確認。</p>
                     </div>
 
                     <div id="diningDetails" class="hidden space-y-4">
@@ -985,7 +985,7 @@
                                 <div>
                                     <label for="kidsElem" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">國小及以上</label>
                                     <input type="number" id="kidsElem" min="0" value="0" inputmode="numeric" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
-                                    <p class="mt-1 text-[11px] text-stone-500">國小及以上約兩人折算一位大人。細節由電話確認。</p>
+                                    <p class="mt-1 text-[11px] text-stone-500">國小及以上兒童，份量與收費約2位折算1位成人，可再討論；座位依實際人數安排。</p>
                                 </div>
                             </div>
                         </details>
@@ -998,13 +998,16 @@
                                 <input type="checkbox" id="hasVegetarian" class="mt-0.5 h-5 w-5 flex-shrink-0 accent-orange-600">
                                 <span class="font-bold">有素食需求</span>
                             </label>
+                            <p id="vegShortHint" class="text-[11px] leading-5 text-stone-600">有素食需求（套餐每份300／500元，另外計費）</p>
                             <div id="vegCountWrap" class="hidden">
                                 <label for="vegetarianCount" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">素食人數</label>
                                 <input type="number" id="vegetarianCount" min="1" inputmode="numeric" placeholder="請填" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none">
                                 <p class="mt-1 text-[11px] text-stone-500">已含在上方用餐人數，請勿重複加總。</p>
                             </div>
-                            <p class="text-[11px] leading-5 text-stone-600">素食為向外部店家訂購的個人套餐，每份300／500元，另計費用；份數、價位及飲食需求由電話確認。素食客人不另收桌菜加人費。</p>
-                            <p class="text-[11px] leading-5 text-stone-500">勾選僅表示有需求，不代表餐點已安排完成。送出後仍會保留座位，細節由電話確認。</p>
+                            <div id="vegLongCopy" class="hidden space-y-2">
+                                <p class="text-[11px] leading-5 text-stone-600">素食為向外部店家訂購的個人套餐，每份300／500元，另計費用；份數、價位及飲食需求由電話確認。素食客人不另收桌菜加人費。</p>
+                                <p class="text-[11px] leading-5 text-stone-500">勾選僅表示有需求，不代表餐點已安排完成。送出後仍會保留座位，細節由電話確認。</p>
+                            </div>
                         </div>
 
                         <div>
@@ -1463,8 +1466,13 @@
         }
 
         function syncVegetarianUI() {
+            const checked = hasVegetarianNeed();
             const wrap = document.getElementById('vegCountWrap');
-            if (wrap) wrap.classList.toggle('hidden', !hasVegetarianNeed());
+            const shortHint = document.getElementById('vegShortHint');
+            const longCopy = document.getElementById('vegLongCopy');
+            if (wrap) wrap.classList.toggle('hidden', !checked);
+            if (shortHint) shortHint.classList.toggle('hidden', checked);
+            if (longCopy) longCopy.classList.toggle('hidden', !checked);
         }
 
         function updateDiscloseHints() {
