@@ -127,7 +127,7 @@
               "name": "內用怎麼計價？",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "桌菜有 4500／5000／5500 元方案，菜量依實際人數安排。人頭計價每人 500 元。內用低消每桌 2000 元。各價位（含人頭計價）原則每桌含烤雞一隻；加購第2隻起每隻 1000 元。超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。"
+                "text": "桌菜有 4500／5000／5500 元方案，菜量依實際人數安排。人頭計價每人 500 元。內用低消每桌 2000 元。各價位（含人頭計價）原則每桌含烤雞一隻；加購第2隻起每隻 1000 元。每桌超過10位成人吃桌菜時，該桌超出部分每位加收300元；兒童及素食搭配由電話確認。"
               }
             },
             {
@@ -151,7 +151,7 @@
               "name": "兒童怎麼計費？有兒童椅嗎？",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "幼兒園及以下不收費，可提供兒童椅；兒童計入實際到店人數。國小及以上約兩人折算一位大人。細節由電話確認。"
+                "text": "幼兒園及以下不收費，可提供兒童椅；兒童計入實際到店人數。國小及以上兒童，份量與收費約2位折算1位成人，可再討論；座位依實際人數安排。"
               }
             },
             {
@@ -159,7 +159,7 @@
               "name": "桌菜加人費怎麼算？",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。4500／5000／5500 相同。例：4500 為 11 人 4800、12 人 5100；5000 為 11 人 5300、12 人 5600；5500 為 11 人 5800、12 人 6100。一桌通常約 12 位較滿，有時可再擠 13–14 位；13–14 或兒童／素食混合配置由電話確認。11／12 僅為加人費例子，不是每桌人數上限。未確認的加人與素食套餐費用另計，由電話確認。素食客人不另收該位桌菜加人費。例：10 位吃 4500 桌菜＋1 位 500 素食＝5000。素食人數已含在到店人數，勿重複加總。"
+                "text": "每桌超過10位成人吃桌菜時，該桌超出部分每位加收300元；兒童及素食搭配由電話確認。4500／5000／5500 相同。例：4500 為 11 人 4800、12 人 5100；5000 為 11 人 5300、12 人 5600；5500 為 11 人 5800、12 人 6100。每桌建議最多坐12位；特殊人數與座位配置請由電話確認。11／12 僅為加人費例子，不是每桌人數上限。未確認的加人與素食套餐費用另計，由電話確認。素食客人不另收該位桌菜加人費。例：10 位吃 4500 桌菜＋1 位 500 素食＝5000。素食人數已含在到店人數，勿重複加總。"
               }
             },
             {
@@ -227,6 +227,17 @@
             letter-spacing: 0.16em;
         }
         .contact-link { color: #c2410c; text-decoration: underline; font-weight: bold; white-space: nowrap; }
+        .contact-link--wrap {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .faq-item p {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            min-width: 0;
+            max-width: 100%;
+        }
         .footer-social-links a { color: #57534e; }
         .footer-social-links a:hover { color: #292524; }
         .skip-link {
@@ -280,6 +291,9 @@
         .brand-lockup--fallback .brand-wordmark { display: inline; }
         .faq-item {
             border-bottom: 1px solid rgba(94, 62, 36, 0.12);
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: anywhere;
         }
         .faq-item:last-child { border-bottom: 0; }
         .faq-item summary {
@@ -349,7 +363,7 @@
                 <div>
                     <details class="faq-item">
                         <summary>水美土雞城需要提前預約嗎？</summary>
-                        <p class="pb-5 text-stone-600 leading-7">需要。本店為台中外埔預約式無菜單土雞料理。內用各價位（含人頭計價）原則每桌含烤雞一隻，請先預約；未預約臨時來店可視當日接內用，但不一定有雞。可在官網<a href="./#booking-section" class="contact-link">線上申請內用訂位或外帶預約</a>，也可致電市話 <a href="tel:0426887895" class="contact-link">04-26887895</a> 或手機 <a href="tel:0912623297" class="contact-link">0912-623297</a> 詢問。</p>
+                        <p class="pb-5 text-stone-600 leading-7">需要。本店為台中外埔預約式無菜單土雞料理。內用各價位（含人頭計價）原則每桌含烤雞一隻，請先預約；未預約臨時來店可視當日接內用，但不一定有雞。可在官網<a href="./#booking-section" class="contact-link contact-link--wrap">線上申請內用訂位或外帶預約</a>，也可致電市話 <a href="tel:0426887895" class="contact-link">04-26887895</a> 或手機 <a href="tel:0912623297" class="contact-link">0912-623297</a> 詢問。</p>
                     </details>
                     <details class="faq-item">
                         <summary>線上預訂要多久前完成？</summary>
@@ -389,17 +403,17 @@
                 <div>
                     <details class="faq-item">
                         <summary>內用怎麼計價？</summary>
-                        <p class="pb-5 text-stone-600 leading-7">桌菜有 <b>$4500／$5000／$5500</b> 方案，菜量依實際人數安排。人頭計價每人 <b>$500</b>。內用低消每桌 NT$2,000。各價位（含人頭計價）原則每桌含烤雞一隻；加購第2隻起每隻 NT$1,000。超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。</p>
+                        <p class="pb-5 text-stone-600 leading-7">桌菜有 <b>$4500／$5000／$5500</b> 方案，菜量依實際人數安排。人頭計價每人 <b>$500</b>。內用低消每桌 NT$2,000。各價位（含人頭計價）原則每桌含烤雞一隻；加購第2隻起每隻 NT$1,000。每桌超過10位成人吃桌菜時，該桌超出部分每位加收300元；兒童及素食搭配由電話確認。</p>
                     </details>
                     <details class="faq-item">
                         <summary>桌菜加人費怎麼算？</summary>
-                        <p class="pb-5 text-stone-600 leading-7">超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。4500／5000／5500 相同。</p>
+                        <p class="pb-5 text-stone-600 leading-7">每桌超過10位成人吃桌菜時，該桌超出部分每位加收300元；兒童及素食搭配由電話確認。4500／5000／5500 相同。</p>
                         <ul class="pb-3 text-stone-600 leading-7 list-disc pl-5 space-y-1">
                             <li>4500：11 人 4800、12 人 5100</li>
                             <li>5000：11 人 5300、12 人 5600</li>
                             <li>5500：11 人 5800、12 人 6100</li>
                         </ul>
-                        <p class="pb-5 text-stone-600 leading-7">未確認的加人與素食套餐費用另計，由電話確認。一桌通常約 12 位較滿，有時可再擠 13–14 位；13–14 或兒童／素食混合配置由電話確認。11／12 僅為加人費例子，不是每桌人數上限。素食客人不另收該位桌菜加人費。例：10 位吃 4500 桌菜＋1 位 500 素食＝5000。素食人數已含在到店人數，勿重複加總。</p>
+                        <p class="pb-5 text-stone-600 leading-7">未確認的加人與素食套餐費用另計，由電話確認。每桌建議最多坐12位；特殊人數與座位配置請由電話確認。11／12 僅為加人費例子，不是每桌人數上限。素食客人不另收該位桌菜加人費。例：10 位吃 4500 桌菜＋1 位 500 素食＝5000。素食人數已含在到店人數，勿重複加總。</p>
                     </details>
                     <details class="faq-item">
                         <summary>烤雞含不含？如何加購？</summary>
@@ -411,7 +425,7 @@
                     </details>
                     <details class="faq-item">
                         <summary>兒童怎麼計費？有兒童椅嗎？</summary>
-                        <p class="pb-5 text-stone-600 leading-7">幼兒園及以下不收費，可提供兒童椅；兒童計入實際到店人數。國小及以上約兩人折算一位大人。細節由電話確認。</p>
+                        <p class="pb-5 text-stone-600 leading-7">幼兒園及以下不收費，可提供兒童椅；兒童計入實際到店人數。國小及以上兒童，份量與收費約2位折算1位成人，可再討論；座位依實際人數安排。</p>
                     </details>
                     <details class="faq-item">
                         <summary>同行有人吃素，可以安排嗎？</summary>

@@ -48,24 +48,43 @@ const {
     return { banquetSummaryText, vegetarianNoteLine, discloseHint, planCode };
 })()`);
 
-assert(html.includes('超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。'), '表單短句加人費');
+const extraPersonCopy = '每桌超過10位成人吃桌菜時，該桌超出部分每位加收300元；兒童及素食搭配由電話確認。';
+const kidsCopy = '國小及以上兒童，份量與收費約2位折算1位成人，可再討論；座位依實際人數安排。';
+const vegShortCopy = '有素食需求（套餐每份300／500元，另外計費）';
+const vegLongCopy = '素食為向外部店家訂購的個人套餐，每份300／500元，另計費用';
+const seatingCopy = '每桌建議最多坐12位；特殊人數與座位配置請由電話確認。';
+const forbidden = [
+    ['三人折', '三人折一位'],
+    ['三位折', '三位折一位'],
+    ['約三位小孩', '約三位小孩例子'],
+    ['三位小孩算一位大人', '三孩折算例子'],
+    ['可再擠', '可再擠13–14'],
+    ['13–14', '13–14 座位說法'],
+    ['13-14', '13-14 座位說法'],
+];
+
+assert(html.includes(extraPersonCopy), '表單短句加人費需含每桌');
+assert(!html.includes('超過10位成人吃桌菜時，超出部分每位加收300元'), '表單不可殘留未限定每桌的加人費短句');
 assert(html.includes('value="casual"'), '後端用餐類型值仍為 casual');
 assert(html.includes('人頭計價'), '對外顯示人頭計價');
-assert(!html.includes('每桌最多12'), '不新增每桌最多12人政策');
+assert(!html.includes('每桌最多12'), '不新增每桌最多12人硬性上限');
 assert(html.includes('有素食需求'), '素食入口可見');
+assert(html.includes(vegShortCopy), '未勾選素食短句含價格');
+assert(html.includes(vegLongCopy), '勾選後素食長說明仍含價格');
+assert(html.includes('id="vegShortHint"'), '未勾選素食短句容器');
+assert(html.includes('id="vegLongCopy"'), '勾選後素食長說明容器');
 assert(html.includes('加購烤雞（選填）'), '加購烤雞收合');
 assert(html.includes('填寫Email接收通知（選填）'), 'Email 收合');
 assert(html.includes('有兒童同行'), '兒童收合');
 assert(html.includes('口味與其他需求（選填）'), '口味收合');
-assert(html.includes('國小及以上約兩人折算一位大人'), '國小店規維持兩人折算一位大人');
-assert(html.includes('細節由電話確認'), '國小特殊細節由電話確認');
+assert(html.includes(kidsCopy), '國小文案需含份量與收費');
+assert(html.includes('座位依實際人數安排'), '兒童座位依實際人數');
+assert(!html.includes('國小及以上約兩人折算一位大人'), '表單不可殘留舊國小短句');
 assert(!html.includes('尚可討論'), '勿改成尚可討論');
-assert(!html.includes('三人折'), '表單不含三人折一位');
-assert(!html.includes('三位折'), '表單不含三位折一位');
-assert(!html.includes('約三位小孩'), '表單不含約三位小孩例子');
-assert(!html.includes('三位小孩算一位大人'), '表單不含三孩折算例子');
+for (const [needle, label] of forbidden) {
+    assert(!html.includes(needle), `表單不含${label}`);
+}
 assert(!html.includes('每桌最多12'), '表單不暗示每桌硬性上限 12');
-assert(html.includes('素食為向外部店家訂購的個人套餐，每份300／500元，另計費用'), '素食外訂文案');
 assert(html.includes('script.google.com/macros'), 'booking endpoint unchanged');
 assert(/Dining extras[\s\S]*vegetarian[\s\S]*`note` only/.test(html) || html.includes('vegetarian) are written into `note` only'), '素食走備註、不擴後端欄位');
 
@@ -82,7 +101,9 @@ assert(discloseHint('兒童', 0) === '', '無資料不顯示摘要');
 assert(planCode('casual', '', 8) === '散客8a', '方案代碼語意不變');
 
 const faqNeedles = [
-    '超過10位成人吃桌菜時，超出部分每位加收300元；兒童及素食搭配由電話確認。',
+    extraPersonCopy,
+    kidsCopy,
+    seatingCopy,
     '4500：11 人 4800、12 人 5100',
     '5000：11 人 5300、12 人 5600',
     '5500：11 人 5800、12 人 6100',
@@ -90,21 +111,28 @@ const faqNeedles = [
     '同行有人吃素，可以安排嗎？',
     '每份300／500元',
     '素食客人不另收桌菜加人費',
-    '國小及以上約兩人折算一位大人',
     '人頭計價每人',
-    '有時可再擠 13–14 位',
     '不是每桌人數上限',
+    'contact-link--wrap',
+    'overflow-wrap: anywhere',
 ];
 for (const needle of faqNeedles) {
     assert(faq.includes(needle), `FAQ 缺少：${needle}`);
 }
-assert(!faq.includes('每桌最多12'), 'FAQ 不新增每桌人數上限');
-assert(!faq.includes('可再討論'), 'FAQ 國小說明不改成可再討論');
-assert(!faq.includes('三人折'), 'FAQ 不含三人折一位');
-assert(!faq.includes('三位折'), 'FAQ 不含三位折一位');
-assert(!faq.includes('約三位小孩'), 'FAQ 不含約三位小孩例子');
-assert(!faq.includes('三位小孩算一位大人'), 'FAQ 不含三孩折算例子');
-assert((faq.match(/同行有人吃素，可以安排嗎？/g) || []).length >= 2, 'FAQ 正文與 JSON-LD 皆有素食題');
+assert((faq.match(new RegExp(extraPersonCopy, 'g')) || []).length >= 4, 'FAQ 正文與 JSON-LD 加人費皆含每桌');
+assert((faq.match(new RegExp(kidsCopy, 'g')) || []).length >= 2, 'FAQ 正文與 JSON-LD 皆有國小份量與收費');
+assert((faq.match(new RegExp(seatingCopy, 'g')) || []).length >= 2, 'FAQ 正文與 JSON-LD 皆有每桌建議最多坐12位');
+assert(!faq.includes('超過10位成人吃桌菜時，超出部分每位加收300元'), 'FAQ 不可殘留未限定每桌的加人費短句');
+assert(!faq.includes('國小及以上約兩人折算一位大人'), 'FAQ 不可殘留舊國小短句');
+assert(!faq.includes('每桌最多12'), 'FAQ 不新增每桌人數硬性上限');
+assert(!faq.includes('最多12人上限'), 'FAQ 不寫硬性 12 人上限');
+for (const [needle, label] of forbidden) {
+    assert(!faq.includes(needle), `FAQ 不含${label}`);
+}
+assert(faq.includes('線上申請內用訂位或外帶預約'), 'FAQ 第一題長連結文字保留可點');
+const ldMatch = faq.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+assert(!!ldMatch, 'FAQ 有 JSON-LD');
+JSON.parse(ldMatch[1]);
 
 if (failures.length) {
     console.error('unit checks failed:');
@@ -249,6 +277,9 @@ try {
             const planVisible = visible('planPanel');
             const extraHint = document.getElementById('banquetExtraPersonHint').textContent;
             const vegCountHiddenBefore = document.getElementById('vegCountWrap').classList.contains('hidden');
+            const vegShortHiddenBefore = document.getElementById('vegShortHint').classList.contains('hidden');
+            const vegLongHiddenBefore = document.getElementById('vegLongCopy').classList.contains('hidden');
+            const vegShortText = document.getElementById('vegShortHint').textContent;
             pick('diningPlan', '4500');
             setNum('adults', 10);
             setNum('tables', 1);
@@ -262,6 +293,7 @@ try {
             setNum('kidsElem', 1);
             const peopleWithKids = document.getElementById('people').value;
             const kidsHint = document.getElementById('kidsDiscloseHint').textContent;
+            const kidsCopyText = document.querySelector('#kidsElem').parentElement.querySelector('p').textContent;
             document.getElementById('kidsPanel').open = false;
             const kidsHintCollapsed = document.getElementById('kidsDiscloseHint').textContent;
             const kidsValueCollapsed = document.getElementById('kidsKinder').value;
@@ -269,6 +301,9 @@ try {
             document.getElementById('hasVegetarian').checked = true;
             document.getElementById('hasVegetarian').dispatchEvent(new Event('change', { bubbles: true }));
             const vegCountHiddenAfter = document.getElementById('vegCountWrap').classList.contains('hidden');
+            const vegShortHiddenAfter = document.getElementById('vegShortHint').classList.contains('hidden');
+            const vegLongHiddenAfter = document.getElementById('vegLongCopy').classList.contains('hidden');
+            const vegLongText = document.getElementById('vegLongCopy').textContent;
             setNum('vegetarianCount', 1);
             const peopleWithVeg = document.getElementById('people').value;
 
@@ -295,6 +330,12 @@ try {
                 extraHint,
                 vegCountHiddenBefore,
                 vegCountHiddenAfter,
+                vegShortHiddenBefore,
+                vegLongHiddenBefore,
+                vegShortHiddenAfter,
+                vegLongHiddenAfter,
+                vegShortText,
+                vegLongText,
                 vegVisible,
                 kidsOpenDefault,
                 chickenOpenDefault,
@@ -302,6 +343,7 @@ try {
                 peopleWithKids,
                 peopleWithVeg,
                 kidsHint,
+                kidsCopyText,
                 kidsHintCollapsed,
                 kidsValueCollapsed,
                 chickenHint,
@@ -318,16 +360,27 @@ try {
         })()`);
 
         assert(result.planVisible, '選桌菜後才顯示方案區');
-        assert(result.extraHint.includes('超過10位成人吃桌菜時'), '桌菜方案區顯示加人費短句');
+        assert(result.extraHint.includes('每桌超過10位成人吃桌菜時'), '桌菜方案區顯示每桌加人費短句');
+        assert(result.extraHint.includes('該桌超出部分每位加收300元'), '加人費限定該桌超出部分');
+        assert(!result.extraHint.includes('整筆'), '加人費不依整筆總人數計算');
         assert(result.vegVisible, '素食入口維持可見');
         assert(result.vegCountHiddenBefore, '未勾選不顯示素食人數');
+        assert(!result.vegShortHiddenBefore, '未勾選顯示素食短句');
+        assert(result.vegLongHiddenBefore, '未勾選不顯示素食長說明');
+        assert(result.vegShortText.includes('套餐每份300／500元'), `未勾選短句需含價格：${result.vegShortText}`);
         assert(!result.vegCountHiddenAfter, '勾選後顯示素食人數');
+        assert(result.vegShortHiddenAfter, '勾選後隱藏素食短句');
+        assert(!result.vegLongHiddenAfter, '勾選後顯示素食長說明');
+        assert(result.vegLongText.includes('每份300／500元'), `勾選後長說明需含價格：${result.vegLongText}`);
+        assert(result.vegLongText.includes('素食客人不另收桌菜加人費'), '勾選後長說明需含免加人費');
         assert(result.kidsOpenDefault === false, '無兒童可直接略過兒童欄');
         assert(result.chickenOpenDefault === false, '無加購可直接略過烤雞欄');
         assert(result.peopleBeforeKids === '10', `成人10合計應為10，實際 ${result.peopleBeforeKids}`);
         assert(result.peopleWithKids === '12', `兒童應計入到店人數 12，實際 ${result.peopleWithKids}`);
         assert(result.peopleWithVeg === '12', `素食人數不可再加總，實際 ${result.peopleWithVeg}`);
         assert(result.kidsHint === '（兒童2位）', `兒童摘要：${result.kidsHint}`);
+        assert(result.kidsCopyText.includes('份量與收費約2位折算1位成人'), `國小文案：${result.kidsCopyText}`);
+        assert(result.kidsCopyText.includes('座位依實際人數安排'), '兒童座位依實際人數');
         assert(result.kidsHintCollapsed === '（兒童2位）', '收合後仍顯示兒童摘要');
         assert(result.kidsValueCollapsed === '1', '收合不清空兒童人數');
         assert(result.chickenHint === '（烤雞1隻）', `烤雞摘要：${result.chickenHint}`);
@@ -345,6 +398,60 @@ try {
         assert(result.note.includes('桌菜價位：5000'), `備註方案：${result.note}`);
         assert(result.payloadPeople === '12', '送出人數為到店合計，不含重複素食');
         assert(result.partyValue === 'banquet', '後端值 banquet 不變');
+
+        await cdp(wsUrl, 'Emulation.setDeviceMetricsOverride', {
+            width: 390,
+            height: 844,
+            deviceScaleFactor: 1,
+            mobile: true,
+        });
+        await cdp(wsUrl, 'Page.navigate', { url: `${url}faq.html` });
+        await new Promise((r) => setTimeout(r, 900));
+        const faqOverflow = await evalExpr(`(() => {
+            const items = Array.from(document.querySelectorAll('.faq-item'));
+            const first = items[0];
+            first.open = true;
+            const link = first.querySelector('a.contact-link--wrap');
+            const measure = () => ({
+                scrollWidth: document.documentElement.scrollWidth,
+                clientWidth: document.documentElement.clientWidth,
+                bodyScrollWidth: document.body.scrollWidth,
+            });
+            const expandedFirst = measure();
+            const linkCs = link ? getComputedStyle(link) : null;
+            const linkBox = link ? link.getBoundingClientRect() : null;
+            const parentBox = link && link.parentElement ? link.parentElement.getBoundingClientRect() : null;
+            items.forEach((item) => { item.open = true; });
+            const allOpen = measure();
+            const feeItem = items.find((item) => (item.querySelector('summary') || {}).textContent === '桌菜加人費怎麼算？');
+            const kidsItem = items.find((item) => (item.querySelector('summary') || {}).textContent === '兒童怎麼計費？有兒童椅嗎？');
+            return {
+                q1: (first.querySelector('summary') || {}).textContent,
+                linkText: link ? link.textContent : '',
+                href: link ? link.getAttribute('href') : '',
+                whiteSpace: linkCs ? linkCs.whiteSpace : '',
+                overflowWrap: linkCs ? linkCs.overflowWrap : '',
+                wordBreak: linkCs ? linkCs.wordBreak : '',
+                linkWidth: linkBox ? Math.round(linkBox.width) : 0,
+                parentWidth: parentBox ? Math.round(parentBox.width) : 0,
+                expandedFirst,
+                allOpen,
+                feeText: feeItem ? feeItem.textContent : '',
+                kidsText: kidsItem ? kidsItem.textContent : '',
+            };
+        })()`);
+
+        assert(faqOverflow.q1.includes('需要提前預約嗎'), `FAQ 第一題：${faqOverflow.q1}`);
+        assert(faqOverflow.linkText.includes('線上申請內用訂位或外帶預約'), `長連結文字：${faqOverflow.linkText}`);
+        assert(faqOverflow.href.includes('#booking-section'), '長連結仍可點進預約');
+        assert(faqOverflow.whiteSpace !== 'nowrap', `長連結需可換行，white-space=${faqOverflow.whiteSpace}`);
+        assert(faqOverflow.linkWidth <= faqOverflow.parentWidth + 1, `長連結寬 ${faqOverflow.linkWidth} 不可超過內容 ${faqOverflow.parentWidth}`);
+        assert(faqOverflow.expandedFirst.scrollWidth <= faqOverflow.expandedFirst.clientWidth, `展開第一題文件寬 ${faqOverflow.expandedFirst.scrollWidth} > ${faqOverflow.expandedFirst.clientWidth}`);
+        assert(faqOverflow.allOpen.scrollWidth <= faqOverflow.allOpen.clientWidth, `展開全部題文件寬 ${faqOverflow.allOpen.scrollWidth} > ${faqOverflow.allOpen.clientWidth}`);
+        assert(faqOverflow.feeText.includes('每桌超過10位成人吃桌菜時'), 'FAQ 加人費含每桌');
+        assert(faqOverflow.feeText.includes('每桌建議最多坐12位'), 'FAQ 座位建議最多坐12');
+        assert(!faqOverflow.feeText.includes('可再擠'), 'FAQ 加人費不含可再擠');
+        assert(faqOverflow.kidsText.includes('份量與收費'), 'FAQ 兒童含份量與收費');
     });
 } finally {
     server.close();
