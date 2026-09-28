@@ -1,0 +1,55 @@
+--- a/程式碼.js
++++ b/程式碼.js
+@@ -187,6 +187,10 @@
+   if (parsed.time)   state.time   = parsed.time;
+   if (parsed.people) state.people = parsed.people;
+   if (parsed.note)   state.note   = state.note ? (state.note + "、" + parsed.note) : parsed.note;
++  // LINE 方案代碼（LinePlanRemark.js）：桌菜價位／桌數／大人小朋友幼兒分類，finalizeBooking 時組進備註（H 欄）
++  if (parsed.plan)   state.plan   = parsed.plan;
++  if (parsed.tables) state.tables = parsed.tables;
++  if (parsed.head)   state.head   = parsed.head;
+   state.awaitingConfirmation = false;
+ 
+   // 記錄「手機 → userId」「userId → 姓名電話」對照，供老闆指令與通知使用（保留 6 小時）
+@@ -1177,13 +1181,17 @@
+     return ContentService.createTextOutput("OK");
+   }
+   var people = parseInt(state.people) || 1;
+-  var tables = Math.max(1, Math.ceil(people / SEAT_PER_TABLE));
++  // 客人明講桌數（或 4.5k2a 簡寫）時採用；否則沿用人數推估
++  var explicitTables = parseInt(state.tables, 10);
++  var tables = explicitTables >= 1 ? explicitTables : Math.max(1, Math.ceil(people / SEAT_PER_TABLE));
++  // 方案代碼（例 5k1a，a = 桌數）只寫進備註 H 欄；預估金額 M 欄不寫（Option B）
++  var note = composeLineRemark_({ plan: state.plan || null, tables: tables, people: people, head: state.head || null, note: state.note || "" });
+   var params = {
+     action: "booking", type: "dining",
+     name: state.name, phone: state.phone,
+     date: state.date, time: state.time,
+     people: String(people), tables: String(tables),
+-    note: state.note || "", email: state.email || "",
++    note: note, email: state.email || "",
+     orderItems: "", orderId: ""
+   };
+   cache.remove(userId); // 清除草稿，避免干擾下一次訂位
+@@ -1195,13 +1203,19 @@
+  */
+ function parseBookingMessage(msg) {
+   var phone = (msg.match(/09\d{8}/) || [null])[0];
++  var plan = parseLinePlan_(msg);
++  var head = parseLineHeadcount_(msg);
+   return {
+     name:   parseName(msg),
+     phone:  phone,
+     date:   parseDate(msg),
+     time:   parseTime(msg),
+-    people: parsePeople(msg),
+-    note:   parseNote(msg)
++    // 有大人／小朋友／幼兒分類時以分類合計為準（修正「大人8位小孩2位」只算到 8）
++    people: (head && head.total) ? head.total : parsePeople(msg),
++    note:   parseNote(msg),
++    plan:   plan,
++    tables: (plan && plan.tables) ? plan.tables : parseLineTables_(msg),
++    head:   head
+   };
+ }
+ 
