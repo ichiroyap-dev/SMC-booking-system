@@ -25,7 +25,7 @@
 // 人數用：1–2 位數字（前後不黏其他數字，避免「小孩 5000的桌菜」被讀成 5000 位）或中文數字
 // 中文數字前後不可黏「百千萬」或其他中文數字（「一百」「一千」不會被讀成 1；解析不了 → 沿用 parsePeople）
 var LINE_BIG_UNIT_ = "百千萬万佰仟";
-var LINE_HEAD_NUM_ = "(?:(?<![0-9])[0-9]{1,2}(?![0-9百千萬万佰仟])|(?<![百千萬万佰仟零〇一二兩两三四五六七八九十])[一二兩两三四五六七八九十]{1,3}(?![百千萬万佰仟零〇一二兩两三四五六七八九十]))";
+var LINE_HEAD_NUM_ = "(?:(?<![0-9])[0-9]{1,2}(?![0-9])(?!\\s*[百千萬万佰仟])|(?<![百千萬万佰仟零〇一二兩两三四五六七八九十])[一二兩两三四五六七八九十]{1,3}(?![零〇一二兩两三四五六七八九十])(?!\\s*[百千萬万佰仟]))";
 // 與 程式碼.js parsePeople 相同的分類字（不新增幼兒類，保持保守）；「兒童椅」等座椅需求不算
 var LINE_PEOPLE_LABEL_ = "(?:大人|成人|小孩|小朋友|兒童|小童)(?![椅座餐])";
 var LINE_MAX_TABLES_ = 20;
@@ -235,6 +235,8 @@ function parseLineTables_(msg) {
  */
 function lineCategoryPeople_(msg) {
   var t = stripLineNoise_(msg);
+  // 大數（1百、1 百、１百、一 千、一万、一佰…）一律不算，交給 parsePeople
+  if (/[0-9零〇一二兩两三四五六七八九十]\s*[百千萬万佰仟]/.test(t)) return null;
   var labelAny = new RegExp(LINE_PEOPLE_LABEL_, "g");
   var labelCount = (t.match(labelAny) || []).length;
   if (labelCount === 0) {
@@ -266,7 +268,7 @@ function composeLineRemark_(opts) {
   if (opts.ambiguous) {
     // 2 個以上不同方案線索：不猜。H 欄「方案待確認；原文備註」，最後附上客人提過的方案給店裡看（不用 k 代碼寫法）。
     var cands = (opts.clues || []).map(function (c) { return "每桌" + c.price + "元" + (c.tables ? c.tables + "桌" : ""); }).join("、");
-    return LINE_PLAN_PENDING_REMARK_ + "；" + rawNote + (cands ? "（客人提過：" + cands + "）" : "");
+    return LINE_PLAN_PENDING_REMARK_ + "；" + linePendingNote_(rawNote) + (cands ? "（客人提過：" + cands + "）" : "");
   }
   // 保險：呼叫端沒標 ambiguous，但方案＋備註裡的線索其實有 2 個以上不同 → 一樣不猜
   var merged = lineMergePlanClues_(opts.clues || (opts.plan && opts.plan.price ? [opts.plan] : []), lineFindPlanClues_(rawNote));
@@ -290,6 +292,19 @@ function composeLineRemark_(opts) {
   }
   if (!code) return note;
   return note ? (code + "；" + note) : code;
+}
+
+// 方案待確認時寫進 H 的原備註：拿掉所有 k 形狀（5k1a、裸 5k／5.5k、空白、大寫、全形、5k×2a，連 iPhone 5k／5kg 的 5k 也拿掉），
+// 避免下游 DailyBookingSync（parseRemarkAndCode_ 的 KA_RE）抓到代碼入帳；價位只留在後面的文字「每桌NNNN元」。
+function linePendingNote_(note) {
+  var hw = lineStripCodes_(lineHalfWidth_(String(note == null ? "" : note)));
+  return hw
+    .replace(/\d+(?:\.\d+)?\s*[Kk](?:\s*[Xx×]?\s*\d+\s*[Aa](?![A-Za-z]))?/g, " ")
+    .replace(/[ \t\u3000]+/g, " ")
+    .replace(/\s*([、，,；;／\/])\s*/g, "$1")
+    .replace(/([、，,；;／\/])[、，,；;／\/]+/g, "$1")
+    .replace(/^[\s、，,；;／\/]+|[\s、，,；;／\/:：]+$/g, "")
+    .trim();
 }
 
 // 客人文字不可出現的樣式（請先轉半形）：數字＋k（5k、5 K）、數字＋a（2a、4 A）、x2a、散客／大型＋數字
@@ -368,7 +383,7 @@ if (typeof module !== "undefined" && module.exports) {
     lineCustomerNote_: lineCustomerNote_, linePlanFriendly_: linePlanFriendly_,
     lineCustomerPlanText_: lineCustomerPlanText_, customerNoteText_: customerNoteText_,
     lineHalfWidth_: lineHalfWidth_, lineFindCodes_: lineFindCodes_, lineStripCodes_: lineStripCodes_,
-    lineFindPlanClues_: lineFindPlanClues_, lineMergePlanClues_: lineMergePlanClues_, lineApplyPlanClues_: lineApplyPlanClues_, lineResolvePlan_: lineResolvePlan_,
+    lineFindPlanClues_: lineFindPlanClues_, lineMergePlanClues_: lineMergePlanClues_, lineApplyPlanClues_: lineApplyPlanClues_, lineResolvePlan_: lineResolvePlan_, linePendingNote_: linePendingNote_,
     lineCustomerPlanLine_: lineCustomerPlanLine_, LINE_PLAN_PENDING_TEXT_: LINE_PLAN_PENDING_TEXT_
   };
 }

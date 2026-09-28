@@ -77,11 +77,13 @@ for (const [m, want] of [
     // 阿拉伯數字＋百／千、全形、万／佰 → null（沿用 parsePeople），不可把「1百」讀成 1
     ['大人1百位小孩2位', null], ['大人１百位 小孩2位', null], ['大人一万位小孩2位', null], ['大人一佰位小孩2位', null],
     ['大人1千位小孩2位', null], ['1百大2小', null], ['大人2位小孩1百位', null], ['大人一仟位小孩2位', null],
+    // 中間有空白也不算
+    ['大人1 百位小孩2位', null], ['大人１ 百位 小孩2位', null], ['大人1 千位小孩2位', null], ['大人一 百位小孩2位', null], ['1 百大2小', null], ['大人2位小孩1 百位', null],
 ]) eq(CP(m), want, `分類加總 ${m}`);
 eq(L.lineNumToInt_('一百'), 0, '一百 → 0（無效）'); eq(L.lineNumToInt_('十二'), 12, '十二 → 12');
 eq(L.parseLineTables_('一百桌'), null, '一百桌 不是 1 桌'); eq(L.parseLineTables_('十桌'), 10, '十桌');
 for (const w of ['一万', '一佰', '一仟', '1百', '１百']) eq(L.lineNumToInt_(w), 0, `${w} → 0（無效）`);
-eq(L.parseLineTables_('一万桌'), null, '一万桌 不是 1 桌'); eq(L.parseLineTables_('一佰桌'), null, '一佰桌 不是 1 桌');
+eq(L.parseLineTables_('一万桌'), null, '一万桌 不是 1 桌'); eq(L.parseLineTables_('1 百桌'), null, '1 百桌 不是 1 桌'); eq(L.parseLineTables_('一佰桌'), null, '一佰桌 不是 1 桌');
 
 console.log('# 桌數／價位補強（blocker 3＋nits）');
 for (const [m, wantPlan, wantTables] of [
@@ -138,8 +140,8 @@ const cases = [
     ['備註只有 5k → 不重複', { plan: { price: 5000 }, tables: 1, people: 10, note: '5k' }, '5k1a'],
     ['備註全形代碼 → 半形＋最終桌數', { tables: 2, people: 20, note: '５ｋ２ａ 靠窗' }, '5k2a；靠窗'],
     ['備註 5k×2a → 正規化', { tables: 2, people: 20, note: '5k×2a' }, '5k2a'],
-    ['備註 5k1a＋不同方案 5500（沒標 ambiguous 也不猜）', { plan: { price: 5500 }, tables: 1, note: '5k1a 靠窗' }, '方案待確認；5k1a 靠窗（客人提過：每桌5500元、每桌5000元1桌）'],
-    ['待確認：兩個不同代碼', { ambiguous: true, clues: [{ price: 5000, tables: 1 }, { price: 4500, tables: 2 }], tables: 1, note: '5k1a 4.5k2a 靠窗' }, '方案待確認；5k1a 4.5k2a 靠窗（客人提過：每桌5000元1桌、每桌4500元2桌）'],
+    ['備註 5k1a＋不同方案 5500（沒標 ambiguous 也不猜）', { plan: { price: 5500 }, tables: 1, note: '5k1a 靠窗' }, '方案待確認；靠窗（客人提過：每桌5500元、每桌5000元1桌）'],
+    ['待確認：兩個不同代碼', { ambiguous: true, clues: [{ price: 5000, tables: 1 }, { price: 4500, tables: 2 }], tables: 1, note: '5k1a 4.5k2a 靠窗' }, '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌4500元2桌）'],
     ['待確認：沒有備註', { ambiguous: true, clues: [{ price: 5000, tables: null }, { price: 5500, tables: null }], tables: 1, note: '' }, '方案待確認；（客人提過：每桌5000元、每桌5500元）'],
     ['待確認：備註只寫一個代碼（另一個在對話中）', { ambiguous: true, clues: [{ price: 5000, tables: 1 }, { price: 5500, tables: null }], tables: 3, note: '靠窗' }, '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）'],
     ['同價位代碼＋桌菜 → 單一', { plan: { price: 5000, tables: 1 }, tables: 1, note: '桌菜5000 5k1a 靠窗' }, '5k1a；桌菜5000 靠窗'],
@@ -189,7 +191,7 @@ for (const [inp, want] of [
     ['4.5k1a', '每桌 4500 元、1 桌'], ['5k2a', '每桌 5000 元、2 桌'], ['5.5k3a', '每桌 5500 元、3 桌'],
     ['5K 2A', '每桌 5000 元、2 桌'], ['5k', '每桌 5000 元'], ['5k1a；靠窗', '每桌 5000 元、1 桌'],
     ['4.5k2a；慶生', '每桌 4500 元、2 桌'], ['5k×2a', '每桌 5000 元、2 桌'], ['５ｋ２ａ', '每桌 5000 元、2 桌'], ['iPhone 5k', ''], ['散客 大人6位', ''], ['大型4a 大人30位', ''], ['靠窗', ''], ['2k1a', ''], ['', ''],
-    ['方案待確認；5k1a 靠窗（客人提過：每桌5000元1桌、每桌5500元）', '方案將由店家確認'], ['5k1a 4.5k2a', '方案將由店家確認'], ['5k1a 5k2a；靠窗', '方案將由店家確認'],
+    ['方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', '方案將由店家確認'], ['5k1a 4.5k2a', '方案將由店家確認'], ['5k1a 5k2a；靠窗', '方案將由店家確認'],
 ]) eq(PF(inp), want, `友善方案 ${JSON.stringify(inp)}`);
 eq(L.lineCustomerPlanLine_('每桌 5000 元、1 桌'), '方案：每桌 5000 元、1 桌', '方案行：確定價');
 eq(L.lineCustomerPlanLine_('方案將由店家確認'), '方案將由店家確認', '方案行：待確認（不加「方案：」）');
@@ -212,9 +214,45 @@ eq(SP({ note: '5k1a 5k2a', people: '20' }), '方案將由店家確認', '對話�
 eq(SP({ plan: { price: 5000, tables: 1 }, planClues: [{ price: 5000, tables: 1 }], note: '5k1a 靠窗', people: '10' }), '每桌 5000 元、1 桌', '對話中：同一方案 → 照舊');
 
 console.log('# DailyBookingSync 相容性');
+// 待確認 H：轉半形後不得匹配 KA_RE（parseRemarkAndCode_ 會抓第一個代碼入帳），也不得有任何「數字＋k」
+function assertPendingH(h, label) {
+    const hw = L.lineHalfWidth_(h);
+    ok(h.indexOf('方案待確認；') === 0, `${label}: 待確認 H 應以「方案待確認；」開頭：${h}`);
+    ok(!KA_RE.test(hw), `${label}: 待確認 H 不可被 KA_RE 抓到代碼：${h}`);
+    ok(!/\d\s*k/i.test(hw), `${label}: 待確認 H 不可有「數字＋k」：${h}`);
+}
+{
+    // Cursor 列的五種待確認 H＋多輪「備註5k1a靠窗→改成桌菜5500」
+    const two = [{ price: 5000, tables: 1 }, { price: 5500, tables: null }];
+    for (const [note, want] of [
+        ['5k1a 靠窗', '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['5k1a 4.5k2a 靠窗', '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['5k1a 5k2a', '方案待確認；（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['5.5k 5k1a 靠窗', '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['５ｋ１ａ 4.5K 2A 慶生', '方案待確認；慶生（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['5K 1A、靠窗', '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['靠窗 5k×2a', '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['iPhone 5k 充電', '方案待確認；iPhone 充電（客人提過：每桌5000元1桌、每桌5500元）'],
+        ['５ｋ 靠窗', '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）'],
+    ]) {
+        const h = C({ ambiguous: true, clues: two, tables: 1, note });
+        eq(h, want, `待確認 H 去 k 形狀：${note}`);
+        assertPendingH(h, `待確認 H ${note}`);
+    }
+    // 沒標 ambiguous、由 compose 自己判斷出待確認的情況也一樣
+    for (const note of ['5k1a 4.5k2a 靠窗', '5k1a 5k2a', '5.5k 5k1a 靠窗', '５ｋ１ａ 4.5K 2A 慶生']) assertPendingH(C({ tables: 1, note }), `自動待確認 ${note}`);
+    // 多輪：備註 5k1a 靠窗 → 改成桌菜5500 → finalize 用 lineResolvePlan_
+    const st = { note: '5k1a 靠窗' };
+    L.lineApplyPlanClues_(st, { planClues: L.lineFindPlanClues_('備註 5k1a 靠窗') });
+    L.lineApplyPlanClues_(st, { planClues: L.lineFindPlanClues_('改成桌菜5500') });
+    const rp = L.lineResolvePlan_(st);
+    const h = C({ plan: rp.plan, tables: 1, note: st.note, ambiguous: rp.ambiguous, clues: rp.clues });
+    eq(h, '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', '多輪 備註5k1a靠窗→改成桌菜5500 的 H');
+    assertPendingH(h, '多輪 備註5k1a靠窗→改成桌菜5500');
+}
 for (const [label, o] of cases) {
     const r = C(o);
-    if (r.indexOf('方案待確認') === 0) { ok(!/^方案待確認；\S*k\d*a；/.test(r), `待確認不可組出代碼前綴：${r}`); continue; } // 待確認由店家人工判斷
+    if (r.indexOf('方案待確認') === 0) { assertPendingH(r, label); continue; } // 待確認：H 不可留任何 k 形狀
     if (!/k\d+a/.test(r)) continue;
     const recognized = FORM_NEW_PREFIX_RE.test(r) || (KA_RE.test(r) && r.match(KA_RE)[1].replace(/\s+/g, '').toLowerCase() === r.split(/[ ；]/)[0]);
     ok(recognized, `DailyBookingSync 無法辨識代碼：${label} → ${r}`);
@@ -333,20 +371,20 @@ if (gasMain && existsSync(gasMain)) {
         ['備註只有 5k → 5k1a 不重複', [`${base} 10位 備註 5k`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
         ['iPhone 5k 不是方案（拿不乾淨 → 客人不顯示備註）', [`${base} 4位 備註 iPhone 5k 充電`, '確認'], { people: '4', note: 'iPhone 5k 充電', tables: 1 }, { shown: '無', plan: null }],
         // [Owner 18:41] 2 個以上不同方案線索（含多輪）→ 不猜：H「方案待確認；原備註」、客人看到「方案將由店家確認」、不顯示價錢／代碼
-        ['待確認：先備註 5k1a，再改桌菜5500', [`${base} 10位 備註 5k1a 靠窗`, '改成桌菜5500', '確認'], { people: '10', note: '方案待確認；5k1a 靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true, tablesShown: 1 }],
-        ['待確認：先備註 5k1a，再改桌菜5500 三桌', [`${base} 20位 備註 5k1a 靠窗`, '改成桌菜5500 三桌', '確認'], { people: '20', note: '方案待確認；5k1a 靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 3 }, { shown: '靠窗', pending: true, tablesShown: 3 }],
-        ['待確認：先 5k1a，改兩桌，再改 5.5k', [`${base} 20位 備註 5k1a 靠窗`, '兩桌', '改成5.5k', '確認'], { people: '20', note: '方案待確認；5k1a 靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 2 }, { shown: '靠窗', pending: true, tablesShown: 2 }],
-        ['待確認：先桌菜5500，再備註 5k1a', [`${base} 10位 桌菜5500`, '備註 5k1a 靠窗', '確認'], { people: '10', note: '方案待確認；5k1a 靠窗（客人提過：每桌5500元、每桌5000元1桌）', tables: 1 }, { shown: '靠窗', pending: true, tablesShown: 1 }],
-        ['待確認：同句 5k1a 4.5k2a 靠窗', [`${base} 10位 備註 5k1a 4.5k2a 靠窗`, '確認'], { people: '10', note: '方案待確認；5k1a 4.5k2a 靠窗（客人提過：每桌5000元1桌、每桌4500元2桌）', tables: 1 }, { shown: '靠窗', pending: true }],
-        ['待確認：同句 5k1a 5k2a', [`${base} 20位 備註 5k1a 5k2a`, '確認'], { people: '20', note: '方案待確認；5k1a 5k2a（客人提過：每桌5000元1桌、每桌5000元2桌）', tables: 2 }, { shown: '無', pending: true }],
-        ['待確認：同句 5.5k 5k1a 靠窗', [`${base} 10位 備註 5.5k 5k1a 靠窗`, '確認'], { people: '10', note: '方案待確認；5.5k 5k1a 靠窗（客人提過：每桌5500元、每桌5000元1桌）', tables: 1 }, { shown: '靠窗', pending: true }],
+        ['待確認：先備註 5k1a，再改桌菜5500', [`${base} 10位 備註 5k1a 靠窗`, '改成桌菜5500', '確認'], { people: '10', note: '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true, tablesShown: 1 }],
+        ['待確認：先備註 5k1a，再改桌菜5500 三桌', [`${base} 20位 備註 5k1a 靠窗`, '改成桌菜5500 三桌', '確認'], { people: '20', note: '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 3 }, { shown: '靠窗', pending: true, tablesShown: 3 }],
+        ['待確認：先 5k1a，改兩桌，再改 5.5k', [`${base} 20位 備註 5k1a 靠窗`, '兩桌', '改成5.5k', '確認'], { people: '20', note: '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 2 }, { shown: '靠窗', pending: true, tablesShown: 2 }],
+        ['待確認：先桌菜5500，再備註 5k1a', [`${base} 10位 桌菜5500`, '備註 5k1a 靠窗', '確認'], { people: '10', note: '方案待確認；靠窗（客人提過：每桌5500元、每桌5000元1桌）', tables: 1 }, { shown: '靠窗', pending: true, tablesShown: 1 }],
+        ['待確認：同句 5k1a 4.5k2a 靠窗', [`${base} 10位 備註 5k1a 4.5k2a 靠窗`, '確認'], { people: '10', note: '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌4500元2桌）', tables: 1 }, { shown: '靠窗', pending: true }],
+        ['待確認：同句 5k1a 5k2a', [`${base} 20位 備註 5k1a 5k2a`, '確認'], { people: '20', note: '方案待確認；（客人提過：每桌5000元1桌、每桌5000元2桌）', tables: 2 }, { shown: '無', pending: true }],
+        ['待確認：同句 5.5k 5k1a 靠窗', [`${base} 10位 備註 5.5k 5k1a 靠窗`, '確認'], { people: '10', note: '方案待確認；靠窗（客人提過：每桌5500元、每桌5000元1桌）', tables: 1 }, { shown: '靠窗', pending: true }],
         ['待確認：先 5k，再「不要5k了改成桌菜5500」', [`${base} 10位 5k`, '不要5k了改成桌菜5500', '確認'], { people: '10', note: '方案待確認；（客人提過：每桌5000元、每桌5500元）', tables: 1 }, { shown: '無', pending: true }],
         ['待確認：同句「不要5k了改成桌菜5500」', [`${base} 10位 不要5k了改成桌菜5500`, '確認'], { people: '10', note: '方案待確認；（客人提過：每桌5000元、每桌5500元）', tables: 1 }, { shown: '無', pending: true }],
-        ['待確認：備註 5k1a 後「改成桌菜5500，不要5k1a」', [`${base} 10位 備註 5k1a 靠窗`, '改成桌菜5500，不要5k1a', '確認'], { people: '10', note: '方案待確認；5k1a 靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true }],
+        ['待確認：備註 5k1a 後「改成桌菜5500，不要5k1a」', [`${base} 10位 備註 5k1a 靠窗`, '改成桌菜5500，不要5k1a', '確認'], { people: '10', note: '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true }],
         ['待確認：同句「5k1a 改成5.5k」', [`${base} 10位 5k1a 改成5.5k`, '確認'], { people: '10', note: '方案待確認；（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '無', pending: true }],
-        ['待確認：多輪 備註5k1a →「不要5k了改成桌菜5500」', [`${base} 10位 備註 5k1a 靠窗`, '不要5k了改成桌菜5500', '確認'], { people: '10', note: '方案待確認；5k1a 靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true }],
-        ['待確認：多輪（先缺手機 → 還差資料摘要也待確認）', [`${y}/10/03 18:30 姓名測試同學 10位 備註 5k1a 靠窗`, '不要5k了改成桌菜5500', '0900000000', '確認'], { people: '10', note: '方案待確認；5k1a 靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true, minReplies: 4, summaryPending: true }],
-        ['待確認：同句全形／大寫 ５ｋ１ａ 4.5K 2A', [`${base} 10位 備註 ５ｋ１ａ 4.5K 2A 慶生`, '確認'], { people: '10', note: '方案待確認；５ｋ１ａ 4.5K 2A 慶生（客人提過：每桌5000元1桌、每桌4500元2桌）', tables: 1 }, { shown: '慶生', pending: true }],
+        ['待確認：多輪 備註5k1a →「不要5k了改成桌菜5500」', [`${base} 10位 備註 5k1a 靠窗`, '不要5k了改成桌菜5500', '確認'], { people: '10', note: '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true }],
+        ['待確認：多輪（先缺手機 → 還差資料摘要也待確認）', [`${y}/10/03 18:30 姓名測試同學 10位 備註 5k1a 靠窗`, '不要5k了改成桌菜5500', '0900000000', '確認'], { people: '10', note: '方案待確認；靠窗（客人提過：每桌5000元1桌、每桌5500元）', tables: 1 }, { shown: '靠窗', pending: true, minReplies: 4, summaryPending: true }],
+        ['待確認：同句全形／大寫 ５ｋ１ａ 4.5K 2A', [`${base} 10位 備註 ５ｋ１ａ 4.5K 2A 慶生`, '確認'], { people: '10', note: '方案待確認；慶生（客人提過：每桌5000元1桌、每桌4500元2桌）', tables: 1 }, { shown: '慶生', pending: true }],
         // 同一個方案說兩次（價位相同）→ 仍是單一方案
         ['單一：桌菜5000＋備註 5k1a', [`${base} 10位 桌菜5000 備註 5k1a 靠窗`, '確認'], { people: '10', note: '5k1a；靠窗', tables: 1 }, { shown: '靠窗', plan: '每桌 5000 元、1 桌' }],
         ['單一：先 5k，再 5k1a', [`${base} 10位 5k`, '5k1a', '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
@@ -410,13 +448,14 @@ if (gasMain && existsSync(gasMain)) {
         if (rows.length !== 1) continue;
         const r = rows[0];
         eq({ people: r[3], note: r[7], tables: r[8] }, want, `整合 ${label}`);
+        if (rw.pending) assertPendingH(r[7], `整合 ${label}`);
         ok(r.length === 12, `${label}: 只寫 A:L（12 欄），M 預估金額不寫；實際 ${r.length} 欄`);
     }
 
     console.log('# 整合測試：中文大數解析不了 → 與 parsePeople 相同');
     {
         const { c } = run([]);
-        for (const m of ['大人一百位小孩2位', '一百位', '大人一千位 小孩2位', '一百大2小 靠窗', '大人1百位小孩2位', '大人１百位 小孩2位', '大人一万位小孩2位', '大人一佰位小孩2位', '大人1千位小孩2位', '1百大2小']) {
+        for (const m of ['大人一百位小孩2位', '一百位', '大人一千位 小孩2位', '一百大2小 靠窗', '大人1百位小孩2位', '大人１百位 小孩2位', '大人一万位小孩2位', '大人一佰位小孩2位', '大人1千位小孩2位', '1百大2小', '大人1 百位小孩2位', '大人１ 百位 小孩2位', '大人一 百位小孩2位']) {
             ok(c.parseBookingMessage(m).people === c.parsePeople(m), `${m}: parseBookingMessage.people 應等於 parsePeople（${c.parseBookingMessage(m).people} vs ${c.parsePeople(m)}）`);
         }
         eq(c.parseBookingMessage('大人八位小孩兩位').people, 10, '大人八位小孩兩位 → 10');
