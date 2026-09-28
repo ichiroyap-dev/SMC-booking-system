@@ -108,6 +108,26 @@ for (const [label, o] of cases) {
     ok(!CODE_LIKE.test(shown), `客人備註仍含代碼：${label} → ${shown}`);
 }
 
+console.log('# linePlanFriendly_／customerNoteText_／lineCustomerPlanText_（客人看的方案友善文字）');
+const PF = (t) => L.linePlanFriendly_(t);
+for (const [inp, want] of [
+    ['4.5k1a', '每桌 4500 元、1 桌'], ['5k2a', '每桌 5000 元、2 桌'], ['5.5k3a', '每桌 5500 元、3 桌'],
+    ['5K 2A', '每桌 5000 元、2 桌'], ['5k', '每桌 5000 元'], ['5k1a 大人10位、小朋友2位；靠窗', '每桌 5000 元、1 桌'],
+    ['4.5k2a；慶生', '每桌 4500 元、2 桌'], ['散客 大人6位', ''], ['大型4a 大人30位', ''], ['靠窗', ''], ['2k1a', ''], ['', ''],
+]) eq(PF(inp), want, `友善方案 ${JSON.stringify(inp)}`);
+const NT = (t) => L.customerNoteText_(t);
+for (const [inp, want] of [
+    ['5k1a 大人10位、小朋友2位 素食1位；慶生', '大人10位、小朋友2位 素食1位；慶生'],
+    ['4.5k1a', ''], ['5.5k3a 大人30位', '大人30位'], ['散客 大人6位；不吃辣', '大人6位；不吃辣'], ['散客', ''],
+    ['大型4a 大人30位 素食', '大人30位 素食'], ['靠窗', '靠窗'], ['散客很多想靠窗', '散客很多想靠窗'],
+]) eq(NT(inp), want, `客人備註（工作表→客人）${JSON.stringify(inp)}`);
+const SP = (st) => L.lineCustomerPlanText_(st);
+eq(SP({ plan: { price: 5000 }, people: '12' }), '每桌 5000 元、2 桌', '對話中：12位沒講桌數 → 2 桌');
+eq(SP({ plan: { price: 5000 }, people: '12', tables: 1 }), '每桌 5000 元、1 桌', '對話中：12位＋一桌 → 1 桌');
+eq(SP({ plan: { price: 4500 } }), '每桌 4500 元', '對話中：還沒人數 → 只顯示價位');
+eq(SP({ note: '5k1a 慶生', people: '10' }), '每桌 5000 元、1 桌', '對話中：客人自己打代碼');
+eq(SP({ people: '4', note: '靠窗' }), '', '對話中：沒方案 → ""');
+
 console.log('# DailyBookingSync 相容性');
 for (const [label, o] of cases) {
     const r = C(o);
@@ -123,7 +143,10 @@ ok(!/CHANNEL_ACCESS_TOKEN|GEMINI_API_KEY|MY_USER_ID|SPREADSHEET_ID\s*=/.test(pat
 const patchCode = patch.split('\n').filter((l) => /^[+-](?![+-])/.test(l)).map((l) => l.replace(/\/\/.*$/, '')).join('\n');
 ok(!/(appendRow|預估金額|estimatedAmount|resolveEstimatedAmount_|getRange\(\s*\w+\s*,\s*13)/.test(patchCode), 'patch 不可改 appendRow／預估金額（M 欄）');
 ok(/^\+.*composeLineRemark_\(/m.test(patch) && /^\+.*parseLinePlan_\(/m.test(patch), 'patch 必須接上 composeLineRemark_／parseLinePlan_');
-ok(/^\+.*successMsg.*customerNote/m.test(patch) && /^-.*successMsg.*params\.note \|\| "無"/m.test(patch), 'patch 必須讓預約成功訊息改用 customerNote');
+ok(/^\+.*successMsg.*custPlanText.*custNoteText/m.test(patch) && /^-.*successMsg.*params\.note \|\| "無"/m.test(patch), 'patch 必須讓預約成功訊息改用友善方案＋去代碼備註');
+ok(/^\+.*customerPlan:\s*linePlanFriendly_\(note\)/m.test(patch), 'finalizeBooking 必須帶 customerPlan = linePlanFriendly_(H 欄備註)');
+ok(/^\+.*🍽️ 方案：" \+ lineCustomerPlanText_\(state\)/m.test(patch) && /^\+.*🍽️ 方案：" \+ lineCustomerPlanText_\(s\)/m.test(patch), '核對／還差資料訊息必須顯示友善方案文字');
+ok(/^-.*備註事項：.*data\.note \|\| "無"/m.test(patch) && /^\+.*備註事項：.*custNoteText/m.test(patch) && /^\+.*custPlanText = .*linePlanFriendly_\(data\.note\)/m.test(patch), '確認信必須改用友善方案＋去代碼備註');
 ok(/^\+.*customerNote:\s*lineCustomerNote_\(/m.test(patch), 'finalizeBooking 必須帶 customerNote = lineCustomerNote_(原備註)');
 ok(/^\+.*confirmMsg|^\+.*📝 備註：" \+ lineCustomerNote_\(state\.note\)/m.test(patch), '核對訊息必須用 lineCustomerNote_');
 ok(/^\+.*parts\.push\("📝 備註：" \+ lineCustomerNote_\(s\.note\)\)/m.test(patch), '還差資料訊息必須用 lineCustomerNote_');
@@ -147,6 +170,8 @@ if (gasMain && existsSync(gasMain)) {
     function run(messages) {
         const rows = [['ts', '姓名', '電話', '人數', '日期', '時段', '時間', '備註', '桌數', '編號', '狀態', 'email', '預估金額']];
         const replies = [];
+        const mails = [];
+        const tasks = [];
         const store = {};
         const range = () => ({ setNumberFormat() { return this; }, setValue(v) { return this; }, getValue: () => 99, getValues: () => [[]] });
         const bookingSheet = { getDataRange: () => ({ getValues: () => rows }), appendRow: (r) => rows.push(r), getLastRow: () => rows.length, getRange: range };
@@ -158,29 +183,38 @@ if (gasMain && existsSync(gasMain)) {
             Utilities: { formatDate: fmt },
             ContentService: { createTextOutput: (t) => ({ t, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
             Logger: { log() {} }, LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
-            CalendarApp: { getDefaultCalendar: () => ({ createEvent() {} }) }, MailApp: { sendEmail() {} }, GmailApp: { sendEmail() {} },
+            CalendarApp: { getDefaultCalendar: () => ({ createEvent() {} }) }, MailApp: { sendEmail: (o) => mails.push(o) }, GmailApp: { sendEmail() {} },
             PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+            // BackgroundTasks.js（另一個檔）：網頁訂位的通知／郵件排到背景；測試直接收下來，稍後照它的邏輯呼叫 sendConfirmationEmail
+            enqueueBackgroundTask: (t) => tasks.push(t),
         };
         const c = vm.createContext(g);
         vm.runInContext(modSrc + '\n' + mainSrc, c);
         let i = 0;
-        for (const text of messages) c.handleLineWebhook({ type: 'message', replyToken: 'r' + i, source: { userId: 'Utest' }, message: { type: 'text', id: 'm' + (i++), text } });
-        return { rows: rows.slice(1), replies };
+        if (Array.isArray(messages)) {
+            for (const text of messages) c.handleLineWebhook({ type: 'message', replyToken: 'r' + i, source: { userId: 'Utest' }, message: { type: 'text', id: 'm' + (i++), text } });
+        } else {
+            c.processBooking(messages, false, null); // 網頁表單路徑（doPost → processBooking）
+            // 模擬 BackgroundTasks.processBackgroundTasks 的郵件步驟：if (data.email) sendConfirmationEmail(data, task.orderId)
+            for (const t of tasks) if (t.params && t.params.email) c.sendConfirmationEmail(t.params, t.orderId);
+        }
+        return { rows: rows.slice(1), replies, mails };
     }
     const y = new Date().getUTCFullYear() + 1;
     const base = `${y}/10/03 18:30 姓名測試同學 0900000000`;
     const I = [
-        ['桌菜5000、大人10位小朋友2位、靠窗', [`${base} 大人10位小朋友2位 5000的桌菜 靠窗`, '確認'], { people: '12', note: '5k2a 大人10位、小朋友2位；靠窗', tables: 2 }],
-        ['4.5k2a 簡寫、20位', [`${base} 20位 4.5k2a`, '確認'], { people: '20', note: '4.5k2a', tables: 2 }],
-        ['桌菜4500 兩桌、2位', [`${base} 2位 桌菜4500 兩桌`, '確認'], { people: '2', note: '4.5k2a', tables: 2 }],
-        ['分兩則訊息', [`${base} 10位`, '5000的桌菜 大人8位小孩2位', '確認'], { people: '10', note: '5k1a 大人8位、小朋友2位', tables: 1 }],
-        ['備註已有代碼', [`${base} 10位 備註 5k1a 慶生`, '確認'], { people: '10', note: '5k1a；慶生', tables: 1 }],
-        ['沒講方案 → 備註不變（回歸）', [`${base} 4位 靠窗`, '確認'], { people: '4', note: '靠窗', tables: 1 }],
-        ['12位＋一桌就好 → 1 桌、5k1a', [`${base} 12位 5000的桌菜 一桌就好`, '確認'], { people: '12', note: '5k1a', tables: 1 }, { tablesShown: 1 }],
-        ['12位沒講桌數 → ceil(12/10)=2 桌', [`${base} 12位 5000的桌菜`, '確認'], { people: '12', note: '5k2a', tables: 2 }, { tablesShown: 2 }],
-        ['客人打 5k2a 簡寫＋靠窗', [`${base} 20位 5k2a 靠窗`, '確認'], { people: '20', note: '5k2a；靠窗', tables: 2 }, { shown: '靠窗' }],
-        ['客人自己打 備註 5k1a', [`${base} 10位 備註 5k1a`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無' }],
-        ['客人打 備註 4.5k2a 慶生（先缺手機）', [`${y}/10/03 18:30 姓名測試同學 20位 備註 4.5k2a 慶生`, '0900000000', '確認'], { people: '20', note: '4.5k2a；慶生', tables: 2 }, { shown: '慶生', minReplies: 3 }],
+        ['桌菜5000、大人10位小朋友2位、靠窗', [`${base} 大人10位小朋友2位 5000的桌菜 靠窗`, '確認'], { people: '12', note: '5k2a 大人10位、小朋友2位；靠窗', tables: 2 }, { plan: '每桌 5000 元、2 桌' }],
+        ['4.5k2a 簡寫、20位', [`${base} 20位 4.5k2a`, '確認'], { people: '20', note: '4.5k2a', tables: 2 }, { plan: '每桌 4500 元、2 桌' }],
+        ['桌菜4500 兩桌、2位', [`${base} 2位 桌菜4500 兩桌`, '確認'], { people: '2', note: '4.5k2a', tables: 2 }, { plan: '每桌 4500 元、2 桌' }],
+        ['分兩則訊息', [`${base} 10位`, '5000的桌菜 大人8位小孩2位', '確認'], { people: '10', note: '5k1a 大人8位、小朋友2位', tables: 1 }, { plan: '每桌 5000 元、1 桌' }],
+        ['備註已有代碼', [`${base} 10位 備註 5k1a 慶生`, '確認'], { people: '10', note: '5k1a；慶生', tables: 1 }, { plan: '每桌 5000 元、1 桌' }],
+        ['沒講方案 → 備註不變（回歸）', [`${base} 4位 靠窗`, '確認'], { people: '4', note: '靠窗', tables: 1 }, { plan: null }],
+        ['12位＋一桌就好 → 1 桌、5k1a', [`${base} 12位 5000的桌菜 一桌就好`, '確認'], { people: '12', note: '5k1a', tables: 1 }, { tablesShown: 1, plan: '每桌 5000 元、1 桌' }],
+        ['12位沒講桌數 → ceil(12/10)=2 桌', [`${base} 12位 5000的桌菜`, '確認'], { people: '12', note: '5k2a', tables: 2 }, { tablesShown: 2, plan: '每桌 5000 元、2 桌' }],
+        ['客人打 5k2a 簡寫＋靠窗', [`${base} 20位 5k2a 靠窗`, '確認'], { people: '20', note: '5k2a；靠窗', tables: 2 }, { shown: '靠窗', plan: '每桌 5000 元、2 桌' }],
+        ['客人自己打 備註 5k1a', [`${base} 10位 備註 5k1a`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
+        ['客人打 備註 4.5k2a 慶生（先缺手機）', [`${y}/10/03 18:30 姓名測試同學 20位 備註 4.5k2a 慶生`, '0900000000', '確認'], { people: '20', note: '4.5k2a；慶生', tables: 2 }, { shown: '慶生', minReplies: 3, plan: '每桌 4500 元、2 桌', summaryPlan: true }],
+        ['5.5k3a 簡寫、30位', [`${base} 30位 5.5k3a`, '確認'], { people: '30', note: '5.5k3a', tables: 3 }, { shown: '無', plan: '每桌 5500 元、3 桌' }],
     ];
     for (const [label, msgs, want, rw = {}] of I) {
         const { rows, replies } = run(msgs);
@@ -192,12 +226,55 @@ if (gasMain && existsSync(gasMain)) {
         const shownNote = (success.match(/\n備註：([^\n]*)/) || [])[1];
         const wantShown = rw.shown != null ? rw.shown : (want.note.includes('；') ? want.note.split('；').slice(1).join('；') : (/k\d*a/.test(want.note) ? '無' : (want.note || '無')));
         eq(shownNote, wantShown, `整合 ${label}：客人看到的備註`);
+        // 方案友善文字：有方案 → 核對與成功訊息各多一行；沒方案 → 任何回覆都不多「方案」行
+        const confirm = replies.filter((t) => /請您核對/.test(t)).pop() || ''; // 最後一次核對（多則訊息時）
+        if (rw.plan) {
+            ok(confirm.includes(`🍽️ 方案：${rw.plan}\n`), `${label}: 核對訊息應顯示「${rw.plan}」：${confirm}`);
+            eq((success.match(/\n方案：([^\n]*)/) || [])[1], rw.plan, `整合 ${label}：成功訊息方案友善文字`);
+        } else {
+            replies.forEach((t, k) => ok(!/方案/.test(t), `${label}: 沒方案卻多了方案行（第 ${k + 1} 則）：${t}`));
+        }
+        if (rw.summaryPlan) {
+            const summary = replies.find((t) => /目前已記下/.test(t)) || '';
+            ok(summary.includes(`🍽️ 方案：${rw.plan}`), `${label}: 還差資料訊息應顯示方案友善文字：${summary}`);
+        }
+        replies.forEach((t, k) => ok(!/散客|大型\d*a/.test(t), `${label}: 第 ${k + 1} 則含店內短碼`));
         if (rw.tablesShown) ok(new RegExp(`桌數：${rw.tablesShown} 桌`).test(success), `${label}: 成功訊息桌數應為 ${rw.tablesShown}：${success}`);
         ok(rows.length === 1, `${label}: 應寫入 1 列，實際 ${rows.length}（replies: ${replies.join(' / ')}）`);
         if (rows.length !== 1) continue;
         const r = rows[0];
         eq({ people: r[3], note: r[7], tables: r[8] }, want, `整合 ${label}`);
         ok(r.length === 12, `${label}: 只寫 A:L（12 欄），M 預估金額不寫；實際 ${r.length} 欄`);
+    }
+
+    console.log('# 整合測試：網頁表單確認信（MailApp 以 mock 攔截，不寄信）');
+    const web = (note) => ({ action: 'booking', type: 'dining', name: '測試同學', phone: '0900000000', date: `${y}-10-03`, time: '18:30',
+        people: '12', tables: ((note.match(/k(\d+)a/) || [])[1] || (note.match(/大型(\d+)a/) || [])[1] || '1'), note, email: 'test@example.com', orderItems: '', orderId: '' });
+    const W = [
+        ['4.5k1a＋分類＋自填', '4.5k1a 大人10位、小朋友2位；慶生', '每桌 4500 元、1 桌', '大人10位、小朋友2位；慶生'],
+        ['5k2a 只有代碼', '5k2a', '每桌 5000 元、2 桌', '無'],
+        ['5.5k3a＋素食', '5.5k3a 大人30位 素食1位', '每桌 5500 元、3 桌', '大人30位 素食1位'],
+        ['散客（沒方案）', '散客 大人6位；不吃辣', null, '大人6位；不吃辣'],
+        ['大型4a（沒方案）', '大型4a 大人30位 素食', null, '大人30位 素食'],
+        ['客人自填備註（沒代碼）', '靠窗', null, '靠窗'],
+        ['空備註', '', null, '無'],
+    ];
+    for (const [label, note, wantPlan, wantNote] of W) {
+        const { rows, mails } = run(web(note));
+        ok(rows.length === 1 && rows[0][7] === note, `確認信 ${label}: H 欄必須原樣保存完整備註；實際 ${JSON.stringify(rows[0] && rows[0][7])}`);
+        ok(rows.length === 1 && rows[0].length === 12, `確認信 ${label}: 只寫 A:L，M 不寫`);
+        ok(mails.length === 1, `確認信 ${label}: 應寄 1 封（mock），實際 ${mails.length}`);
+        if (mails.length !== 1) continue;
+        const html = mails[0].htmlBody;
+        const text = html.replace(/<[^>]+>/g, ' ');
+        ok(!CODE_LIKE.test(text) && !/散客|大型\d*a/.test(text), `確認信 ${label}: 不可含代碼：${text}`);
+        eq((html.match(/<strong>方案：<\/strong>([^<]*)<\/li>/) || [])[1] || null, wantPlan, `確認信 ${label}：方案友善文字`);
+        eq((html.match(/<strong>備註事項：<\/strong>([^<]*)<\/li>/) || [])[1], wantNote, `確認信 ${label}：備註事項`);
+    }
+    {
+        const { mails } = run({ ...web(''), type: 'takeout', note: '5k 不要辣', orderItems: '烤雞 x1\n', people: '', tables: '' });
+        const html = (mails[0] || {}).htmlBody || '';
+        ok(!/<strong>方案：/.test(html), '外帶確認信不多方案行');
     }
 } else {
     console.log('# 整合測試略過（未設定 SMC_GAS_MAIN；正式 程式碼.js 含機密不進公開 repo）');

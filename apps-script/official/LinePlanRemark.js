@@ -10,8 +10,10 @@
  *   - 人數完整字：大人N位、小朋友N位、幼兒N位（0 不寫）；只有客人有講「大人／小朋友／幼兒」分類時才加。
  *   - 備註裡已經有代碼（例：客人打「備註 5k1a 靠窗」）→ 不重複加，改把該代碼移到最前面。
  *   - 格式：「代碼 人數字；原本備註」，DailyBookingSync 以 FORM_NEW_PREFIX_RE_／KA 短碼辨識。
- *   - 客人看不到代碼（Owner 2026-09-28）：回給客人的 LINE 訊息（核對、還差資料、預約成功）一律用
- *     lineCustomerNote_(客人原本備註)，拿掉 5k1a／4.5k2a／5k 這類代碼；工作表 H 欄仍存完整備註。
+ *   - 客人看不到代碼（Owner 2026-09-28）：回給客人的 LINE 訊息（核對、還差資料、預約成功）與網頁表單確認信
+ *     備註一律去掉 5k1a／4.5k2a／5k／散客／大型Na 這類代碼；方案改用友善文字另起一行
+ *     （4.5k1a →「每桌 4500 元、1 桌」，5k2a →「每桌 5000 元、2 桌」；沒方案就不多一行）。
+ *     工作表 H 欄仍存完整備註；老闆通知／行事曆不變。
  *   - 桌數：客人有講桌數（「一桌就好」「兩桌」「5k1a」）就用客人講的（容量檢查、I 欄、代碼同一個數）；
  *     沒講才用 ceil(人數/10)。
  */
@@ -203,11 +205,51 @@ function lineCustomerNote_(note) {
     .trim();
 }
 
+/**
+ * 方案代碼 → 客人看得懂的文字（a = 桌數）。
+ *   4.5k1a →「每桌 4500 元、1 桌」；5k2a →「每桌 5000 元、2 桌」；5.5k →「每桌 5500 元」。
+ * 參數可以是代碼本身或整段備註（取第一個代碼）；沒有合理代碼回 ""。散客／大型Na 不是價位方案 → ""。
+ */
+function linePlanFriendly_(text) {
+  var s = String(text == null ? "" : text);
+  var m = s.match(/(?:^|[^0-9A-Za-z.])(\d{1,2}(?:\.\d+)?)\s*[Kk](?:\s*[Xx]?\s*(\d{1,2})?\s*[Aa])?(?![A-Za-z])/);
+  if (!m) return "";
+  var price = Math.round(parseFloat(m[1]) * 1000);
+  if (!linePriceToCode_(price)) return "";
+  var tables = m[2] ? parseInt(m[2], 10) : 0;
+  return "每桌 " + price + " 元" + (tables >= 1 && tables <= LINE_MAX_TABLES_ ? "、" + tables + " 桌" : "");
+}
+
+/**
+ * LINE 對話中（還沒 finalize）給客人看的方案文字：與 finalizeBooking 同規則算桌數後組代碼，再轉友善文字。
+ * 客人明講桌數優先；否則有人數時 ceil(人數/10)；都沒有就只顯示價位。沒有方案回 ""。
+ */
+function lineCustomerPlanText_(state) {
+  state = state || {};
+  var seat = (typeof SEAT_PER_TABLE !== "undefined" && SEAT_PER_TABLE > 0) ? SEAT_PER_TABLE : 10;
+  var people = parseInt(state.people, 10);
+  var explicitTables = parseInt(state.tables, 10);
+  var tables = explicitTables >= 1 ? explicitTables : (people >= 1 ? Math.max(1, Math.ceil(people / seat)) : 0);
+  return linePlanFriendly_(composeLineRemark_({ plan: state.plan || null, tables: tables, people: people, head: null, note: state.note || "" }));
+}
+
+/**
+ * 工作表備註（網頁表單「代碼 人數字…；客人自填」或 LINE「代碼 人數字；原備註」）→ 給客人看的備註：
+ * 去掉開頭的 散客／大型Na 與所有 k 代碼，其餘（大人N位、素食、客人自填）保留。只有代碼 → ""。
+ */
+function customerNoteText_(remark) {
+  var s = String(remark == null ? "" : remark).trim();
+  var stripped = s.replace(/^(?:散客|大型(?:[1-9][0-9]*a)?)(?=[ ；;、，,]|$)/, "");
+  if (stripped === s) return lineCustomerNote_(s);
+  return lineCustomerNote_(stripped.replace(/^[\s、，,；;]+/, "") || "");
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     stripLineNoise_: stripLineNoise_, linePriceToCode_: linePriceToCode_, parseLinePlan_: parseLinePlan_,
     parseLineTables_: parseLineTables_, parseLineHeadcount_: parseLineHeadcount_,
     linePeopleWords_: linePeopleWords_, composeLineRemark_: composeLineRemark_, lineNumToInt_: lineNumToInt_,
-    lineCustomerNote_: lineCustomerNote_
+    lineCustomerNote_: lineCustomerNote_, linePlanFriendly_: linePlanFriendly_,
+    lineCustomerPlanText_: lineCustomerPlanText_, customerNoteText_: customerNoteText_
   };
 }
