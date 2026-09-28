@@ -71,6 +71,36 @@ eq(hc('10位 需要寶寶椅'), null, '寶寶椅不是人數');
 eq(hc('10位'), null, '沒分類 → null');
 eq(hc('2026/10/03 18:30 大人4位 0900000000'), [4, 0, 0, 4], '去除日期時間手機');
 
+console.log('# parseLinePeopleInfo_（總數＋分類；Cursor review blocker 1／2）');
+const PI = (m) => { const i = L.parseLinePeopleInfo_(m); const lp = L.lineMessagePeople_(i);
+    return { head: i.head ? [i.head.adults, i.head.kids, i.head.infants, i.head.total] : null, stated: i.stated, people: lp ? lp.people : null, fromBreakdown: lp ? lp.fromBreakdown : null }; };
+for (const [m, want] of [
+    ['10位 大人8位小孩2位', { head: [8, 2, 0, 10], stated: 10, people: 10, fromBreakdown: false }],
+    ['20位 大人8位小孩2位', { head: [8, 2, 0, 10], stated: 20, people: 20, fromBreakdown: false }],
+    ['大人8位、2個小孩', { head: [8, 2, 0, 10], stated: null, people: 10, fromBreakdown: true }],
+    ['2個小孩、大人8位', { head: [8, 2, 0, 10], stated: null, people: 10, fromBreakdown: true }],
+    ['20位，小朋友2位要兒童椅', { head: [0, 2, 0, 2], stated: 20, people: 20, fromBreakdown: false }],
+    ['4大2小 共10位', { head: [4, 2, 0, 6], stated: 10, people: 10, fromBreakdown: false }],
+    ['共12位大人10位小孩2位', { head: [10, 2, 0, 12], stated: 12, people: 12, fromBreakdown: false }],
+    ['8個大人2個小孩', { head: [8, 2, 0, 10], stated: null, people: 10, fromBreakdown: true }],
+    ['大人 8 位，小孩 2 位', { head: [8, 2, 0, 10], stated: null, people: 10, fromBreakdown: true }],
+    ['兩個大人跟一個小孩', { head: [2, 1, 0, 3], stated: null, people: 3, fromBreakdown: true }],
+    ['10位大人', { head: [10, 0, 0, 10], stated: null, people: 10, fromBreakdown: true }],
+    ['大人8位、2個小孩 5000的桌菜（價位不當人數）', { head: [8, 2, 0, 10], stated: null, people: 10, fromBreakdown: true }],
+    ['2026/10/03 18:30 大人4位 0900000000 共4位', { head: [4, 0, 0, 4], stated: 4, people: 4, fromBreakdown: false }],
+    ['10位 需要寶寶椅、兒童椅', { head: null, stated: 10, people: null, fromBreakdown: null }],
+]) eq(PI(m), want, `人數 ${m}`);
+
+console.log('# 桌數／價位補強（blocker 3＋nits）');
+for (const [m, wantPlan, wantTables] of [
+    ['一桌是5000', { price: 5000, tables: null }, 1], ['一桌要5000', { price: 5000, tables: null }, 1],
+    ['一桌大約5000', { price: 5000, tables: null }, 1], ['一桌5000', { price: 5000, tables: null }, null],
+    ['一桌要5000，共兩桌', { price: 5000, tables: null }, 2], ['5000兩桌', { price: 5000, tables: null }, 2],
+    ['2桌菜5000', { price: 5000, tables: null }, 2], ['5k×2a', { price: 5000, tables: 2 }, null],
+    ['５ｋ２ａ', { price: 5000, tables: 2 }, null], ['４．５ｋ１ａ', { price: 4500, tables: 1 }, null],
+    ['iPhone 5k', null, null], ['iPhone5k', null, null], ['要5kg雞', null, null],
+]) { eq(plan(m), wantPlan, `價位 ${m}`); eq(L.parseLineTables_(m), wantTables, `桌數 ${m}`); }
+
 console.log('# composeLineRemark_');
 const C = (o) => L.composeLineRemark_(o);
 const H = (a, k, i) => ({ adults: a, kids: k, infants: i, total: a + k + i });
@@ -88,6 +118,12 @@ const cases = [
     ['備註已有人數字 → 不重複', { plan: { price: 5000 }, tables: 1, people: 10, head: H(10, 0, 0), note: '大人10位 慶生' }, '5k1a；大人10位 慶生'],
     ['分類合計≠人數 → 不寫分類', { plan: { price: 5000 }, tables: 2, people: 12, head: H(8, 2, 0) }, '5k2a'],
     ['沒方案、沒分類 → 原備註不變', { tables: 1, people: 4, note: '靠窗' }, '靠窗'],
+    ['備註 5k1a＋明講 2 桌 → a 改成 2（blocker 4）', { plan: { price: 5000 }, tables: 2, people: 20, note: '5k1a 靠窗' }, '5k2a；靠窗'],
+    ['備註只有 5k → 不重複', { plan: { price: 5000 }, tables: 1, people: 10, note: '5k' }, '5k1a'],
+    ['備註全形代碼 → 半形＋最終桌數', { tables: 2, people: 20, note: '５ｋ２ａ 靠窗' }, '5k2a；靠窗'],
+    ['備註 5k×2a → 正規化', { tables: 2, people: 20, note: '5k×2a' }, '5k2a'],
+    ['備註 iPhone 5k 不是代碼', { plan: { price: 5000 }, tables: 1, people: 10, note: 'iPhone 5k 充電' }, '5k1a；iPhone 5k 充電'],
+    ['部分分類（小朋友2位）≠ 20 位 → 不寫人數字', { tables: 2, people: 20, head: H(0, 2, 0), note: '需要兒童椅' }, '需要兒童椅'],
     ['全空 → 空字串', { tables: 1, people: 4 }, ''],
 ];
 for (const [label, o, want] of cases) eq(C(o), want, label);
@@ -98,13 +134,14 @@ const CODE_LIKE = /(?:^|[^0-9A-Za-z.])\d{1,2}(?:\.\d+)?\s*[Kk](?![A-Za-z])|\d\s*
 const cnCases = [
     ['5k2a', ''], ['4.5k2a', ''], ['5k1a', ''], ['5K 1A', ''], ['5k', ''], ['4.5K', ''],
     ['5k1a 慶生', '慶生'], ['靠窗、4.5k2a', '靠窗'], ['4.5k2a、靠窗、慶生', '靠窗、慶生'],
-    ['5K1A5k2a 靠窗', '靠窗'], ['備註：5k1a', '備註'],
+    ['5K1A5k2a 靠窗', '靠窗'], ['備註：5k1a', '備註'], ['５ｋ２ａ 靠窗', '靠窗'], ['5k×2a 慶生', '慶生'],
     ['需要兒童椅', '需要兒童椅'], ['靠窗、慶生／生日', '靠窗、慶生／生日'],
-    ['要5kg雞', '要5kg雞'], ['iPhone5k 充電', 'iPhone5k 充電'], ['', ''],
+    ['要5kg雞', '要5kg雞'], ['iPhone5k 充電', 'iPhone5k 充電'], ['iPhone 5k 充電', 'iPhone 5k 充電'], ['', ''],
 ];
 for (const [inp, want] of cnCases) eq(CN(inp), want, `客人備註 ${JSON.stringify(inp)}`);
 for (const [label, o] of cases) {
     const shown = CN(o.note || '');
+    if (/iPhone/.test(shown)) continue; // 刻意保留的一般字（不是代碼）
     ok(!CODE_LIKE.test(shown), `客人備註仍含代碼：${label} → ${shown}`);
 }
 
@@ -113,7 +150,7 @@ const PF = (t) => L.linePlanFriendly_(t);
 for (const [inp, want] of [
     ['4.5k1a', '每桌 4500 元、1 桌'], ['5k2a', '每桌 5000 元、2 桌'], ['5.5k3a', '每桌 5500 元、3 桌'],
     ['5K 2A', '每桌 5000 元、2 桌'], ['5k', '每桌 5000 元'], ['5k1a 大人10位、小朋友2位；靠窗', '每桌 5000 元、1 桌'],
-    ['4.5k2a；慶生', '每桌 4500 元、2 桌'], ['散客 大人6位', ''], ['大型4a 大人30位', ''], ['靠窗', ''], ['2k1a', ''], ['', ''],
+    ['4.5k2a；慶生', '每桌 4500 元、2 桌'], ['5k×2a', '每桌 5000 元、2 桌'], ['５ｋ２ａ', '每桌 5000 元、2 桌'], ['iPhone 5k', ''], ['散客 大人6位', ''], ['大型4a 大人30位', ''], ['靠窗', ''], ['2k1a', ''], ['', ''],
 ]) eq(PF(inp), want, `友善方案 ${JSON.stringify(inp)}`);
 const NT = (t) => L.customerNoteText_(t);
 for (const [inp, want] of [
@@ -150,6 +187,8 @@ ok(/^-.*備註事項：.*data\.note \|\| "無"/m.test(patch) && /^\+.*備註事�
 ok(/^\+.*customerNote:\s*lineCustomerNote_\(/m.test(patch), 'finalizeBooking 必須帶 customerNote = lineCustomerNote_(原備註)');
 ok(/^\+.*confirmMsg|^\+.*📝 備註：" \+ lineCustomerNote_\(state\.note\)/m.test(patch), '核對訊息必須用 lineCustomerNote_');
 ok(/^\+.*parts\.push\("📝 備註：" \+ lineCustomerNote_\(s\.note\)\)/m.test(patch), '還差資料訊息必須用 lineCustomerNote_');
+ok(/^\+.*lineMessagePeople_\(/m.test(patch) && /^\+.*parsed\.peopleFromBreakdown && state\.people/m.test(patch), 'patch：分類合計不可蓋掉明講總數（含多輪）');
+ok(/^\+.*tables:\s*parseLineTables_\(msg\) \|\|/m.test(patch), 'patch：明講桌數優先於代碼 a');
 ok(!/09\d{8}/.test(patch.replace(/09\\d\{8\}/g, '')) && !/SMC\d{6}/.test(patch), 'patch 不可含真實手機／訂單編號');
 
 // ---- 整合測試（可選）：套 patch 到 v149 程式碼.js，模擬 LINE 對話到「確認」，檢查寫進工作表1 的列 ----
@@ -214,13 +253,31 @@ if (gasMain && existsSync(gasMain)) {
         ['客人打 5k2a 簡寫＋靠窗', [`${base} 20位 5k2a 靠窗`, '確認'], { people: '20', note: '5k2a；靠窗', tables: 2 }, { shown: '靠窗', plan: '每桌 5000 元、2 桌' }],
         ['客人自己打 備註 5k1a', [`${base} 10位 備註 5k1a`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
         ['客人打 備註 4.5k2a 慶生（先缺手機）', [`${y}/10/03 18:30 姓名測試同學 20位 備註 4.5k2a 慶生`, '0900000000', '確認'], { people: '20', note: '4.5k2a；慶生', tables: 2 }, { shown: '慶生', minReplies: 3, plan: '每桌 4500 元、2 桌', summaryPlan: true }],
+        ['blocker1：10位＋大人8位小孩2位 → 10', [`${base} 10位 大人8位小孩2位 5000的桌菜`, '確認'], { people: '10', note: '5k1a 大人8位、小朋友2位', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
+        ['blocker1：20位＋大人8位小孩2位 → 20、不寫人數字', [`${base} 20位 大人8位小孩2位 5000的桌菜`, '確認'], { people: '20', note: '5k2a', tables: 2 }, { shown: '無', plan: '每桌 5000 元、2 桌' }],
+        ['blocker1：大人8位、2個小孩 → 10', [`${base} 大人8位、2個小孩 5000的桌菜`, '確認'], { people: '10', note: '5k1a 大人8位、小朋友2位', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
+        ['blocker2：20位，小朋友2位要兒童椅 → 20', [`${base} 20位，小朋友2位要兒童椅`, '確認'], { people: '20', note: '需要兒童椅', tables: 2 }, { plan: null }],
+        ['blocker2：4大2小 共10位 → 10', [`${base} 4大2小 共10位`, '確認'], { people: '10', note: '', tables: 1 }, { plan: null }],
+        ['blocker2：先 20位、後「小朋友2位要兒童椅」→ 仍 20', [`${base} 20位`, '小朋友2位要兒童椅', '確認'], { people: '20', note: '需要兒童椅', tables: 2 }, { plan: null }],
+        ['blocker3：8位 一桌是5000', [`${base} 8位 一桌是5000`, '確認'], { people: '8', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
+        ['blocker3：12位 一桌要5000 → 1 桌', [`${base} 12位 一桌要5000`, '確認'], { people: '12', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌', tablesShown: 1 }],
+        ['blocker3：10位 一桌大約5000', [`${base} 10位 一桌大約5000`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
+        ['blocker3：12位 一桌5000（價位，桌數照人數）', [`${base} 12位 一桌5000`, '確認'], { people: '12', note: '5k2a', tables: 2 }, { shown: '無', plan: '每桌 5000 元、2 桌' }],
+        ['blocker4：同一則 20位 兩桌 備註 5k1a 靠窗', [`${base} 20位 兩桌 備註 5k1a 靠窗`, '確認'], { people: '20', note: '5k2a；靠窗', tables: 2 }, { shown: '靠窗', plan: '每桌 5000 元、2 桌', tablesShown: 2 }],
+        ['blocker4：多輪 備註 5k1a → 兩桌', [`${base} 20位 備註 5k1a 靠窗`, '兩桌', '確認'], { people: '20', note: '5k2a；靠窗', tables: 2 }, { shown: '靠窗', plan: '每桌 5000 元、2 桌', tablesShown: 2 }],
+        ['nit：12位 5000兩桌', [`${base} 12位 5000兩桌`, '確認'], { people: '12', note: '5k2a', tables: 2 }, { shown: '無', plan: '每桌 5000 元、2 桌' }],
+        ['nit：12位 2桌菜5000', [`${base} 12位 2桌菜5000`, '確認'], { people: '12', note: '5k2a', tables: 2 }, { shown: '無', plan: '每桌 5000 元、2 桌' }],
+        ['nit：20位 5k×2a', [`${base} 20位 5k×2a`, '確認'], { people: '20', note: '5k2a', tables: 2 }, { shown: '無', plan: '每桌 5000 元、2 桌' }],
+        ['nit：20位 全形５ｋ２ａ', [`${base} 20位 ５ｋ２ａ`, '確認'], { people: '20', note: '5k2a', tables: 2 }, { shown: '無', plan: '每桌 5000 元、2 桌' }],
+        ['nit：備註只有 5k → 5k1a 不重複', [`${base} 10位 備註 5k`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
+        ['nit：iPhone 5k 不是方案', [`${base} 4位 備註 iPhone 5k 充電`, '確認'], { people: '4', note: 'iPhone 5k 充電', tables: 1 }, { shown: 'iPhone 5k 充電', plan: null, allowCodeLike: true }],
         ['5.5k3a 簡寫、30位', [`${base} 30位 5.5k3a`, '確認'], { people: '30', note: '5.5k3a', tables: 3 }, { shown: '無', plan: '每桌 5500 元、3 桌' }],
     ];
     for (const [label, msgs, want, rw = {}] of I) {
         const { rows, replies } = run(msgs);
         // 客人看到的所有 LINE 回覆（還差資料／核對／預約成功）都不可含方案代碼
         ok(replies.length >= (rw.minReplies || 2), `${label}: 應有 ${rw.minReplies || 2}+ 則客人回覆，實際 ${replies.length}`);
-        replies.forEach((t, k) => ok(!CODE_LIKE.test(t), `${label}: 第 ${k + 1} 則客人回覆含方案代碼：${t}`));
+        if (!rw.allowCodeLike) replies.forEach((t, k) => ok(!CODE_LIKE.test(t), `${label}: 第 ${k + 1} 則客人回覆含方案代碼：${t}`));
         const success = replies.find((t) => /預約成功/.test(t)) || '';
         ok(!!success, `${label}: 找不到預約成功回覆（replies: ${replies.join(' / ')}）`);
         const shownNote = (success.match(/\n備註：([^\n]*)/) || [])[1];
@@ -228,6 +285,11 @@ if (gasMain && existsSync(gasMain)) {
         eq(shownNote, wantShown, `整合 ${label}：客人看到的備註`);
         // 方案友善文字：有方案 → 核對與成功訊息各多一行；沒方案 → 任何回覆都不多「方案」行
         const confirm = replies.filter((t) => /請您核對/.test(t)).pop() || ''; // 最後一次核對（多則訊息時）
+        // 成功訊息的「桌數」與「方案」的桌數必須一致
+        const shownTables = (success.match(/桌數：(\d+) 桌/) || [])[1];
+        const planTables = (success.match(/\n方案：每桌 \d+ 元、(\d+) 桌/) || [])[1];
+        if (planTables) ok(shownTables === planTables, `${label}: 桌數 ${shownTables} 與方案 ${planTables} 桌不一致`);
+        eq(shownTables, String(want.tables), `整合 ${label}：成功訊息桌數 = I 欄`);
         if (rw.plan) {
             ok(confirm.includes(`🍽️ 方案：${rw.plan}\n`), `${label}: 核對訊息應顯示「${rw.plan}」：${confirm}`);
             eq((success.match(/\n方案：([^\n]*)/) || [])[1], rw.plan, `整合 ${label}：成功訊息方案友善文字`);

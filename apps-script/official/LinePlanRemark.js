@@ -18,13 +18,17 @@
  *     沒講才用 ceil(人數/10)。
  */
 
-// 與 DailyBookingSync.parseRemarkAndCode_ 相同的 KA 短碼辨識式。
-var LINE_KA_CODE_RE_ = /(\d+(?:\.\d+)?\s*[Kk]\s*[Xx]?\d*\s*[Aa])/;
 var LINE_NUM_ = "[0-9一二兩两三四五六七八九十]+";
+// 人數用：1–2 位數字（前後不黏其他數字，避免「小孩 5000的桌菜」被讀成 5000 位）或中文數字
+var LINE_HEAD_NUM_ = "(?:(?<![0-9])[0-9]{1,2}(?![0-9])|[一二兩两三四五六七八九十]{1,3})";
 var LINE_ADULT_LABEL_ = "大人|成人";
-var LINE_KID_LABEL_ = "小朋友|小孩|兒童|小童|孩子|國小生|國中生|學童";
-var LINE_INFANT_LABEL_ = "幼兒園?|幼稚園|嬰兒|幼童|寶寶(?![椅座])";
+// 「兒童椅／小孩座／寶寶椅」是座椅需求，不是人數分類
+var LINE_KID_LABEL_ = "(?:小朋友|小孩|兒童|小童|孩子|國小生|國中生|學童)(?![椅座餐])";
+var LINE_INFANT_LABEL_ = "(?:幼兒園?|幼稚園|嬰兒|幼童|寶寶)(?![椅座餐車])";
 var LINE_MAX_TABLES_ = 20;
+// 方案代碼形狀：5k、4.5k、5k1a、4.5K 2A、5k×2a（a = 桌數）。實際判斷用 lineFindCodes_（含前後文檢查）。
+var LINE_CODE_SHAPE_ = "(\\d{1,2}(?:\\.\\d{1,2})?)\\s*[Kk](?:\\s*[Xx×✕＊*]?\\s*(\\d{1,2})\\s*[Aa])?";
+var LINE_PRICE_CONN_ = "(?:是|要|約|大約|大概|差不多)";
 
 function lineNumToInt_(s) {
   s = String(s == null ? "" : s).trim();
@@ -41,9 +45,16 @@ function lineNumToInt_(s) {
   return parseInt(s, 10) || 0;
 }
 
-// 先移除手機、訂單編號、日期、時間，避免數字被誤判成價位／桌數／人數。
+// 全形英數字／句點轉半形（５ｋ２ａ → 5k2a），其他字不動。
+function lineHalfWidth_(s) {
+  return String(s == null ? "" : s).replace(/[\uFF10-\uFF19\uFF21-\uFF3A\uFF41-\uFF5A\uFF0E]/g, function (c) {
+    return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+  });
+}
+
+// 先轉半形，再移除手機、訂單編號、日期、時間，避免數字被誤判成價位／桌數／人數。
 function stripLineNoise_(msg) {
-  return String(msg == null ? "" : msg)
+  return lineHalfWidth_(msg)
     .replace(/09\d{8}/g, " ")
     .replace(/SMC\s*\d{6}/gi, " ")
     .replace(/\d{4}[-\/.]\d{1,2}[-\/.]\d{1,2}/g, " ")
@@ -59,24 +70,59 @@ function linePriceToCode_(price) {
 }
 
 /**
+ * 找出字串中所有方案代碼（請先轉半形）。回傳 [{ index, end, price, tables, valid }]。
+ *   - 前面黏英數字／小數點，或前面是英文字＋空白（iPhone5k、iPhone 5k）→ 不算。
+ *   - 後面黏英文字（5kg）或不是代碼的數字（5k12）→ 不算；相鄰代碼（5k1a5k2a）都算。
+ *   - valid = 價位合理（3000–20000、百元整）。
+ */
+function lineFindCodes_(s) {
+  s = String(s == null ? "" : s);
+  var re = new RegExp(LINE_CODE_SHAPE_ + "(?![A-Za-z])", "g");
+  var startsCode = new RegExp("^" + LINE_CODE_SHAPE_ + "(?![A-Za-z])");
+  var out = [], m, lastEnd = -1;
+  while ((m = re.exec(s)) !== null) {
+    var before = s.slice(0, m.index);
+    var end = m.index + m[0].length;
+    if (m.index !== lastEnd && (/[0-9A-Za-z.]$/.test(before) || /[A-Za-z]\s+$/.test(before))) continue;
+    var after = s.slice(end);
+    if (/^\d/.test(after) && !startsCode.test(after)) continue;
+    var price = Math.round(parseFloat(m[1]) * 1000);
+    var tb = m[2] ? parseInt(m[2], 10) : null;
+    out.push({ index: m.index, end: end, price: price, tables: (tb >= 1 && tb <= LINE_MAX_TABLES_) ? tb : null, valid: !!linePriceToCode_(price) });
+    lastEnd = end;
+  }
+  return out;
+}
+
+// 移除字串中所有代碼（含價位不合理的代碼形狀），整理多餘的分隔符號。沒有代碼 → 原字串（trim）。
+function lineStripCodes_(s) {
+  var src = String(s == null ? "" : s);
+  var hw = lineHalfWidth_(src);
+  var codes = lineFindCodes_(hw);
+  if (!codes.length) return src.trim();
+  for (var i = codes.length - 1; i >= 0; i--) hw = hw.slice(0, codes[i].index) + " " + hw.slice(codes[i].end);
+  return hw
+    .replace(/[ \t\u3000]+/g, " ")
+    .replace(/\s*([、，,；;])\s*/g, "$1")
+    .replace(/([、，,；;])[、，,；;]+/g, "$1")
+    .replace(/^[\s、，,；;]+|[\s、，,；;:：]+$/g, "")
+    .trim();
+}
+
+/**
  * 解析桌菜方案價位（每桌）。回傳 { price: 5000, tables: 1|null } 或 null。
- *   - 店內簡寫：5k1a、4.5k2a、5k、4.5K 2A
- *   - 價位＋關鍵字：5000的桌菜、桌菜5000、4500元方案、每桌5000、一桌4500、5000一桌
+ *   - 店內簡寫：5k1a、4.5k2a、5k、4.5K 2A、5k×2a、全形５ｋ２ａ（iPhone 5k 不算）
+ *   - 價位＋關鍵字：5000的桌菜、桌菜5000、4500元方案、每桌5000、一桌4500、一桌是／要／大約5000、5000一桌、5000兩桌、2桌菜5000
  */
 function parseLinePlan_(msg) {
   var t = stripLineNoise_(msg);
-  var m = t.match(/(?:^|[^0-9A-Za-z.])(\d{1,2}(?:\.\d)?)\s*[Kk](?:\s*(\d{1,2})\s*[Aa])?(?![A-Za-z])/);
-  if (m) {
-    var p = Math.round(parseFloat(m[1]) * 1000);
-    if (linePriceToCode_(p)) {
-      var tb = m[2] ? parseInt(m[2], 10) : null;
-      return { price: p, tables: (tb && tb >= 1 && tb <= LINE_MAX_TABLES_) ? tb : null };
-    }
-  }
+  var codes = lineFindCodes_(t).filter(function (c) { return c.valid; });
+  if (codes.length) return { price: codes[0].price, tables: codes[0].tables };
   var kw = "(?:桌菜|合菜|方案|套餐|價位|每桌|一桌|\\/桌)";
   var re = [
-    new RegExp("(?:^|[^0-9])([1-9]\\d{3,4})\\s*(?:元|塊)?\\s*(?:的)?\\s*" + kw),
-    new RegExp(kw + "\\s*(?:價位|價格)?\\s*[:：]?\\s*(?:NT\\$?|\\$)?\\s*([1-9]\\d{3,4})(?![0-9])")
+    new RegExp("(?:^|[^0-9.])([1-9]\\d{3,4})\\s*(?:元|塊)?\\s*(?:的)?\\s*" + kw),
+    new RegExp(kw + "\\s*(?:價位|價格)?\\s*[:：]?\\s*" + LINE_PRICE_CONN_ + "?\\s*(?:NT\\$?|\\$)?\\s*([1-9]\\d{3,4})(?![0-9])"),
+    new RegExp("(?:^|[^0-9.])([1-9]\\d{3,4})\\s*(?:元|塊)?\\s*(?:的)?\\s*(?:[0-9]{1,2}|[一二兩两三四五六七八九十]{1,3})\\s*張?\\s*桌")
   ];
   for (var i = 0; i < re.length; i++) {
     var mm = t.match(re[i]);
@@ -85,61 +131,111 @@ function parseLinePlan_(msg) {
   return null;
 }
 
-// 解析客人明講的桌數（「2桌」「兩桌」「共3張桌」）；「桌菜」「每桌」「一桌5000」（價位說明）不算。回傳 1..20 或 null。
+/**
+ * 解析客人明講的桌數（「2桌」「兩桌」「共3張桌」「2桌菜」）。回傳 1..20 或 null。
+ *   - 「每桌」「桌菜」（前面沒數字）不算；「一桌5000」「5000一桌」= 價位說明，不算桌數。
+ *   - 「一桌是／要／大約5000」= 一桌、每桌 5000 → 1 桌（同一句另有明講桌數時以明講的為準）。
+ */
 function parseLineTables_(msg) {
   var t = stripLineNoise_(msg);
-  var re = /(?:(?:^|[^0-9.])(\d{1,2})|([一二兩两三四五六七八九十]{1,3}))\s*(?:張)?\s*桌(?!菜)/g;
-  var m;
+  var re = /(?:(?:^|[^0-9.])(\d{1,2})|([一二兩两三四五六七八九十]{1,3}))\s*(?:張)?\s*桌(菜)?/g;
+  var m, fallback = null;
   while ((m = re.exec(t)) !== null) {
     var after = t.slice(m.index + m[0].length);
     var n = lineNumToInt_(m[1] || m[2]);
-    if (n === 1 && /^\s*(?:是|要|約|大約)?\s*(?:NT\$?|\$)?\s*[1-9]\d{3,4}/.test(after)) continue; // 「一桌5000」= 價位
     var before = t.slice(0, m.index + (m[1] ? m[0].indexOf(m[1]) : m[0].indexOf(m[2])));
     if (/每\s*$/.test(before)) continue; // 「每桌」
-    if (n === 1 && /[1-9]\d{3,4}\s*(?:元|塊)?\s*(?:的)?\s*$/.test(before)) continue; // 「5000一桌」= 價位
+    if (!m[3] && n === 1) {
+      if (/^\s*(?:NT\$?|\$)?\s*[1-9]\d{3,4}/.test(after)) continue; // 「一桌5000」= 價位
+      if (new RegExp("^\\s*" + LINE_PRICE_CONN_ + "\\s*(?:NT\\$?|\\$)?\\s*[1-9]\\d{3,4}").test(after)) { if (fallback === null) fallback = 1; continue; }
+      if (/[1-9]\d{3,4}\s*(?:元|塊)?\s*(?:的)?\s*$/.test(before)) continue; // 「5000一桌」= 價位
+    }
     if (n >= 1 && n <= LINE_MAX_TABLES_) return n;
   }
-  return null;
+  return fallback;
 }
 
 /**
- * 解析大人／小朋友／幼兒分類人數。沒有任何分類字時回傳 null（只講「10位」→ 不加人數字）。
- * 支援「大人8位小孩2位」（分類在前）與「8個大人2個小孩」（數字在前）；依第一個分類字的寫法決定。
- * 回傳 { adults, kids, infants, total }。
+ * 解析人數：大人／小朋友／幼兒分類＋客人明講的總人數。回傳 { head, stated }。
+ *   head   = { adults, kids, infants, total } 或 null（沒有任何分類字）
+ *   stated = 客人明講、且不屬於分類的總人數（「10位」「共10位」「總共12人」）或 null
+ * 分類逐段解析（以 、，；。和 跟 及 還有 另外 加上 分段），每段自動判斷寫法，可混用：
+ *   「大人8位小孩2位」（分類在前）、「8個大人2個小孩」（數字在前）、「大人8位、2個小孩」、「4大2小」。
+ *   同一段兩種讀法都說得通時（「10位 大人8位小孩2位」），段落結尾是數字 → 分類在前，結尾是分類字 → 數字在前。
  */
-function parseLineHeadcount_(msg) {
+function parseLinePeopleInfo_(msg) {
   var t = stripLineNoise_(msg);
+  var residual = t;
+  function blank(start, len) { residual = residual.slice(0, start) + new Array(len + 1).join(" ") + residual.slice(start + len); }
   var labels = "(" + LINE_ADULT_LABEL_ + "|" + LINE_KID_LABEL_ + "|" + LINE_INFANT_LABEL_ + ")";
-  var labelFirst = new RegExp(labels + "\\s*[:：]?\\s*(" + LINE_NUM_ + ")\\s*(?:位|個|名|人)?", "g");
-  var numFirst = new RegExp("(" + LINE_NUM_ + ")\\s*(?:位|個|名)?\\s*" + labels, "g");
-  // 台灣常見簡寫「4大2小」→ 大人4位、小朋友2位
-  var bs = t.match(new RegExp("(" + LINE_NUM_ + ")\\s*大\\s*(" + LINE_NUM_ + ")\\s*小(?![朋孩童])"));
-  if (bs && !new RegExp(labels).test(t)) {
-    var ba = lineNumToInt_(bs[1]), bk = lineNumToInt_(bs[2]);
-    if (ba > 0 && ba + bk <= 99) return { adults: ba, kids: bk, infants: 0, total: ba + bk };
-  }
-  var first = t.match(new RegExp(labels));
-  if (!first) return null;
-  var afterFirst = t.slice(first.index + first[0].length);
-  var beforeFirst = t.slice(0, first.index);
-  var useLabelFirst = new RegExp("^\\s*[:：]?\\s*" + LINE_NUM_).test(afterFirst) &&
-                      !new RegExp(LINE_NUM_ + "\\s*(?:位|個|名)?\\s*$").test(beforeFirst);
+  var adultRe = new RegExp("^(?:" + LINE_ADULT_LABEL_ + ")$"), infantRe = new RegExp("^(?:" + LINE_INFANT_LABEL_ + ")$");
   var out = { adults: 0, kids: 0, infants: 0, total: 0 };
-  var found = false, m;
-  var re = useLabelFirst ? labelFirst : numFirst;
-  while ((m = re.exec(t)) !== null) {
-    var label = useLabelFirst ? m[1] : m[2];
-    var n = lineNumToInt_(useLabelFirst ? m[2] : m[1]);
-    if (!(n > 0)) continue;
+  var found = false;
+  function add(label, n) {
+    if (!(n > 0)) return;
     found = true;
-    if (new RegExp("^(?:" + LINE_ADULT_LABEL_ + ")$").test(label)) out.adults += n;
-    else if (new RegExp("^(?:" + LINE_INFANT_LABEL_ + ")$").test(label)) out.infants += n;
+    if (label === "大") out.adults += n;
+    else if (label === "小") out.kids += n;
+    else if (adultRe.test(label)) out.adults += n;
+    else if (infantRe.test(label)) out.infants += n;
     else out.kids += n;
   }
-  if (!found) return null;
+  // 台灣常見簡寫「4大2小」
+  var bsRe = new RegExp("(" + LINE_HEAD_NUM_ + ")\\s*大\\s*(" + LINE_HEAD_NUM_ + ")\\s*小(?![朋孩童])", "g"), bm;
+  while ((bm = bsRe.exec(t)) !== null) { add("大", lineNumToInt_(bm[1])); add("小", lineNumToInt_(bm[2])); blank(bm.index, bm[0].length); }
+  // 逐段
+  var sepRe = /[、，,；;。！!？?\n]|以及|還有|另外|加上|和|跟|及/g, sm, segStart = 0, segs = [];
+  while ((sm = sepRe.exec(residual)) !== null) { segs.push([segStart, sm.index]); segStart = sm.index + sm[0].length; }
+  segs.push([segStart, residual.length]);
+  for (var si = 0; si < segs.length; si++) {
+    var s0 = segs[si][0], seg = residual.slice(s0, segs[si][1]);
+    if (!new RegExp(labels).test(seg)) continue;
+    var modes = [
+      { re: new RegExp(labels + "\\s*[:：]?\\s*(" + LINE_HEAD_NUM_ + ")\\s*(?:位|個|名|人)?", "g"), li: 1, ni: 2 },
+      { re: new RegExp("(" + LINE_HEAD_NUM_ + ")\\s*(?:位|個|名)?\\s*" + labels, "g"), li: 2, ni: 1 }
+    ];
+    var results = modes.map(function (md) {
+      var hits = [], mm;
+      while ((mm = md.re.exec(seg)) !== null) {
+        var n = lineNumToInt_(mm[md.ni]);
+        if (n > 0) hits.push({ label: mm[md.li], n: n, index: mm.index, len: mm[0].length });
+      }
+      return hits;
+    });
+    var pick;
+    if (results[0].length !== results[1].length) pick = results[0].length > results[1].length ? 0 : 1;
+    else pick = new RegExp(labels + "\\s*$").test(seg) ? 1 : 0;
+    results[pick].forEach(function (h) { add(h.label, h.n); blank(s0 + h.index, h.len); });
+  }
+  var head = null;
   out.total = out.adults + out.kids + out.infants;
-  if (out.total <= 0 || out.total > 99) return null;
-  return out;
+  if (found && out.total > 0 && out.total <= 99) head = out;
+  var stated = null;
+  var sre = new RegExp("(" + LINE_HEAD_NUM_ + ")\\s*(?:位|人|名|個人)(?!份)", "g"), st;
+  while ((st = sre.exec(residual)) !== null) {
+    var sn = lineNumToInt_(st[1]);
+    if (sn >= 1 && sn <= 99) { stated = sn; break; }
+  }
+  return { head: head, stated: stated };
+}
+
+/**
+ * 只取分類人數（相容舊呼叫）。沒有任何分類字時回傳 null（只講「10位」→ 不加人數字）。
+ */
+function parseLineHeadcount_(msg) {
+  return parseLinePeopleInfo_(msg).head;
+}
+
+/**
+ * LINE 一則訊息的人數（D 欄）：
+ *   - 有分類：客人有明講總數 → 用明講的（分類只有部分或對不上時，D 欄仍是總數；備註人數字由 composeLineRemark_ 省略）；
+ *     沒明講 → 分類合計。fromBreakdown = true 表示這個數字只是分類合計。
+ *   - 沒分類：回 null，由 程式碼.js 原本的 parsePeople 處理（行為不變）。
+ */
+function lineMessagePeople_(info) {
+  if (!info || !info.head) return null;
+  if (info.stated) return { people: info.stated, fromBreakdown: false };
+  return { people: info.head.total, fromBreakdown: true };
 }
 
 // 與網頁表單 peopleWords 相同：大人N位、小朋友N位、幼兒N位（0 不寫）。
@@ -155,20 +251,25 @@ function linePeopleWords_(adults, kids, infants) {
 /**
  * 組 LINE 訂位的備註（H 欄）。
  * opts = { plan: {price}|null, tables: 寫入 I 欄的桌數, people: 寫入 D 欄的人數, head: parseLineHeadcount_ 結果|null, note: 客人原本備註 }
+ * 人數字規則（保守）：分類合計 ≠ D 欄人數（例：「20位，小朋友2位」「4大2小 共10位」）→ 整組人數字都不寫，只留代碼。
  * 回傳字串，例：「5k1a 大人10位、小朋友2位；靠窗」。沒有方案也沒有分類人數時回傳原備註（行為不變）。
  */
 function composeLineRemark_(opts) {
   opts = opts || {};
-  var note = String(opts.note == null ? "" : opts.note).trim();
+  var rawNote = String(opts.note == null ? "" : opts.note).trim();
+  var note = rawNote;
   var code = "";
-  var existing = note.match(LINE_KA_CODE_RE_);
-  if (existing) {
-    // 備註已有代碼：不重複，只把它移到最前面（正規化成小寫、無空白）。
-    code = existing[1].toLowerCase().replace(/\s+/g, "");
-    note = note.replace(existing[0], "").replace(/^[\s、，,；;]+|[\s、，,；;]+$/g, "").replace(/、{2,}/g, "、");
+  var tables = parseInt(opts.tables, 10);
+  var existing = lineFindCodes_(lineHalfWidth_(rawNote));
+  if (existing.length) {
+    // 備註已有代碼（含只有價位的 5k）：不重複，移到最前面；a 一律改成最終桌數（I 欄），確保 H／I／客人訊息一致。
+    var c0 = existing[0];
+    var pc = linePriceToCode_(c0.price);
+    if (pc) code = pc + (tables >= 1 ? tables + "a" : (c0.tables ? c0.tables + "a" : ""));
+    else code = lineHalfWidth_(rawNote).slice(c0.index, c0.end).toLowerCase().replace(/\s+/g, "");
+    note = lineStripCodes_(rawNote);
   } else if (opts.plan && opts.plan.price) {
     var priceCode = linePriceToCode_(opts.plan.price);
-    var tables = parseInt(opts.tables, 10);
     if (priceCode) code = priceCode + (tables >= 1 ? tables + "a" : "");
   }
   var words = "";
@@ -182,27 +283,13 @@ function composeLineRemark_(opts) {
   return note ? (head + "；" + note) : head;
 }
 
-// 店內方案代碼樣式（含只有價位的 5k、4.5K，與大寫／空白／x 變體）；前後不可黏英數字，避免誤砍一般字。
-var LINE_CODE_TOKEN_RE_ = /(^|[^0-9A-Za-z.])\d{1,2}(?:\.\d+)?\s*[Kk](?:\s*[Xx]?\s*\d{0,2}\s*[Aa])?(?![A-Za-z])(?!\d(?![\d.]*\s*[Kk]))/g;
-
 /**
  * 回給客人看的備註：客人原本備註拿掉方案代碼等店內短碼，其餘原話保留。
  * 例：「5k1a 慶生」→「慶生」；「靠窗、4.5K 2A」→「靠窗」；只有代碼 → ""（呼叫端顯示「無」或整行不顯示）。
  * 只給客人訊息用；寫進工作表的備註請用 composeLineRemark_。
  */
 function lineCustomerNote_(note) {
-  var s = String(note == null ? "" : note);
-  LINE_CODE_TOKEN_RE_.lastIndex = 0;
-  if (!LINE_CODE_TOKEN_RE_.test(s)) return s.trim(); // 沒代碼 → 原話不動（行為不變）
-  LINE_CODE_TOKEN_RE_.lastIndex = 0;
-  var prev;
-  do { prev = s; s = s.replace(LINE_CODE_TOKEN_RE_, "$1 "); } while (s !== prev); // 相鄰代碼要重跑
-  return s
-    .replace(/[ \t\u3000]+/g, " ")
-    .replace(/\s*([、，,；;])\s*/g, "$1")
-    .replace(/([、，,；;])[、，,；;]+/g, "$1")
-    .replace(/^[\s、，,；;]+|[\s、，,；;:：]+$/g, "")
-    .trim();
+  return lineStripCodes_(note);
 }
 
 /**
@@ -211,13 +298,9 @@ function lineCustomerNote_(note) {
  * 參數可以是代碼本身或整段備註（取第一個代碼）；沒有合理代碼回 ""。散客／大型Na 不是價位方案 → ""。
  */
 function linePlanFriendly_(text) {
-  var s = String(text == null ? "" : text);
-  var m = s.match(/(?:^|[^0-9A-Za-z.])(\d{1,2}(?:\.\d+)?)\s*[Kk](?:\s*[Xx]?\s*(\d{1,2})?\s*[Aa])?(?![A-Za-z])/);
-  if (!m) return "";
-  var price = Math.round(parseFloat(m[1]) * 1000);
-  if (!linePriceToCode_(price)) return "";
-  var tables = m[2] ? parseInt(m[2], 10) : 0;
-  return "每桌 " + price + " 元" + (tables >= 1 && tables <= LINE_MAX_TABLES_ ? "、" + tables + " 桌" : "");
+  var codes = lineFindCodes_(lineHalfWidth_(text)).filter(function (c) { return c.valid; });
+  if (!codes.length) return "";
+  return "每桌 " + codes[0].price + " 元" + (codes[0].tables ? "、" + codes[0].tables + " 桌" : "");
 }
 
 /**
@@ -250,6 +333,8 @@ if (typeof module !== "undefined" && module.exports) {
     parseLineTables_: parseLineTables_, parseLineHeadcount_: parseLineHeadcount_,
     linePeopleWords_: linePeopleWords_, composeLineRemark_: composeLineRemark_, lineNumToInt_: lineNumToInt_,
     lineCustomerNote_: lineCustomerNote_, linePlanFriendly_: linePlanFriendly_,
-    lineCustomerPlanText_: lineCustomerPlanText_, customerNoteText_: customerNoteText_
+    lineCustomerPlanText_: lineCustomerPlanText_, customerNoteText_: customerNoteText_,
+    lineHalfWidth_: lineHalfWidth_, lineFindCodes_: lineFindCodes_, lineStripCodes_: lineStripCodes_,
+    parseLinePeopleInfo_: parseLinePeopleInfo_, lineMessagePeople_: lineMessagePeople_
   };
 }
