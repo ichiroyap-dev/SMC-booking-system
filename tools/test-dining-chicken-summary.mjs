@@ -35,6 +35,21 @@ const { parsePositiveInt, includedChickenCount } = eval(`(function () {
     return { parsePositiveInt, includedChickenCount };
 })()`);
 
+// Owner 2026-09-28: shop shorthand "Na" = number of TABLES → the "a" in the note code must equal the
+// table count and therefore the included-chicken count (one per table); it never follows head count.
+const { planCode } = eval(`(function () { ${extractFn('planCode')}\n return { planCode }; })()`);
+for (const [plan, price] of [['4500', '4.5k'], ['5000', '5k'], ['5500', '5.5k']]) {
+    for (const tables of [1, 2, 3]) {
+        const code = planCode('banquet', plan, tables);
+        const m = /^(\d+(?:\.\d+)?k)(\d+)a$/.exec(code);
+        if (!m || m[1] !== price || Number(m[2]) !== tables || Number(m[2]) !== includedChickenCount('banquet', tables)) {
+            failures.push(`a≠桌數/含雞數: plan=${plan} tables=${tables} code=${code}`);
+        }
+    }
+}
+if (planCode('large', '', 4) !== '大型4a') failures.push(`大型 4 桌應為 大型4a: ${planCode('large', '', 4)}`);
+if (/\da$/.test(planCode('casual', '', 2))) failures.push(`散客不可寫 a: ${planCode('casual', '', 2)}`);
+
 function extraPart(extra) {
     return extra ? `；另加購${extra}隻${extra * 1000}元` : '';
 }
@@ -76,7 +91,7 @@ if (failures.length) {
     failures.forEach((line) => console.error(' -', line));
     process.exit(1);
 }
-console.log('unit: 9 combos + 桌菜 + 邊界值 OK');
+console.log('unit: 9 combos + 桌菜 + 邊界值 + a=桌數=含雞數 OK');
 
 if (!process.argv.includes('--browser')) process.exit(0);
 
