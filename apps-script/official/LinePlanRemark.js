@@ -21,7 +21,8 @@
  */
 
 // 人數用：1–2 位數字（前後不黏其他數字，避免「小孩 5000的桌菜」被讀成 5000 位）或中文數字
-var LINE_HEAD_NUM_ = "(?:(?<![0-9])[0-9]{1,2}(?![0-9])|[一二兩两三四五六七八九十]{1,3})";
+// 中文數字前後不可黏「百千萬」或其他中文數字（「一百」「一千」不會被讀成 1；解析不了 → 沿用 parsePeople）
+var LINE_HEAD_NUM_ = "(?:(?<![0-9])[0-9]{1,2}(?![0-9])|(?<![百千萬零〇一二兩两三四五六七八九十])[一二兩两三四五六七八九十]{1,3}(?![百千萬零〇一二兩两三四五六七八九十]))";
 // 與 程式碼.js parsePeople 相同的分類字（不新增幼兒類，保持保守）；「兒童椅」等座椅需求不算
 var LINE_PEOPLE_LABEL_ = "(?:大人|成人|小孩|小朋友|兒童|小童)(?![椅座餐])";
 var LINE_MAX_TABLES_ = 20;
@@ -32,6 +33,7 @@ var LINE_PRICE_CONN_ = "(?:是|要|約|大約|大概|差不多)";
 function lineNumToInt_(s) {
   s = String(s == null ? "" : s).trim();
   if (/^\d+$/.test(s)) return parseInt(s, 10);
+  if (/[百千萬]/.test(s)) return 0; // 「一百」等大數不在訂位人數／桌數範圍 → 0（呼叫端視為無效，沿用原本邏輯）
   var map = { "零": 0, "〇": 0, "一": 1, "二": 2, "兩": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
   if (s === "十") return 10;
   if (s.indexOf("十") !== -1) {
@@ -137,7 +139,7 @@ function parseLinePlan_(msg) {
  */
 function parseLineTables_(msg) {
   var t = stripLineNoise_(msg);
-  var re = /(?:(?:^|[^0-9.])(\d{1,2})|([一二兩两三四五六七八九十]{1,3}))\s*(?:張)?\s*桌(菜)?/g;
+  var re = /(?:(?:^|[^0-9.])(\d{1,2})|(?<![百千萬零〇一二兩两三四五六七八九十])([一二兩两三四五六七八九十]{1,3}))\s*(?:張)?\s*桌(菜)?/g;
   var m, fallback = null;
   while ((m = re.exec(t)) !== null) {
     var after = t.slice(m.index + m[0].length);
@@ -184,7 +186,7 @@ function lineCategoryPeople_(msg) {
 
 /**
  * 組 LINE 訂位的備註（H 欄）。
- * opts = { plan: {price}|null, tables: 寫入 I 欄的桌數, note: 客人原本備註 }
+ * opts = { plan: {price}|null（最後一次有效的方案，優先於備註裡的舊代碼）, tables: 寫入 I 欄的桌數, note: 客人原本備註 }
  * 回傳字串，例：「5k1a；靠窗」。沒有方案時回傳原備註（行為不變）。
  */
 function composeLineRemark_(opts) {
@@ -194,16 +196,19 @@ function composeLineRemark_(opts) {
   var code = "";
   var tables = parseInt(opts.tables, 10);
   var existing = lineFindCodes_(lineHalfWidth_(rawNote));
-  if (existing.length) {
-    // 備註已有代碼（含只有價位的 5k）：不重複，移到最前面；a 一律改成最終桌數（I 欄），確保 H／I／客人訊息一致。
+  var planCode = (opts.plan && opts.plan.price) ? linePriceToCode_(opts.plan.price) : "";
+  if (planCode) {
+    // 以最後一次有效的方案（state.plan，每則訊息解析後覆蓋）為準：例「備註 5k1a 靠窗」後又說「改成桌菜5500」→ 5.5k1a。
+    // 備註裡舊的代碼一律拿掉，不重複；a = 最終桌數（I 欄）。
+    code = planCode + (tables >= 1 ? tables + "a" : "");
+    if (existing.length) note = lineStripCodes_(rawNote);
+  } else if (existing.length) {
+    // 沒有方案資訊、只有備註裡的代碼（含只有價位的 5k）：移到最前面；a 改成最終桌數。
     var c0 = existing[0];
     var pc = linePriceToCode_(c0.price);
     if (pc) code = pc + (tables >= 1 ? tables + "a" : (c0.tables ? c0.tables + "a" : ""));
     else code = lineHalfWidth_(rawNote).slice(c0.index, c0.end).toLowerCase().replace(/\s+/g, "");
     note = lineStripCodes_(rawNote);
-  } else if (opts.plan && opts.plan.price) {
-    var priceCode = linePriceToCode_(opts.plan.price);
-    if (priceCode) code = priceCode + (tables >= 1 ? tables + "a" : "");
   }
   if (!code) return note;
   return note ? (code + "；" + note) : code;
@@ -215,7 +220,18 @@ function composeLineRemark_(opts) {
  * 只給客人訊息用；寫進工作表的備註請用 composeLineRemark_。
  */
 function lineCustomerNote_(note) {
-  return lineStripCodes_(note);
+  var s = String(note == null ? "" : note).trim();
+  // 店內短碼：散客Na／大型Na（任何位置）、開頭單獨的「散客」「大型」；「散客很多」「大型聚會」這類一般字不動
+  var stripped = s
+    .replace(/(^|[\s、，,；;])(?:散客|大型)[1-9][0-9]*a(?![A-Za-z0-9])/g, "$1 ")
+    .replace(/^(?:散客|大型)(?=[\s、，,；;]|$)/, " ");
+  if (stripped === s) return lineStripCodes_(s);
+  return lineStripCodes_(stripped)
+    .replace(/[ \t\u3000]+/g, " ")
+    .replace(/\s*([、，,；;])\s*/g, "$1")
+    .replace(/([、，,；;])[、，,；;]+/g, "$1")
+    .replace(/^[\s、，,；;]+|[\s、，,；;:：]+$/g, "")
+    .trim();
 }
 
 /**
@@ -247,10 +263,7 @@ function lineCustomerPlanText_(state) {
  * 去掉開頭的 散客／大型Na 與所有 k 代碼，其餘（大人N位、素食、客人自填）保留。只有代碼 → ""。
  */
 function customerNoteText_(remark) {
-  var s = String(remark == null ? "" : remark).trim();
-  var stripped = s.replace(/^(?:散客|大型(?:[1-9][0-9]*a)?)(?=[ ；;、，,]|$)/, "");
-  if (stripped === s) return lineCustomerNote_(s);
-  return lineCustomerNote_(stripped.replace(/^[\s、，,；;]+/, "") || "");
+  return lineCustomerNote_(remark);
 }
 
 if (typeof module !== "undefined" && module.exports) {

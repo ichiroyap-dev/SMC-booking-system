@@ -71,7 +71,12 @@ for (const [m, want] of [
     ['大人8位，2位不吃辣', null], ['需要1位素食', null], ['第1位置', null], ['8位 第1位置', null], ['素食1位', null],
     ['8個大人2個小孩', null], ['大人8位、2個小孩', null], ['20位，小朋友2位要兒童椅', null], ['大人8位', null],
     ['10位 需要兒童椅', null], ['4大2小 共10位', null], ['12位 5000的桌菜', null], ['大人2桌', null],
+    // 中文「一百」「一千」解析不了 → null（沿用 parsePeople），不可被讀成 1
+    ['大人一百位小孩2位', null], ['大人兩位小孩一百位', null], ['一百位', null], ['大人一千位 小孩2位', null], ['一百大2小', null],
+    ['大人八位小孩兩位', 10], ['大人十位小孩兩位', 12],
 ]) eq(CP(m), want, `分類加總 ${m}`);
+eq(L.lineNumToInt_('一百'), 0, '一百 → 0（無效）'); eq(L.lineNumToInt_('十二'), 12, '十二 → 12');
+eq(L.parseLineTables_('一百桌'), null, '一百桌 不是 1 桌'); eq(L.parseLineTables_('十桌'), 10, '十桌');
 
 console.log('# 桌數／價位補強（blocker 3＋nits）');
 for (const [m, wantPlan, wantTables] of [
@@ -98,6 +103,9 @@ const cases = [
     ['備註只有 5k → 不重複', { plan: { price: 5000 }, tables: 1, people: 10, note: '5k' }, '5k1a'],
     ['備註全形代碼 → 半形＋最終桌數', { tables: 2, people: 20, note: '５ｋ２ａ 靠窗' }, '5k2a；靠窗'],
     ['備註 5k×2a → 正規化', { tables: 2, people: 20, note: '5k×2a' }, '5k2a'],
+    ['P1 多輪改價：備註 5k1a＋最新方案 5500 → 5.5k1a', { plan: { price: 5500 }, tables: 1, note: '5k1a 靠窗' }, '5.5k1a；靠窗'],
+    ['P1 多輪改價＋改桌數 → 5.5k2a', { plan: { price: 5500 }, tables: 2, note: '5k1a 靠窗' }, '5.5k2a；靠窗'],
+    ['沒有方案資訊、只有備註代碼 → 沿用備註代碼', { tables: 1, note: '5k1a 靠窗' }, '5k1a；靠窗'],
     ['備註 iPhone 5k 不是代碼', { plan: { price: 5000 }, tables: 1, people: 10, note: 'iPhone 5k 充電' }, '5k1a；iPhone 5k 充電'],
     ['全空 → 空字串', { tables: 1, people: 4 }, ''],
 ];
@@ -105,19 +113,22 @@ for (const [label, o, want] of cases) eq(C(o), want, label);
 
 console.log('# lineCustomerNote_（客人看到的備註不含方案代碼）');
 const CN = (n) => L.lineCustomerNote_(n);
+const SHORT_CODE = /(?:散客|大型)[1-9][0-9]*a/;
 const CODE_LIKE = /(?:^|[^0-9A-Za-z.])\d{1,2}(?:\.\d+)?\s*[Kk](?![A-Za-z])|\d\s*[Kk]\s*[Xx]?\d*\s*[Aa]/;
 const cnCases = [
     ['5k2a', ''], ['4.5k2a', ''], ['5k1a', ''], ['5K 1A', ''], ['5k', ''], ['4.5K', ''],
     ['5k1a 慶生', '慶生'], ['靠窗、4.5k2a', '靠窗'], ['4.5k2a、靠窗、慶生', '靠窗、慶生'],
     ['5K1A5k2a 靠窗', '靠窗'], ['備註：5k1a', '備註'], ['５ｋ２ａ 靠窗', '靠窗'], ['5k×2a 慶生', '慶生'],
     ['需要兒童椅', '需要兒童椅'], ['靠窗、慶生／生日', '靠窗、慶生／生日'],
+    ['大型4a 靠窗', '靠窗'], ['散客3a、慶生', '慶生'], ['靠窗、大型2a、慶生', '靠窗、慶生'], ['散客', ''], ['大型4a', ''],
+    ['散客 大人6位；不吃辣', '大人6位；不吃辣'], ['散客很多想靠窗', '散客很多想靠窗'], ['大型聚會 靠窗', '大型聚會 靠窗'],
     ['要5kg雞', '要5kg雞'], ['iPhone5k 充電', 'iPhone5k 充電'], ['iPhone 5k 充電', 'iPhone 5k 充電'], ['', ''],
 ];
 for (const [inp, want] of cnCases) eq(CN(inp), want, `客人備註 ${JSON.stringify(inp)}`);
 for (const [label, o] of cases) {
     const shown = CN(o.note || '');
     if (/iPhone/.test(shown)) continue; // 刻意保留的一般字（不是代碼）
-    ok(!CODE_LIKE.test(shown), `客人備註仍含代碼：${label} → ${shown}`);
+    ok(!CODE_LIKE.test(shown) && !SHORT_CODE.test(shown), `客人備註仍含代碼：${label} → ${shown}`);
 }
 
 console.log('# linePlanFriendly_／customerNoteText_／lineCustomerPlanText_（客人看的方案友善文字）');
@@ -139,6 +150,7 @@ eq(SP({ plan: { price: 5000 }, people: '12', tables: 1 }), '每桌 5000 元、1 
 eq(SP({ plan: { price: 4500 } }), '每桌 4500 元', '對話中：還沒人數 → 只顯示價位');
 eq(SP({ note: '5k1a 慶生', people: '10' }), '每桌 5000 元、1 桌', '對話中：客人自己打代碼');
 eq(SP({ people: '4', note: '靠窗' }), '', '對話中：沒方案 → ""');
+eq(SP({ plan: { price: 5500 }, tables: 1, people: '10', note: '5k1a 靠窗' }), '每桌 5500 元、1 桌', '對話中：多輪改價以最新方案為準');
 
 console.log('# DailyBookingSync 相容性');
 for (const [label, o] of cases) {
@@ -214,7 +226,7 @@ if (gasMain && existsSync(gasMain)) {
             // 模擬 BackgroundTasks.processBackgroundTasks 的郵件步驟：if (data.email) sendConfirmationEmail(data, task.orderId)
             for (const t of tasks) if (t.params && t.params.email) c.sendConfirmationEmail(t.params, t.orderId);
         }
-        return { rows: rows.slice(1), replies, mails };
+        return { rows: rows.slice(1), replies, mails, c };
     }
     const y = new Date().getUTCFullYear() + 1;
     const base = `${y}/10/03 18:30 姓名測試同學 0900000000`;
@@ -256,6 +268,15 @@ if (gasMain && existsSync(gasMain)) {
         ['20位 全形５ｋ２ａ', [`${base} 20位 ５ｋ２ａ`, '確認'], { people: '20', note: '5k2a', tables: 2 }, { shown: '無', plan: '每桌 5000 元、2 桌' }],
         ['備註只有 5k → 5k1a 不重複', [`${base} 10位 備註 5k`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無', plan: '每桌 5000 元、1 桌' }],
         ['iPhone 5k 不是方案', [`${base} 4位 備註 iPhone 5k 充電`, '確認'], { people: '4', note: 'iPhone 5k 充電', tables: 1 }, { shown: 'iPhone 5k 充電', plan: null, allowCodeLike: true }],
+        // [P1] 多輪改價／改桌數：以最後一次有效的方案為準；H、核對、成功訊息、I 欄一致
+        ['P1：先備註 5k1a，再改桌菜5500，再確認', [`${base} 10位 備註 5k1a 靠窗`, '改成桌菜5500', '確認'], { people: '10', note: '5.5k1a；靠窗', tables: 1 }, { shown: '靠窗', plan: '每桌 5500 元、1 桌', tablesShown: 1 }],
+        ['P1：先備註 5k1a，再改桌菜5500 三桌', [`${base} 20位 備註 5k1a 靠窗`, '改成桌菜5500 三桌', '確認'], { people: '20', note: '5.5k3a；靠窗', tables: 3 }, { shown: '靠窗', plan: '每桌 5500 元、3 桌', tablesShown: 3 }],
+        ['P1：先 5k1a，改兩桌，再改 5.5k', [`${base} 20位 備註 5k1a 靠窗`, '兩桌', '改成5.5k', '確認'], { people: '20', note: '5.5k2a；靠窗', tables: 2 }, { shown: '靠窗', plan: '每桌 5500 元、2 桌', tablesShown: 2 }],
+        ['P1：先桌菜5500，再備註 5k1a（最新＝5k）', [`${base} 10位 桌菜5500`, '備註 5k1a 靠窗', '確認'], { people: '10', note: '5k1a；靠窗', tables: 1 }, { shown: '靠窗', plan: '每桌 5000 元、1 桌', tablesShown: 1 }],
+        // 散客Na／大型Na 不給客人看（核對、還差資料摘要、成功訊息 customerNote）
+        ['大型4a 靠窗 → 客人只看到靠窗', [`${base} 20位 備註 大型4a 靠窗`, '確認'], { people: '20', note: '大型4a 靠窗', tables: 2 }, { shown: '靠窗', plan: null, confirmNote: '靠窗' }],
+        ['大型4a 靠窗（先缺手機 → 還差資料摘要）', [`${y}/10/03 18:30 姓名測試同學 20位 備註 大型4a 靠窗`, '0900000000', '確認'], { people: '20', note: '大型4a 靠窗', tables: 2 }, { shown: '靠窗', plan: null, minReplies: 3, summaryNote: '靠窗', confirmNote: '靠窗' }],
+        ['散客3a、慶生 → 客人只看到慶生', [`${base} 6位 備註 散客3a、慶生`, '確認'], { people: '6', note: '散客3a、慶生', tables: 1 }, { shown: '慶生', plan: null, confirmNote: '慶生' }],
         ['5.5k3a 簡寫、30位', [`${base} 30位 5.5k3a`, '確認'], { people: '30', note: '5.5k3a', tables: 3 }, { shown: '無', plan: '每桌 5500 元、3 桌' }],
     ];
     for (const [label, msgs, want, rw = {}] of I) {
@@ -285,13 +306,24 @@ if (gasMain && existsSync(gasMain)) {
             const summary = replies.find((t) => /目前已記下/.test(t)) || '';
             ok(summary.includes(`🍽️ 方案：${rw.plan}`), `${label}: 還差資料訊息應顯示方案友善文字：${summary}`);
         }
-        replies.forEach((t, k) => ok(!/散客|大型\d*a/.test(t), `${label}: 第 ${k + 1} 則含店內短碼`));
+        replies.forEach((t, k) => ok(!SHORT_CODE.test(t) && !/散客|大型\d*a/.test(t), `${label}: 第 ${k + 1} 則含店內短碼`));
+        if (rw.confirmNote) ok(confirm.includes(`📝 備註：${rw.confirmNote}\n`), `${label}: 核對備註應為「${rw.confirmNote}」：${confirm}`);
+        if (rw.summaryNote) { const sm = replies.find((t) => /目前已記下/.test(t)) || ''; ok(sm.includes(`📝 備註：${rw.summaryNote}`) && !SHORT_CODE.test(sm), `${label}: 還差資料摘要備註應為「${rw.summaryNote}」：${sm}`); }
         if (rw.tablesShown) ok(new RegExp(`桌數：${rw.tablesShown} 桌`).test(success), `${label}: 成功訊息桌數應為 ${rw.tablesShown}：${success}`);
         ok(rows.length === 1, `${label}: 應寫入 1 列，實際 ${rows.length}（replies: ${replies.join(' / ')}）`);
         if (rows.length !== 1) continue;
         const r = rows[0];
         eq({ people: r[3], note: r[7], tables: r[8] }, want, `整合 ${label}`);
         ok(r.length === 12, `${label}: 只寫 A:L（12 欄），M 預估金額不寫；實際 ${r.length} 欄`);
+    }
+
+    console.log('# 整合測試：中文大數解析不了 → 與 parsePeople 相同');
+    {
+        const { c } = run([]);
+        for (const m of ['大人一百位小孩2位', '一百位', '大人一千位 小孩2位', '一百大2小 靠窗']) {
+            ok(c.parseBookingMessage(m).people === c.parsePeople(m), `${m}: parseBookingMessage.people 應等於 parsePeople（${c.parseBookingMessage(m).people} vs ${c.parsePeople(m)}）`);
+        }
+        eq(c.parseBookingMessage('大人八位小孩兩位').people, 10, '大人八位小孩兩位 → 10');
     }
 
     console.log('# 整合測試：網頁表單確認信（MailApp 以 mock 攔截，不寄信）');
