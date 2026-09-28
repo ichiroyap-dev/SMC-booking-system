@@ -33,7 +33,9 @@ var LINE_MAX_TABLES_ = 20;
 var LINE_CODE_SHAPE_ = "(\\d{1,2}(?:\\.\\d{1,2})?)\\s*[Kk](?:\\s*[Xx×✕＊*]?\\s*(\\d{1,2})\\s*[Aa])?";
 var LINE_PRICE_CONN_ = "(?:是|要|約|大約|大概|差不多)";
 // 方案碼前面的英文單字若是連接詞，不算產品前綴（5k1a or 5.5k2a、5k1a vs 5.5k2a 兩個都要算）。
-var LINE_PLAN_CONJ_ = /^(?:or|vs|versus|and)$/i;
+// versus 要排在 vs 前面，避免「versus」被切成 vs。
+var LINE_PLAN_CONJ_ = /^(?:versus|vs|or|and)$/i;
+var LINE_PLAN_CONJ_RE_ = "(?:versus|vs|or|and)";
 
 function lineNumToInt_(s) {
   s = String(s == null ? "" : s).trim();
@@ -110,11 +112,15 @@ function lineSpacedEnglishBlocksCode_(before) {
 }
 
 // 移除字串中所有代碼（含價位不合理的代碼形狀），整理多餘的分隔符號。沒有代碼 → 原字串（trim）。
+// 緊貼被移除代碼的連接詞（or／vs／versus／and，含大小寫與中間標點）一併拿掉：
+// 「5k1a or 5.5k2a」→「」；「5k1a OR 5.5k2a 靠窗」→「靠窗」。
+// 沒有貼著代碼的連接詞保留（「wheelchair and stroller」、「靠窗 or 慶生」）。
 function lineStripCodes_(s) {
   var src = String(s == null ? "" : s);
   var hw = lineHalfWidth_(src);
   var codes = lineFindCodes_(hw);
   if (!codes.length) return src.trim();
+  hw = lineBlankCodeBoundConj_(hw, codes);
   for (var i = codes.length - 1; i >= 0; i--) hw = hw.slice(0, codes[i].index) + " " + hw.slice(codes[i].end);
   return hw
     .replace(/[ \t\u3000]+/g, " ")
@@ -122,6 +128,45 @@ function lineStripCodes_(s) {
     .replace(/([、，,；;])[、，,；;]+/g, "$1")
     .replace(/^[\s、，,；;]+|[\s、，,；;:：]+$/g, "")
     .trim();
+}
+
+// 空白／標點。連接詞與代碼之間只隔這些字，視為緊貼。
+function lineIsNoteGap_(ch) {
+  return /[\s\u3000、，,；;／\/：:。.！!？?~～\-—－（）()【】\[\]「」]/.test(ch);
+}
+
+function lineIndexInSpan_(spans, idx) {
+  for (var i = 0; i < spans.length; i++) {
+    if (idx >= spans[i].index && idx < spans[i].end) return true;
+  }
+  return false;
+}
+
+// 從連接詞的一側跳過空白與標點，看第一個字是不是被移除的代碼。
+function lineSideIsCode_(s, start, dir, codes) {
+  var i = dir < 0 ? start - 1 : start;
+  while (i >= 0 && i < s.length && lineIsNoteGap_(s.charAt(i))) i += dir;
+  if (i < 0 || i >= s.length) return false;
+  return lineIndexInSpan_(codes, i);
+}
+
+// 把緊貼代碼的連接詞改成等長空白（不移動後面代碼的位置）。
+function lineBlankCodeBoundConj_(s, codes) {
+  var re = new RegExp("(?:^|[^A-Za-z])(" + LINE_PLAN_CONJ_RE_ + ")(?![A-Za-z])", "gi");
+  var hits = [], m;
+  while ((m = re.exec(s)) !== null) {
+    var word = m[1];
+    var index = m.index + m[0].length - word.length;
+    if (lineSideIsCode_(s, index, -1, codes) || lineSideIsCode_(s, index + word.length, 1, codes)) {
+      hits.push({ index: index, end: index + word.length });
+    }
+  }
+  for (var i = hits.length - 1; i >= 0; i--) {
+    var spaces = "";
+    for (var n = hits[i].index; n < hits[i].end; n++) spaces += " ";
+    s = s.slice(0, hits[i].index) + spaces + s.slice(hits[i].end);
+  }
+  return s;
 }
 
 /**
