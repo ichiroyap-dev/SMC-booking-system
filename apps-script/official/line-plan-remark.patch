@@ -1,21 +1,16 @@
 --- a/程式碼.js
 +++ b/程式碼.js
-@@ -185,8 +185,13 @@
-   if (parsed.phone)  state.phone  = parsed.phone;
-   if (parsed.date)   state.date   = parsed.date;
+@@ -187,6 +187,9 @@
    if (parsed.time)   state.time   = parsed.time;
--  if (parsed.people) state.people = parsed.people;
-+  // 分類合計（例：只說「小朋友2位」）不可蓋掉先前明講的總人數（LinePlanRemark.js lineMessagePeople_）
-+  if (parsed.people && !(parsed.peopleFromBreakdown && state.people)) state.people = parsed.people;
+   if (parsed.people) state.people = parsed.people;
    if (parsed.note)   state.note   = state.note ? (state.note + "、" + parsed.note) : parsed.note;
-+  // LINE 方案代碼（LinePlanRemark.js）：桌菜價位／桌數／大人小朋友幼兒分類，finalizeBooking 時組進備註（H 欄）
++  // LINE 方案代碼（LinePlanRemark.js）：桌菜價位／桌數，finalizeBooking 時組進備註（H 欄）
 +  if (parsed.plan)   state.plan   = parsed.plan;
 +  if (parsed.tables) state.tables = parsed.tables;
-+  if (parsed.head)   state.head   = parsed.head;
    state.awaitingConfirmation = false;
  
    // 記錄「手機 → userId」「userId → 姓名電話」對照，供老闆指令與通知使用（保留 6 小時）
-@@ -262,7 +267,9 @@
+@@ -262,7 +265,9 @@
      "📅 日期：" + formatDateWithWeekday(state.date) + "\n" +
      "⏰ 時間：" + state.time + "（" + v.session + "）\n" +
      "👥 人數：" + state.people + " 位\n" +
@@ -26,7 +21,7 @@
      "\n✅ 正確無誤，請回覆「確認」即可完成訂位\n" +
      "✏️ 需要修改，直接告訴管家新的資訊就好";
    sendLineReply(replyToken, confirmMsg);
-@@ -532,7 +539,10 @@
+@@ -532,7 +537,10 @@
      } catch (e) { Logger.log("【新訂位通知老闆失敗】" + e.toString()); }
  
      if (isLineSource) {
@@ -38,7 +33,7 @@
        sendLineReply(replyToken, successMsg);
      }
  
-@@ -1051,6 +1061,9 @@
+@@ -1051,6 +1059,9 @@
      if (!data.email) return; 
      var subject = "【水美土雞城】預訂申請成功確認 - " + data.name + " 先生/小姐 (編號：" + orderId + ")";
      var typeText = (data.type === "dining") ? "內用訂位" : "外帶預約";
@@ -48,7 +43,7 @@
      var detailText = (data.type === "dining") 
        ? "<li><strong>人數桌數：</strong>" + data.people + " 人 / " + data.tables + " 桌</li>"
        : "<li><strong>訂購明細：</strong><br>" + data.orderItems.replace(/\n/g, "<br>") + "</li>";
-@@ -1069,7 +1082,8 @@
+@@ -1069,7 +1080,8 @@
                     '<li><strong>抵達/取餐時間：</strong>' + data.time + '</li>' +
                     detailText +
                     '<li><strong>聯絡電話：</strong>' + data.phone + '</li>' +
@@ -58,7 +53,7 @@
                     '</ul>' +
                     '<hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 24px 0;">' +
                     '<p style="font-size: 14px; color: #78716c;">💡 提醒您：若需修改或於時限內取消，可直接至官網填寫編號辦理。</p>' +
-@@ -1177,13 +1191,19 @@
+@@ -1177,13 +1189,19 @@
      return ContentService.createTextOutput("OK");
    }
    var people = parseInt(state.people) || 1;
@@ -67,7 +62,7 @@
 +  var explicitTables = parseInt(state.tables, 10);
 +  var tables = explicitTables >= 1 ? explicitTables : Math.max(1, Math.ceil(people / SEAT_PER_TABLE));
 +  // 方案代碼（例 5k1a，a = 桌數）只寫進備註 H 欄；預估金額 M 欄不寫（Option B）
-+  var note = composeLineRemark_({ plan: state.plan || null, tables: tables, people: people, head: state.head || null, note: state.note || "" });
++  var note = composeLineRemark_({ plan: state.plan || null, tables: tables, note: state.note || "" });
    var params = {
      action: "booking", type: "dining",
      name: state.name, phone: state.phone,
@@ -80,14 +75,11 @@
      orderItems: "", orderId: ""
    };
    cache.remove(userId); // 清除草稿，避免干擾下一次訂位
-@@ -1195,13 +1215,23 @@
+@@ -1195,13 +1213,18 @@
   */
  function parseBookingMessage(msg) {
    var phone = (msg.match(/09\d{8}/) || [null])[0];
 +  var plan = parseLinePlan_(msg);
-+  var pinfo = parseLinePeopleInfo_(msg);   // { head: 大人／小朋友／幼兒分類, stated: 客人明講的總人數 }
-+  var head = pinfo.head;
-+  var lp = lineMessagePeople_(pinfo);      // 有分類時：明講總數優先，否則分類合計；沒分類 → null（沿用 parsePeople）
    return {
      name:   parseName(msg),
      phone:  phone,
@@ -95,18 +87,16 @@
      time:   parseTime(msg),
 -    people: parsePeople(msg),
 -    note:   parseNote(msg)
-+    // 有分類時：「10位 大人8位小孩2位」= 10、「20位，小朋友2位」= 20、「大人8位小孩2位」= 10（修正只算到 8）
-+    people: lp ? lp.people : parsePeople(msg),
-+    peopleFromBreakdown: !!(lp && lp.fromBreakdown),
++    // 唯一修正：「大人8位小孩2位」「8大2小」加總成 10（原本只算到 8）；其他情況 lineCategoryPeople_ 回 null → 原本 parsePeople
++    people: lineCategoryPeople_(msg) || parsePeople(msg),
 +    note:   parseNote(msg),
 +    plan:   plan,
 +    // 明講桌數（「兩桌」）優先於代碼裡的 a（「5k1a」），finalizeBooking 會把 a 改成最終桌數
-+    tables: parseLineTables_(msg) || ((plan && plan.tables) ? plan.tables : null),
-+    head:   head
++    tables: parseLineTables_(msg) || ((plan && plan.tables) ? plan.tables : null)
    };
  }
  
-@@ -1411,7 +1441,8 @@
+@@ -1411,7 +1434,8 @@
    if (s.date)   parts.push("📅 日期：" + s.date.replace(/-/g, "/"));
    if (s.time)   parts.push("⏰ 時間：" + s.time);
    if (s.people) parts.push("👥 人數：" + s.people + " 位");
