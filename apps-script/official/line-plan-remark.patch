@@ -11,7 +11,26 @@
    state.awaitingConfirmation = false;
  
    // 記錄「手機 → userId」「userId → 姓名電話」對照，供老闆指令與通知使用（保留 6 小時）
-@@ -1177,13 +1181,17 @@
+@@ -262,7 +266,8 @@
+     "📅 日期：" + formatDateWithWeekday(state.date) + "\n" +
+     "⏰ 時間：" + state.time + "（" + v.session + "）\n" +
+     "👥 人數：" + state.people + " 位\n" +
+-    (state.note ? "📝 備註：" + state.note + "\n" : "") +
++    // 客人看不到方案代碼（LinePlanRemark.js lineCustomerNote_）；工作表 H 欄仍存完整備註
++    (lineCustomerNote_(state.note) ? "📝 備註：" + lineCustomerNote_(state.note) + "\n" : "") +
+     "\n✅ 正確無誤，請回覆「確認」即可完成訂位\n" +
+     "✏️ 需要修改，直接告訴管家新的資訊就好";
+   sendLineReply(replyToken, confirmMsg);
+@@ -532,7 +537,7 @@
+     } catch (e) { Logger.log("【新訂位通知老闆失敗】" + e.toString()); }
+ 
+     if (isLineSource) {
+-      var successMsg = "🎉 內用預約成功！\n【專屬訂單編號】" + orderId + "\n姓名：" + params.name + "\n日期：" + params.date + " (" + session + " " + params.time + ")\n桌數：" + requestedTables + " 桌 (" + params.people + "人)\n備註：" + (params.note || "無") + "\n\n系統已為您保留座位，期待您的光臨！";
++      var successMsg = "🎉 內用預約成功！\n【專屬訂單編號】" + orderId + "\n姓名：" + params.name + "\n日期：" + params.date + " (" + session + " " + params.time + ")\n桌數：" + requestedTables + " 桌 (" + params.people + "人)\n備註：" + ((params.customerNote != null ? params.customerNote : params.note) || "無") + "\n\n系統已為您保留座位，期待您的光臨！";
+       sendLineReply(replyToken, successMsg);
+     }
+ 
+@@ -1177,13 +1182,18 @@
      return ContentService.createTextOutput("OK");
    }
    var people = parseInt(state.people) || 1;
@@ -28,10 +47,11 @@
      people: String(people), tables: String(tables),
 -    note: state.note || "", email: state.email || "",
 +    note: note, email: state.email || "",
++    customerNote: lineCustomerNote_(state.note || ""), // 回給客人的成功訊息只顯示客人原本備註（去代碼）
      orderItems: "", orderId: ""
    };
    cache.remove(userId); // 清除草稿，避免干擾下一次訂位
-@@ -1195,13 +1203,19 @@
+@@ -1195,13 +1205,19 @@
   */
  function parseBookingMessage(msg) {
    var phone = (msg.match(/09\d{8}/) || [null])[0];
@@ -51,5 +71,14 @@
 +    tables: (plan && plan.tables) ? plan.tables : parseLineTables_(msg),
 +    head:   head
    };
+ }
+ 
+@@ -1411,7 +1427,7 @@
+   if (s.date)   parts.push("📅 日期：" + s.date.replace(/-/g, "/"));
+   if (s.time)   parts.push("⏰ 時間：" + s.time);
+   if (s.people) parts.push("👥 人數：" + s.people + " 位");
+-  if (s.note)   parts.push("📝 備註：" + s.note);
++  if (lineCustomerNote_(s.note)) parts.push("📝 備註：" + lineCustomerNote_(s.note)); // 客人看不到方案代碼
+   return parts.join("\n");
  }
  

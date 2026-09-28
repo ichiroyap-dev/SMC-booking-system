@@ -10,6 +10,10 @@
  *   - 人數完整字：大人N位、小朋友N位、幼兒N位（0 不寫）；只有客人有講「大人／小朋友／幼兒」分類時才加。
  *   - 備註裡已經有代碼（例：客人打「備註 5k1a 靠窗」）→ 不重複加，改把該代碼移到最前面。
  *   - 格式：「代碼 人數字；原本備註」，DailyBookingSync 以 FORM_NEW_PREFIX_RE_／KA 短碼辨識。
+ *   - 客人看不到代碼（Owner 2026-09-28）：回給客人的 LINE 訊息（核對、還差資料、預約成功）一律用
+ *     lineCustomerNote_(客人原本備註)，拿掉 5k1a／4.5k2a／5k 這類代碼；工作表 H 欄仍存完整備註。
+ *   - 桌數：客人有講桌數（「一桌就好」「兩桌」「5k1a」）就用客人講的（容量檢查、I 欄、代碼同一個數）；
+ *     沒講才用 ceil(人數/10)。
  */
 
 // 與 DailyBookingSync.parseRemarkAndCode_ 相同的 KA 短碼辨識式。
@@ -176,10 +180,34 @@ function composeLineRemark_(opts) {
   return note ? (head + "；" + note) : head;
 }
 
+// 店內方案代碼樣式（含只有價位的 5k、4.5K，與大寫／空白／x 變體）；前後不可黏英數字，避免誤砍一般字。
+var LINE_CODE_TOKEN_RE_ = /(^|[^0-9A-Za-z.])\d{1,2}(?:\.\d+)?\s*[Kk](?:\s*[Xx]?\s*\d{0,2}\s*[Aa])?(?![A-Za-z])(?!\d(?![\d.]*\s*[Kk]))/g;
+
+/**
+ * 回給客人看的備註：客人原本備註拿掉方案代碼等店內短碼，其餘原話保留。
+ * 例：「5k1a 慶生」→「慶生」；「靠窗、4.5K 2A」→「靠窗」；只有代碼 → ""（呼叫端顯示「無」或整行不顯示）。
+ * 只給客人訊息用；寫進工作表的備註請用 composeLineRemark_。
+ */
+function lineCustomerNote_(note) {
+  var s = String(note == null ? "" : note);
+  LINE_CODE_TOKEN_RE_.lastIndex = 0;
+  if (!LINE_CODE_TOKEN_RE_.test(s)) return s.trim(); // 沒代碼 → 原話不動（行為不變）
+  LINE_CODE_TOKEN_RE_.lastIndex = 0;
+  var prev;
+  do { prev = s; s = s.replace(LINE_CODE_TOKEN_RE_, "$1 "); } while (s !== prev); // 相鄰代碼要重跑
+  return s
+    .replace(/[ \t\u3000]+/g, " ")
+    .replace(/\s*([、，,；;])\s*/g, "$1")
+    .replace(/([、，,；;])[、，,；;]+/g, "$1")
+    .replace(/^[\s、，,；;]+|[\s、，,；;:：]+$/g, "")
+    .trim();
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     stripLineNoise_: stripLineNoise_, linePriceToCode_: linePriceToCode_, parseLinePlan_: parseLinePlan_,
     parseLineTables_: parseLineTables_, parseLineHeadcount_: parseLineHeadcount_,
-    linePeopleWords_: linePeopleWords_, composeLineRemark_: composeLineRemark_, lineNumToInt_: lineNumToInt_
+    linePeopleWords_: linePeopleWords_, composeLineRemark_: composeLineRemark_, lineNumToInt_: lineNumToInt_,
+    lineCustomerNote_: lineCustomerNote_
   };
 }

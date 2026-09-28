@@ -92,6 +92,22 @@ const cases = [
 ];
 for (const [label, o, want] of cases) eq(C(o), want, label);
 
+console.log('# lineCustomerNote_（客人看到的備註不含方案代碼）');
+const CN = (n) => L.lineCustomerNote_(n);
+const CODE_LIKE = /(?:^|[^0-9A-Za-z.])\d{1,2}(?:\.\d+)?\s*[Kk](?![A-Za-z])|\d\s*[Kk]\s*[Xx]?\d*\s*[Aa]/;
+const cnCases = [
+    ['5k2a', ''], ['4.5k2a', ''], ['5k1a', ''], ['5K 1A', ''], ['5k', ''], ['4.5K', ''],
+    ['5k1a 慶生', '慶生'], ['靠窗、4.5k2a', '靠窗'], ['4.5k2a、靠窗、慶生', '靠窗、慶生'],
+    ['5K1A5k2a 靠窗', '靠窗'], ['備註：5k1a', '備註'],
+    ['需要兒童椅', '需要兒童椅'], ['靠窗、慶生／生日', '靠窗、慶生／生日'],
+    ['要5kg雞', '要5kg雞'], ['iPhone5k 充電', 'iPhone5k 充電'], ['', ''],
+];
+for (const [inp, want] of cnCases) eq(CN(inp), want, `客人備註 ${JSON.stringify(inp)}`);
+for (const [label, o] of cases) {
+    const shown = CN(o.note || '');
+    ok(!CODE_LIKE.test(shown), `客人備註仍含代碼：${label} → ${shown}`);
+}
+
 console.log('# DailyBookingSync 相容性');
 for (const [label, o] of cases) {
     const r = C(o);
@@ -107,6 +123,10 @@ ok(!/CHANNEL_ACCESS_TOKEN|GEMINI_API_KEY|MY_USER_ID|SPREADSHEET_ID\s*=/.test(pat
 const patchCode = patch.split('\n').filter((l) => /^[+-](?![+-])/.test(l)).map((l) => l.replace(/\/\/.*$/, '')).join('\n');
 ok(!/(appendRow|預估金額|estimatedAmount|resolveEstimatedAmount_|getRange\(\s*\w+\s*,\s*13)/.test(patchCode), 'patch 不可改 appendRow／預估金額（M 欄）');
 ok(/^\+.*composeLineRemark_\(/m.test(patch) && /^\+.*parseLinePlan_\(/m.test(patch), 'patch 必須接上 composeLineRemark_／parseLinePlan_');
+ok(/^\+.*successMsg.*customerNote/m.test(patch) && /^-.*successMsg.*params\.note \|\| "無"/m.test(patch), 'patch 必須讓預約成功訊息改用 customerNote');
+ok(/^\+.*customerNote:\s*lineCustomerNote_\(/m.test(patch), 'finalizeBooking 必須帶 customerNote = lineCustomerNote_(原備註)');
+ok(/^\+.*confirmMsg|^\+.*📝 備註：" \+ lineCustomerNote_\(state\.note\)/m.test(patch), '核對訊息必須用 lineCustomerNote_');
+ok(/^\+.*parts\.push\("📝 備註：" \+ lineCustomerNote_\(s\.note\)\)/m.test(patch), '還差資料訊息必須用 lineCustomerNote_');
 ok(!/09\d{8}/.test(patch.replace(/09\\d\{8\}/g, '')) && !/SMC\d{6}/.test(patch), 'patch 不可含真實手機／訂單編號');
 
 // ---- 整合測試（可選）：套 patch 到 v149 程式碼.js，模擬 LINE 對話到「確認」，檢查寫進工作表1 的列 ----
@@ -156,9 +176,23 @@ if (gasMain && existsSync(gasMain)) {
         ['分兩則訊息', [`${base} 10位`, '5000的桌菜 大人8位小孩2位', '確認'], { people: '10', note: '5k1a 大人8位、小朋友2位', tables: 1 }],
         ['備註已有代碼', [`${base} 10位 備註 5k1a 慶生`, '確認'], { people: '10', note: '5k1a；慶生', tables: 1 }],
         ['沒講方案 → 備註不變（回歸）', [`${base} 4位 靠窗`, '確認'], { people: '4', note: '靠窗', tables: 1 }],
+        ['12位＋一桌就好 → 1 桌、5k1a', [`${base} 12位 5000的桌菜 一桌就好`, '確認'], { people: '12', note: '5k1a', tables: 1 }, { tablesShown: 1 }],
+        ['12位沒講桌數 → ceil(12/10)=2 桌', [`${base} 12位 5000的桌菜`, '確認'], { people: '12', note: '5k2a', tables: 2 }, { tablesShown: 2 }],
+        ['客人打 5k2a 簡寫＋靠窗', [`${base} 20位 5k2a 靠窗`, '確認'], { people: '20', note: '5k2a；靠窗', tables: 2 }, { shown: '靠窗' }],
+        ['客人自己打 備註 5k1a', [`${base} 10位 備註 5k1a`, '確認'], { people: '10', note: '5k1a', tables: 1 }, { shown: '無' }],
+        ['客人打 備註 4.5k2a 慶生（先缺手機）', [`${y}/10/03 18:30 姓名測試同學 20位 備註 4.5k2a 慶生`, '0900000000', '確認'], { people: '20', note: '4.5k2a；慶生', tables: 2 }, { shown: '慶生', minReplies: 3 }],
     ];
-    for (const [label, msgs, want] of I) {
+    for (const [label, msgs, want, rw = {}] of I) {
         const { rows, replies } = run(msgs);
+        // 客人看到的所有 LINE 回覆（還差資料／核對／預約成功）都不可含方案代碼
+        ok(replies.length >= (rw.minReplies || 2), `${label}: 應有 ${rw.minReplies || 2}+ 則客人回覆，實際 ${replies.length}`);
+        replies.forEach((t, k) => ok(!CODE_LIKE.test(t), `${label}: 第 ${k + 1} 則客人回覆含方案代碼：${t}`));
+        const success = replies.find((t) => /預約成功/.test(t)) || '';
+        ok(!!success, `${label}: 找不到預約成功回覆（replies: ${replies.join(' / ')}）`);
+        const shownNote = (success.match(/\n備註：([^\n]*)/) || [])[1];
+        const wantShown = rw.shown != null ? rw.shown : (want.note.includes('；') ? want.note.split('；').slice(1).join('；') : (/k\d*a/.test(want.note) ? '無' : (want.note || '無')));
+        eq(shownNote, wantShown, `整合 ${label}：客人看到的備註`);
+        if (rw.tablesShown) ok(new RegExp(`桌數：${rw.tablesShown} 桌`).test(success), `${label}: 成功訊息桌數應為 ${rw.tablesShown}：${success}`);
         ok(rows.length === 1, `${label}: 應寫入 1 列，實際 ${rows.length}（replies: ${replies.join(' / ')}）`);
         if (rows.length !== 1) continue;
         const r = rows[0];
