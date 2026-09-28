@@ -235,8 +235,6 @@ function parseLineTables_(msg) {
  */
 function lineCategoryPeople_(msg) {
   var t = stripLineNoise_(msg);
-  // 大數（1百、1 百、１百、一 千、一万、一佰…）一律不算，交給 parsePeople
-  if (/[0-9零〇一二兩两三四五六七八九十]\s*[百千萬万佰仟]/.test(t)) return null;
   var labelAny = new RegExp(LINE_PEOPLE_LABEL_, "g");
   var labelCount = (t.match(labelAny) || []).length;
   if (labelCount === 0) {

@@ -79,6 +79,9 @@ for (const [m, want] of [
     ['大人1千位小孩2位', null], ['1百大2小', null], ['大人2位小孩1百位', null], ['大人一仟位小孩2位', null],
     // 中間有空白也不算
     ['大人1 百位小孩2位', null], ['大人１ 百位 小孩2位', null], ['大人1 千位小孩2位', null], ['大人一 百位小孩2位', null], ['1 百大2小', null], ['大人2位小孩1 百位', null],
+    // 句中別處的大數（訂金／預算／紅包）不影響人數（Cursor nit on ed14f24）
+    ['大人8位小孩2位，訂金兩百', 10], ['大人6位小孩6位，訂金兩百', 12], ['大人8位小孩2位 預算5千', 10], ['大人8位小孩2位 紅包一百', 10],
+    ['8大2小 訂金兩百', 10], ['大人8位小孩2位 預算5 千', 10], ['大人一 百 位小孩2位', null],
 ]) eq(CP(m), want, `分類加總 ${m}`);
 eq(L.lineNumToInt_('一百'), 0, '一百 → 0（無效）'); eq(L.lineNumToInt_('十二'), 12, '十二 → 12');
 eq(L.parseLineTables_('一百桌'), null, '一百桌 不是 1 桌'); eq(L.parseLineTables_('十桌'), 10, '十桌');
@@ -455,10 +458,14 @@ if (gasMain && existsSync(gasMain)) {
     console.log('# 整合測試：中文大數解析不了 → 與 parsePeople 相同');
     {
         const { c } = run([]);
-        for (const m of ['大人一百位小孩2位', '一百位', '大人一千位 小孩2位', '一百大2小 靠窗', '大人1百位小孩2位', '大人１百位 小孩2位', '大人一万位小孩2位', '大人一佰位小孩2位', '大人1千位小孩2位', '1百大2小', '大人1 百位小孩2位', '大人１ 百位 小孩2位', '大人一 百位小孩2位']) {
+        for (const m of ['大人一百位小孩2位', '一百位', '大人一千位 小孩2位', '一百大2小 靠窗', '大人1百位小孩2位', '大人１百位 小孩2位', '大人一万位小孩2位', '大人一佰位小孩2位', '大人1千位小孩2位', '1百大2小', '大人1 百位小孩2位', '大人１ 百位 小孩2位', '大人一 百位小孩2位', '1 百大2小', '大人2位小孩1 百位']) {
             ok(c.parseBookingMessage(m).people === c.parsePeople(m), `${m}: parseBookingMessage.people 應等於 parsePeople（${c.parseBookingMessage(m).people} vs ${c.parsePeople(m)}）`);
         }
         eq(c.parseBookingMessage('大人八位小孩兩位').people, 10, '大人八位小孩兩位 → 10');
+        eq(c.parseBookingMessage('大人8位小孩2位，訂金兩百').people, 10, '大人8位小孩2位，訂金兩百 → 10');
+        eq(c.parseBookingMessage('大人6位小孩6位，訂金兩百').people, 12, '大人6位小孩6位，訂金兩百 → 12');
+        eq(c.parseBookingMessage('大人8位小孩2位 預算5千').people, 10, '預算5千 不影響 → 10');
+        eq(c.parseBookingMessage('大人8位小孩2位 紅包一百').people, 10, '紅包一百 不影響 → 10');
     }
 
     console.log('# 整合測試：網頁表單確認信（MailApp 以 mock 攔截，不寄信）');
