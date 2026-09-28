@@ -32,6 +32,8 @@ var LINE_MAX_TABLES_ = 20;
 // 方案代碼形狀：5k、4.5k、5k1a、4.5K 2A、5k×2a（a = 桌數）。實際判斷用 lineFindCodes_（含前後文檢查）。
 var LINE_CODE_SHAPE_ = "(\\d{1,2}(?:\\.\\d{1,2})?)\\s*[Kk](?:\\s*[Xx×✕＊*]?\\s*(\\d{1,2})\\s*[Aa])?";
 var LINE_PRICE_CONN_ = "(?:是|要|約|大約|大概|差不多)";
+// 方案碼前面的英文單字若是連接詞，不算產品前綴（5k1a or 5.5k2a、5k1a vs 5.5k2a 兩個都要算）。
+var LINE_PLAN_CONJ_ = /^(?:or|vs|versus|and)$/i;
 
 function lineNumToInt_(s) {
   s = String(s == null ? "" : s).trim();
@@ -75,7 +77,8 @@ function linePriceToCode_(price) {
 
 /**
  * 找出字串中所有方案代碼（請先轉半形）。回傳 [{ index, end, price, tables, valid }]。
- *   - 前面黏英數字／小數點，或前面是英文字＋空白（iPhone5k、iPhone 5k）→ 不算。
+ *   - 前面黏英數字／小數點（iPhone5k），或前面是產品名之類的英文字＋空白（iPhone 5k）→ 不算。
+ *     or／vs／versus／and 等連接詞＋空白不算產品前綴，後面的完整方案碼要算。
  *   - 後面黏英文字（5kg）或不是代碼的數字（5k12）→ 不算；相鄰代碼（5k1a5k2a）都算。
  *   - valid = 價位合理（3000–20000、百元整）。
  */
@@ -88,7 +91,7 @@ function lineFindCodes_(s) {
     var before = s.slice(0, m.index);
     var end = m.index + m[0].length;
     var afterPrevCode = lastEnd >= 0 && /^\s*$/.test(s.slice(lastEnd, m.index)); // 緊接前一個代碼（中間只有空白）
-    if (!afterPrevCode && (/[0-9A-Za-z.]$/.test(before) || /[A-Za-z]\s+$/.test(before))) continue;
+    if (!afterPrevCode && (/[0-9A-Za-z.]$/.test(before) || lineSpacedEnglishBlocksCode_(before))) continue;
     var after = s.slice(end);
     if (/^\d/.test(after) && !startsCode.test(after)) continue;
     var price = Math.round(parseFloat(m[1]) * 1000);
@@ -97,6 +100,13 @@ function lineFindCodes_(s) {
     lastEnd = end;
   }
   return out;
+}
+
+// 英文字＋空白緊貼在方案碼前：產品名（iPhone 5k、Pro 5k）排除；連接詞（or／vs）後面的完整方案碼要進入衝突判斷。
+function lineSpacedEnglishBlocksCode_(before) {
+  var m = String(before == null ? "" : before).match(/([A-Za-z]+)\s+$/);
+  if (!m) return false;
+  return !LINE_PLAN_CONJ_.test(m[1]);
 }
 
 // 移除字串中所有代碼（含價位不合理的代碼形狀），整理多餘的分隔符號。沒有代碼 → 原字串（trim）。
