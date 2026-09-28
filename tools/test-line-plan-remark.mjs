@@ -103,14 +103,21 @@ const PC = (m) => { const r = L.lineMergePlanClues_([], L.lineFindPlanClues_(m))
 for (const m of [
     '5k1a 4.5k2a 靠窗', '5k1a 5k2a', '5.5k 5k1a 靠窗', '不要5k了改成桌菜5500', '改成桌菜5500，不要5k1a', '5k1a 改成5.5k',
     '5K1A 4.5K 2A', '５ｋ１ａ ５ｋ２ａ', '桌菜5000 不對是每桌5500', '5000的桌菜還是5500的桌菜', '4.5k2a、5k2a',
+    '5k1a or 5.5k2a', '5k1a vs 5.5k2a', '5k1a OR 5.5K2A', '5k1a and 5.5k2a', '5k1a versus 5.5k2a',
 ]) { eq(PC(m).ambiguous, true, `待確認 ${m}`); eq(plan(m), null, `待確認不猜價 ${m}`); }
 for (const [m, want] of [
     ['5k 5k1a', { price: 5000, tables: 1 }], ['5k1a 桌菜5000', { price: 5000, tables: 1 }], ['桌菜5000 5k1a 靠窗', { price: 5000, tables: 1 }],
     ['5k1a 5k1a', { price: 5000, tables: 1 }], ['桌菜4500 兩桌', { price: 4500, tables: null }], ['12位 5000的桌菜 一桌就好', { price: 5000, tables: null }],
-    ['iPhone 5k', null], ['靠窗', null], ['2026/10/03 18:30 0900000000', null],
+    ['iPhone 5k', null], ['要5kg雞', null], ['for 5k', null], ['Pro 5k', null], ['靠窗', null], ['2026/10/03 18:30 0900000000', null],
+    ['5k1a or 5k1a', { price: 5000, tables: 1 }],
 ]) { eq(PC(m).ambiguous, false, `單一線索 ${m}`); eq(PC(m).plan, want, `單一線索價位 ${m}`); }
 eq(L.lineFindCodes_('5k1a 4.5k2a').length, 2, '空白隔開的第二個代碼也要找到');
 eq(L.lineFindCodes_('5K 1A 5k2a').length, 2, '大寫空白代碼後面接第二個代碼');
+eq(L.lineFindCodes_('5k1a or 5.5k2a').length, 2, 'or 後面的完整方案碼也要找到');
+eq(L.lineFindCodes_('5k1a vs 5.5k2a').length, 2, 'vs 後面的完整方案碼也要找到');
+eq(L.lineFindCodes_('iPhone 5k').length, 0, 'iPhone 5k 前綴仍排除');
+eq(L.lineFindCodes_('iPhone5k').length, 0, 'iPhone5k 仍排除');
+eq(L.lineFindCodes_('要5kg雞').length, 0, '5kg 仍排除');
 {
     // 多輪：先 5k1a、再不同價 → 待確認；之後同價的線索也不會把它變回確定價
     const st = {};
@@ -243,7 +250,43 @@ function assertPendingH(h, label) {
         assertPendingH(h, `待確認 H ${note}`);
     }
     // 沒標 ambiguous、由 compose 自己判斷出待確認的情況也一樣
-    for (const note of ['5k1a 4.5k2a 靠窗', '5k1a 5k2a', '5.5k 5k1a 靠窗', '５ｋ１ａ 4.5K 2A 慶生']) assertPendingH(C({ tables: 1, note }), `自動待確認 ${note}`);
+    for (const note of ['5k1a 4.5k2a 靠窗', '5k1a 5k2a', '5.5k 5k1a 靠窗', '５ｋ１ａ 4.5K 2A 慶生', '5k1a or 5.5k2a', '5k1a vs 5.5k2a']) assertPendingH(C({ tables: 1, note }), `自動待確認 ${note}`);
+    // 連接詞後的完整方案碼要進待確認；去碼後孤立的 or／vs／and 要清掉，客人看不到「備註：or」
+    const conjCases = [
+        ['5k1a or 5.5k2a', ''],
+        ['5k1a vs 5.5k2a', ''],
+        ['5k1a OR 5.5k2a 靠窗', '靠窗'],
+        ['5k1a and 5.5k2a', ''],
+        ['5k1a versus 5.5k2a、靠窗', '靠窗'],
+    ];
+    for (const [msg, noteLeft] of conjCases) {
+        const clues = L.lineFindPlanClues_(msg);
+        eq(clues.map((c) => ({ price: c.price, tables: c.tables })), [{ price: 5000, tables: 1 }, { price: 5500, tables: 2 }], `連接詞線索 ${msg}`);
+        const st = { note: msg };
+        L.lineApplyPlanClues_(st, { planClues: clues });
+        const rp = L.lineResolvePlan_(st);
+        eq([rp.ambiguous, rp.plan], [true, null], `apply→resolve 待確認 ${msg}`);
+        const h = C({ plan: rp.plan, tables: 1, note: msg, ambiguous: rp.ambiguous, clues: rp.clues });
+        eq(h, `方案待確認；${noteLeft}（客人提過：每桌5000元1桌、每桌5500元2桌）`, `連接詞 H ${msg}`);
+        assertPendingH(h, `連接詞 H ${msg}`);
+        ok(!/方案待確認；\s*(?:or|vs|versus|and)\b/i.test(h), `H 無孤立連接詞 ${msg}`);
+        eq(L.linePlanFriendly_(h), '方案將由店家確認', `H 的客人方案文字 ${msg}`);
+        st.tables = 1;
+        eq(L.lineCustomerPlanText_(st), '方案將由店家確認', `客人只看到待確認 ${msg}`);
+        ok(!/\d/.test(L.lineCustomerPlanText_(st)) && !/\d\s*k/i.test(L.lineCustomerPlanText_(st)), `客人方案文字無價位無代碼 ${msg}`);
+        eq(L.lineCustomerNote_(msg), noteLeft, `客人備註 ${msg}`);
+        const remarkLine = L.lineCustomerNote_(msg) ? `備註：${L.lineCustomerNote_(msg)}` : '';
+        ok(!/備註：\s*(?:or|vs|versus|and)\b/i.test(remarkLine), `客人訊息沒有備註：or ${msg} → ${remarkLine}`);
+        ok(!KA_RE.test(L.lineHalfWidth_(L.lineCustomerNote_(msg))) && !/\d\s*k/i.test(L.lineHalfWidth_(remarkLine)), `客人備註無 k 代碼 ${msg}`);
+    }
+    // 一般備註裡的 and／or 不是貼著代碼的連接詞，要整句保留
+    eq(L.lineCustomerNote_('wheelchair and stroller'), 'wheelchair and stroller', '保留 wheelchair and stroller');
+    eq(L.lineStripCodes_('wheelchair and stroller'), 'wheelchair and stroller', '去碼不碰 wheelchair and stroller');
+    eq(L.linePendingNote_('5k1a or 5.5k2a wheelchair and stroller'), 'wheelchair and stroller', '只拿掉貼著代碼的 or，保留 wheelchair and stroller');
+    eq(L.lineCustomerNote_('5k1a or 5.5k2a wheelchair and stroller'), 'wheelchair and stroller', '客人備註保留 wheelchair and stroller');
+    eq(C({ tables: 1, note: '5k1a or 5.5k2a wheelchair and stroller' }), '方案待確認；wheelchair and stroller（客人提過：每桌5000元1桌、每桌5500元2桌）', 'H 保留 wheelchair and stroller');
+    eq(L.lineCustomerNote_('靠窗 or 慶生'), '靠窗 or 慶生', '沒有代碼時 or 留在備註裡');
+    eq(L.lineCustomerNote_('5k1a 靠窗 or 慶生'), '靠窗 or 慶生', 'or 夾在真正備註中間要保留');
     // 多輪：備註 5k1a 靠窗 → 改成桌菜5500 → finalize 用 lineResolvePlan_
     const st = { note: '5k1a 靠窗' };
     L.lineApplyPlanClues_(st, { planClues: L.lineFindPlanClues_('備註 5k1a 靠窗') });
