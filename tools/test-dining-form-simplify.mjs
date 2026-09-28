@@ -86,19 +86,21 @@ for (const [needle, label] of forbidden) {
 }
 assert(!html.includes('每桌最多12'), '表單不暗示每桌硬性上限 12');
 assert(html.includes('script.google.com/macros'), 'booking endpoint unchanged');
-assert(/Dining extras[\s\S]*vegetarian[\s\S]*`note` only/.test(html) || html.includes('vegetarian) are written into `note` only'), '素食走備註、不擴後端欄位');
+assert(/Dining extras are written into `note` only, in SHORT form/.test(html), '素食等選項走備註短句、不擴後端欄位');
 
 const tenPlusVeg = banquetSummaryText('4500', 1, 1, 0);
 assert(!tenPlusVeg.includes('4800'), '10桌菜+素食不在摘要套 300 加人費');
 assert(!/總價|應付|全部費用/.test(tenPlusVeg), '摘要不寫誤導總價');
 
 assert(vegetarianNoteLine(false, 2) === '', '未勾素食不寫入備註');
-assert(vegetarianNoteLine(true, 1).includes('素食人數：1'), '勾選後備註含人數');
-assert(vegetarianNoteLine(true, 1).includes('已含在合計人數'), '備註註明勿重複加總');
+assert(vegetarianNoteLine(true, 1) === '素食1位', '勾選後備註為完整字「素食1位」');
+assert(vegetarianNoteLine(true, 0) === '素食', '素食人數未填時只寫「素食」');
 assert(discloseHint('兒童', 2) === '（兒童2位）', '兒童摘要');
 assert(discloseHint('烤雞', 1) === '（烤雞1隻）', '烤雞摘要');
 assert(discloseHint('兒童', 0) === '', '無資料不顯示摘要');
-assert(planCode('casual', '', 8) === '散客8a', '方案代碼語意不變');
+assert(planCode('casual', '', 1) === '散客', '散客不寫 a（a = 桌數）');
+assert(planCode('banquet', '4500', 2) === '4.5k2a', 'a = 桌數：4500 × 2 桌');
+assert(planCode('banquet', '5000', 1) === '5k1a', 'a = 桌數：5000 × 1 桌（不因 10 人寫成 5k10a）');
 
 const faqNeedles = [
     extraPersonCopy,
@@ -393,9 +395,9 @@ try {
         assert(result.extraAfterSwitch === '1', '切用餐類型後加購資料仍在');
         assert(result.vegAfterSwitch === true, '切用餐類型後素食勾選仍在');
         assert(result.summary5000.includes('桌菜基本費用：5000元×1桌'), `切回桌菜摘要：${result.summary5000}`);
-        assert(result.note.includes('素食需求：是｜素食人數：1'), `備註應含素食：${result.note}`);
-        assert(result.note.includes('用餐類型：散客') === false || result.partyValue === 'banquet', '桌菜備註不應誤寫散客');
-        assert(result.note.includes('桌菜價位：5000'), `備註方案：${result.note}`);
+        assert(/^5k1a 大人10位、小朋友1位、幼兒1位 素食1位 加購烤雞1隻/.test(result.note), `備註應為「5k1a（1 桌）大人10位、小朋友1位、幼兒1位 素食1位 加購烤雞1隻」：${result.note}`);
+        assert(!/5k10a|(^|[\s、])(幼|國)\d/.test(result.note), `a 不可是人數、不可用幼/國縮寫：${result.note}`);
+        assert(!/用餐類型|桌菜價位|方案代碼|人頭NT|成人\d|合計|桌數|原則含烤雞|\n/.test(result.note), `備註不應含定型稿：${result.note}`);
         assert(result.payloadPeople === '12', '送出人數為到店合計，不含重複素食');
         assert(result.partyValue === 'banquet', '後端值 banquet 不變');
 
