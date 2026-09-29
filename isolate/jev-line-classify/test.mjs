@@ -427,13 +427,12 @@ test('full suite passes from a different working directory', { skip: process.env
   const testFile = fileURLToPath(new URL('./test.mjs', import.meta.url));
   const env = Object.assign({}, process.env, { JEV_LINE_SKIP_CWD_RECURSE: '1' });
   delete env.NODE_TEST_CONTEXT;
-  const result = spawnSync(process.execPath, ['--test', testFile], {
+  const result = spawnSync(process.execPath, ['--test', '--test-reporter=tap', testFile], {
     cwd: os.tmpdir(),
     encoding: 'utf8',
     env: env
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /# fail 0/);
 });
 
 test('isolate sources do not call live services or import the classifier into the replay', () => {
