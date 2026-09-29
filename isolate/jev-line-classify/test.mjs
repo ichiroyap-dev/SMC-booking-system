@@ -5,6 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import {
   CATEGORIES,
   LOG_PATH,
@@ -334,9 +336,84 @@ test('week metrics: distribution, failure rate, duration, side-effect delta 0', 
   assert.ok(report.replayDurationMs < 5000);
 });
 
+test('classifier mutation does not change the original event', () => {
+  const event = textEvent({
+    id: 'mut-1',
+    user: GUEST,
+    text: '我要訂位，我是測試一，電話0900000000，明天12:00，4位'
+  });
+  event.booking = { people: 4, phone: '0900000000', note: '靠窗' };
+  const context = { awaitingConfirmation: false, nested: { priorTurnCount: 1 } };
+  const eventBefore = structuredClone(event);
+  const contextBefore = structuredClone(context);
+  const record = observeClassification({ event: event, context: context }, {
+    ts: '2026-09-29T00:00:00.000Z',
+    classify(input) {
+      input.event.message.text = '取消一切';
+      input.event.source.userId = 'UFAKEPOISON';
+      input.event.booking.people = 99;
+      input.event.booking.phone = '0900000099';
+      input.context.awaitingConfirmation = true;
+      input.context.nested.priorTurnCount = 50;
+      return { category: 'cancel', confidence: 0.92, reason: 'cancel_keyword' };
+    }
+  });
+  assert.deepEqual(event, eventBefore);
+  assert.deepEqual(context, contextBefore);
+  assert.equal(record.status, 'ok');
+  assert.equal(record.category, 'cancel');
+  assert.equal(event.message.text.includes('訂位'), true);
+  assert.equal(event.booking.people, 4);
+});
+
+test('mutate-then-throw leaves booking side effects byte-identical to baseline', () => {
+  const events = [
+    textEvent({ id: 't1', user: GUEST, text: '我要訂位，我是測試一，電話0900000000，明天12:00，4位' }),
+    textEvent({ id: 't2', user: GUEST, text: '確認' }),
+    textEvent({ id: 't2', user: GUEST, text: '確認' })
+  ];
+  events[0].booking = { people: 4, phone: '0900000000' };
+  const before = structuredClone(events);
+  const cmp = compareToBaseline(events, factory, {
+    classify(input) {
+      input.event.message.text = '你好';
+      input.event.source.userId = 'UFAKEPOISON';
+      if (input.event.booking) input.event.booking.people = 1;
+      throw new Error('mutate_then_throw');
+    }
+  });
+  assert.deepEqual(events, before);
+  assert.equal(cmp.behaviorMatch, true);
+  assert.equal(cmp.delta.total, 0);
+  assert.equal(JSON.stringify(cmp.baseline.replies), JSON.stringify(cmp.shadowed.replies));
+  assert.equal(JSON.stringify(cmp.baseline.rows), JSON.stringify(cmp.shadowed.rows));
+  assert.equal(JSON.stringify(cmp.baseline.actions), JSON.stringify(cmp.shadowed.actions));
+  assert.equal(JSON.stringify(cmp.baseline.counts), JSON.stringify(cmp.shadowed.counts));
+  assert.deepEqual(cmp.baseline.actions.map((item) => item.action), ['confirm_draft', 'opened', 'deduped']);
+  assert.equal(cmp.baseline.counts.sheetAppend, 1);
+  assert.equal(cmp.shadowed.rows[0].people, 4);
+  assert.equal(cmp.shadowed.rows[0].phone, '0900000000');
+  assert.equal(cmp.shadowed.logs.every((rec) => rec.status === 'exception' && rec.action === 'none'), true);
+
+  const live = textEvent({ id: 'live-1', user: GUEST, text: '我要訂位，我是測試一，電話0900000000，明天12:00，4位' });
+  const liveBefore = structuredClone(live);
+  const plain = runPipeline(structuredClone(live), factory());
+  const poisoned = runPipeline(live, factory(), {
+    onPreParse(_pre, ev) {
+      ev.message.text = '你好';
+      ev.source.userId = 'UFAKEPOISON';
+      throw new Error('hook_mutated');
+    }
+  });
+  assert.deepEqual(live, liveBefore);
+  assert.equal(poisoned.action, plain.action);
+  assert.equal(poisoned.reply, plain.reply);
+});
+
 test('replay cli exits 0 and prints a zero side-effect delta', () => {
-  const result = spawnSync(process.execPath, ['isolate/jev-line-classify/replay.mjs'], {
-    cwd: '/workspace',
+  const replayPath = fileURLToPath(new URL('./replay.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [replayPath], {
+    cwd: os.tmpdir(),
     encoding: 'utf8'
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -344,6 +421,19 @@ test('replay cli exits 0 and prints a zero side-effect delta', () => {
   assert.equal(report.sideEffectDelta.total, 0);
   assert.equal(report.wiredToProduction, false);
   assert.equal(report.externalApiCalls, 0);
+});
+
+test('full suite passes from a different working directory', { skip: process.env.JEV_LINE_SKIP_CWD_RECURSE === '1' }, () => {
+  const testFile = fileURLToPath(new URL('./test.mjs', import.meta.url));
+  const env = Object.assign({}, process.env, { JEV_LINE_SKIP_CWD_RECURSE: '1' });
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, ['--test', testFile], {
+    cwd: os.tmpdir(),
+    encoding: 'utf8',
+    env: env
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /# fail 0/);
 });
 
 test('isolate sources do not call live services or import the classifier into the replay', () => {

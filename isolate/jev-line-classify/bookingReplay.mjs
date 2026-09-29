@@ -362,16 +362,25 @@ function dispatch(event, services, pre, text) {
 }
 
 /**
- * Replay one webhook event. `hooks.onPreParse` may record a classification;
- * its return value is ignored, exceptions are contained, and it is given a
- * clone of the pre-parse context so it cannot change dedup or the draft.
+ * Replay one webhook event. `hooks.onPreParse` may record a classification.
+ * Its return value is ignored. It receives a deep clone of the event, never
+ * the object dispatch will read. A throw after that clone is mutated still
+ * leaves the original event on the booking path.
  */
 export function runPipeline(event, services, hooks) {
   const inbound = normalizeInbound(event);
   const pre = buildPreContext(inbound.ok ? inbound.event : null, services);
   if (hooks && typeof hooks.onPreParse === 'function') {
+    let hookEvent = null;
+    if (inbound.ok) {
+      try {
+        hookEvent = structuredClone(inbound.event);
+      } catch (_cloneErr) {
+        hookEvent = null;
+      }
+    }
     try {
-      hooks.onPreParse(cloneJson(pre), inbound.ok ? inbound.event : null);
+      hooks.onPreParse(cloneJson(pre), hookEvent);
     } catch (err) {
       if (hooks.onHookError) {
         try { hooks.onHookError(err); } catch (_ignore) { /* fail-open: keep going */ }

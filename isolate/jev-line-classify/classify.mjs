@@ -98,12 +98,22 @@ function hasFieldBundle(text) {
 }
 
 /**
+ * Deep-copy a webhook/classify payload. Callers never hand the live event to
+ * rule code or to an injected classify function.
+ */
+export function cloneClassifyInput(input) {
+  return structuredClone(input);
+}
+
+/**
  * Deterministic local rules. No outbound classifier call.
+ * Operates on a deep clone so rule code cannot mutate the caller's event.
  * @returns {{category: string, confidence: number, reason: string}}
  */
 export function classifyMessage(input) {
-  const text = extractText(input);
-  const ctx = input && input.context && typeof input.context === 'object' ? input.context : {};
+  const source = cloneClassifyInput(input);
+  const text = extractText(source);
+  const ctx = source && source.context && typeof source.context === 'object' ? source.context : {};
   if (text == null) {
     return { category: 'unknown', confidence: 0.95, reason: 'no_text' };
   }
@@ -183,16 +193,27 @@ export function observeClassification(input, options) {
   const clock = typeof opts.clock === 'function' ? opts.clock : () => Date.now();
   const classify = typeof opts.classify === 'function' ? opts.classify : classifyMessage;
   const started = clock();
+  const webhookEventId = webhookEventIdOf(input);
+  const messageId = messageIdOf(input);
   let raw;
   let status = 'ok';
   let error = null;
   let value = null;
+  let classifyInput = null;
   try {
-    raw = classify(input, { budgetMs: budgetMs, clock: clock, startedAt: started });
+    classifyInput = cloneClassifyInput(input);
   } catch (err) {
-    const timedOut = !!(err && (err.code === 'CLASSIFY_TIMEOUT' || err.name === 'ClassifyTimeoutError'));
-    status = timedOut ? 'timeout' : 'exception';
-    error = timedOut ? 'timeout' : safeErr(err);
+    status = 'exception';
+    error = safeErr(err);
+  }
+  if (status === 'ok') {
+    try {
+      raw = classify(classifyInput, { budgetMs: budgetMs, clock: clock, startedAt: started });
+    } catch (err) {
+      const timedOut = !!(err && (err.code === 'CLASSIFY_TIMEOUT' || err.name === 'ClassifyTimeoutError'));
+      status = timedOut ? 'timeout' : 'exception';
+      error = timedOut ? 'timeout' : safeErr(err);
+    }
   }
   if (status === 'ok') {
     let elapsed = 0;
@@ -227,8 +248,8 @@ export function observeClassification(input, options) {
     shadow: true,
     followed: false,
     action: 'none',
-    webhookEventId: webhookEventIdOf(input),
-    messageId: messageIdOf(input),
+    webhookEventId: webhookEventId,
+    messageId: messageId,
     category: value ? value.category : null,
     confidence: value ? value.confidence : null,
     reason: value ? value.reason : null,
