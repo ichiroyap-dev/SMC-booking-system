@@ -328,6 +328,7 @@
             overflow-wrap: anywhere;
         }
         .faq-item:last-child { border-bottom: 0; }
+        .faq-item[id] { scroll-margin-top: 16px; }
         .faq-item summary {
             cursor: pointer;
             list-style: none;
@@ -512,6 +513,18 @@
             </div>
         </aside>
     </main>
+    <script>
+        // 從其他頁連到 faq.html#faq-xxx 時，自動展開該題（只影響 FAQ 展開，不涉及訂位邏輯）
+        (function () {
+            function openFromHash() {
+                var id = decodeURIComponent(location.hash.slice(1));
+                var el = id && document.getElementById(id);
+                if (el && el.tagName === 'DETAILS') { el.open = true; el.scrollIntoView(); }
+            }
+            openFromHash();
+            window.addEventListener('hashchange', openFromHash);
+        })();
+    </script>
 
     <footer class="max-w-3xl mx-auto mt-4 text-center text-stone-400 text-xs tracking-wide leading-relaxed space-y-2 pb-10">
         <nav class="text-sm text-stone-500 mb-3" aria-label="頁尾">
