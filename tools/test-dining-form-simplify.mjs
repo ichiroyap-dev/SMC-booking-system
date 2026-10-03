@@ -131,7 +131,8 @@ assert(!faq.includes('最多12人上限'), 'FAQ 不寫硬性 12 人上限');
 for (const [needle, label] of forbidden) {
     assert(!faq.includes(needle), `FAQ 不含${label}`);
 }
-assert(faq.includes('線上申請內用訂位或外帶預約'), 'FAQ 第一題長連結文字保留可點');
+assert(faq.includes('<a href="./#booking-section" class="contact-link">線上預約內用</a>'), 'FAQ 第一題內用連結可點');
+assert(faq.includes('<a href="./#takeout" class="contact-link">外帶</a>'), 'FAQ 第一題外帶連結可點');
 const ldMatch = faq.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
 assert(!!ldMatch, 'FAQ 有 JSON-LD');
 JSON.parse(ldMatch[1]);
@@ -413,29 +414,34 @@ try {
             const items = Array.from(document.querySelectorAll('.faq-item'));
             const first = items[0];
             first.open = true;
-            const link = first.querySelector('a.contact-link--wrap');
+            const links = Array.from(first.querySelectorAll('a.contact-link'));
+            const dining = links.find((a) => (a.getAttribute('href') || '').includes('#booking-section'));
+            const takeout = links.find((a) => (a.getAttribute('href') || '').includes('#takeout'));
             const measure = () => ({
                 scrollWidth: document.documentElement.scrollWidth,
                 clientWidth: document.documentElement.clientWidth,
                 bodyScrollWidth: document.body.scrollWidth,
             });
+            const fit = (link) => {
+                if (!link) return { text: '', href: '', linkWidth: 0, parentWidth: 0 };
+                const box = link.getBoundingClientRect();
+                const parent = link.parentElement.getBoundingClientRect();
+                return {
+                    text: link.textContent,
+                    href: link.getAttribute('href') || '',
+                    linkWidth: Math.round(box.width),
+                    parentWidth: Math.round(parent.width),
+                };
+            };
             const expandedFirst = measure();
-            const linkCs = link ? getComputedStyle(link) : null;
-            const linkBox = link ? link.getBoundingClientRect() : null;
-            const parentBox = link && link.parentElement ? link.parentElement.getBoundingClientRect() : null;
             items.forEach((item) => { item.open = true; });
             const allOpen = measure();
             const feeItem = items.find((item) => (item.querySelector('summary') || {}).textContent === '桌菜加人費怎麼算？');
             const kidsItem = items.find((item) => (item.querySelector('summary') || {}).textContent === '兒童怎麼計費？有兒童椅嗎？');
             return {
                 q1: (first.querySelector('summary') || {}).textContent,
-                linkText: link ? link.textContent : '',
-                href: link ? link.getAttribute('href') : '',
-                whiteSpace: linkCs ? linkCs.whiteSpace : '',
-                overflowWrap: linkCs ? linkCs.overflowWrap : '',
-                wordBreak: linkCs ? linkCs.wordBreak : '',
-                linkWidth: linkBox ? Math.round(linkBox.width) : 0,
-                parentWidth: parentBox ? Math.round(parentBox.width) : 0,
+                dining: fit(dining),
+                takeout: fit(takeout),
                 expandedFirst,
                 allOpen,
                 feeText: feeItem ? feeItem.textContent : '',
@@ -444,10 +450,12 @@ try {
         })()`);
 
         assert(faqOverflow.q1.includes('需要提前預約嗎'), `FAQ 第一題：${faqOverflow.q1}`);
-        assert(faqOverflow.linkText.includes('線上申請內用訂位或外帶預約'), `長連結文字：${faqOverflow.linkText}`);
-        assert(faqOverflow.href.includes('#booking-section'), '長連結仍可點進預約');
-        assert(faqOverflow.whiteSpace !== 'nowrap', `長連結需可換行，white-space=${faqOverflow.whiteSpace}`);
-        assert(faqOverflow.linkWidth <= faqOverflow.parentWidth + 1, `長連結寬 ${faqOverflow.linkWidth} 不可超過內容 ${faqOverflow.parentWidth}`);
+        assert(faqOverflow.dining.text.includes('內用'), `內用連結文字：${faqOverflow.dining.text}`);
+        assert(faqOverflow.dining.href.includes('#booking-section'), '內用連結仍可點進預約');
+        assert(faqOverflow.takeout.text.includes('外帶'), `外帶連結文字：${faqOverflow.takeout.text}`);
+        assert(faqOverflow.takeout.href.includes('#takeout'), '外帶連結仍可點進外帶');
+        assert(faqOverflow.dining.linkWidth <= faqOverflow.dining.parentWidth + 1, `內用連結寬 ${faqOverflow.dining.linkWidth} 不可超過內容 ${faqOverflow.dining.parentWidth}`);
+        assert(faqOverflow.takeout.linkWidth <= faqOverflow.takeout.parentWidth + 1, `外帶連結寬 ${faqOverflow.takeout.linkWidth} 不可超過內容 ${faqOverflow.takeout.parentWidth}`);
         assert(faqOverflow.expandedFirst.scrollWidth <= faqOverflow.expandedFirst.clientWidth, `展開第一題文件寬 ${faqOverflow.expandedFirst.scrollWidth} > ${faqOverflow.expandedFirst.clientWidth}`);
         assert(faqOverflow.allOpen.scrollWidth <= faqOverflow.allOpen.clientWidth, `展開全部題文件寬 ${faqOverflow.allOpen.scrollWidth} > ${faqOverflow.allOpen.clientWidth}`);
         assert(faqOverflow.feeText.includes('每桌超過10位成人吃桌菜時'), 'FAQ 加人費含每桌');
