@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>水美土雞城｜台中外埔土雞城・桶仔雞烤雞・菜單價格與外帶</title>
-    <meta name="description" content="水美土雞城：台中外埔美食，預約式無菜單土雞料理。內用每桌原則含招牌桶仔雞（烤雞）一隻，人頭 NT$500、桌菜 4500／5000／5500 元；烤雞可外帶預約。台中市外埔區二崁路658巷88號（近大甲），每週三公休。">
+    <meta name="description" content="水美土雞城：台中外埔美食，預約制無菜單土雞料理，請先訂位再出發。內用每桌原則含招牌桶仔雞（烤雞）一隻，人頭 NT$500、桌菜 4500／5000／5500 元；烤雞可外帶預約。台中市外埔區二崁路658巷88號（近大甲），每週三公休。">
     <meta name="theme-color" content="#342117">
     <link rel="canonical" href="https://www.sweetmeichicken.com/">
 
@@ -12,7 +12,7 @@
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="水美土雞城">
     <meta property="og:title" content="水美土雞城｜台中外埔土雞城・桶仔雞烤雞・菜單價格與外帶">
-    <meta property="og:description" content="台中外埔美食・預約式無菜單土雞料理。內用每桌原則含招牌桶仔雞（烤雞）一隻，菜單價格公開；烤雞可外帶預約。每週三公休。">
+    <meta property="og:description" content="台中外埔美食・預約制，請先訂位再出發。料理依預約準備，未預約不保證供應烤雞。內用每桌原則含招牌桶仔雞一隻。每週三公休。">
     <meta property="og:url" content="https://www.sweetmeichicken.com/">
     <meta property="og:image" content="https://www.sweetmeichicken.com/og-image-v2.png">
     <meta property="og:image:width" content="1200">
@@ -22,7 +22,7 @@
 
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="水美土雞城｜台中外埔土雞城・桶仔雞烤雞・菜單價格與外帶">
-    <meta name="twitter:description" content="台中外埔美食・預約式無菜單土雞料理。內用每桌原則含招牌桶仔雞（烤雞）一隻，菜單價格公開；烤雞可外帶預約。每週三公休。">
+    <meta name="twitter:description" content="台中外埔美食・預約制，請先訂位再出發。料理依預約準備，未預約不保證供應烤雞。內用每桌原則含招牌桶仔雞一隻。每週三公休。">
     <meta name="twitter:image" content="https://www.sweetmeichicken.com/og-image-v2.png">
     <meta name="twitter:image:alt" content="台中外埔水美土雞城預約式無菜單土雞料理">
 
@@ -44,7 +44,7 @@
       "menu": "https://www.sweetmeichicken.com/#menu",
       "hasMenu": { "@id": "https://www.sweetmeichicken.com/#menu-data" },
       "acceptsReservations": true,
-      "description": "台中市外埔區預約式無菜單土雞料理，鄰近大甲。內用各價位原則每桌含招牌桶仔雞（烤雞）一隻，烤雞可外帶預約。營業時間中午 11:30 - 14:00、晚上 17:30 - 21:00，每週三公休。",
+      "description": "台中市外埔區預約制無菜單土雞料理，鄰近大甲。本店採預約制，請先訂位再出發。料理依預約準備；當日臨時用餐請先來電確認，未預約不保證供應烤雞。內用各價位原則每桌含招牌桶仔雞（烤雞）一隻，烤雞可外帶預約。營業時間中午 11:30 - 14:00、晚上 17:30 - 21:00，每週三公休。附戶外停車區、免費。",
       "address": {
         "@type": "PostalAddress",
         "streetAddress": "二崁路658巷88號",
@@ -74,7 +74,7 @@
       ],
       "amenityFeature": {
         "@type": "LocationFeatureSpecification",
-        "name": "戶外停車區",
+        "name": "免費戶外停車區",
         "value": true
       },
       "sameAs": [
@@ -537,6 +537,45 @@
         }
         .hero-subtitle { color: #f1d7b3; }
         .hero-story { color: rgba(255, 248, 237, 0.78); }
+        .hero-reserve-note {
+            max-width: 36rem;
+            margin: 0 0 1rem;
+            padding: 0.7rem 0.85rem 0.75rem;
+            border-radius: 12px;
+            border: 1px solid rgba(248, 206, 145, 0.7);
+            background: rgba(255, 236, 210, 0.14);
+        }
+        .hero-reserve-lead {
+            margin: 0;
+            color: #fff8ed;
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.45;
+        }
+        .hero-reserve-detail {
+            margin: 0.28rem 0 0;
+            color: rgba(255, 248, 237, 0.94);
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+        .hero-reserve-methods {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.2rem 0.45rem;
+            margin: 0.5rem 0 0;
+            font-size: 0.9rem;
+            font-weight: 700;
+            line-height: 1.4;
+        }
+        .hero-reserve-methods a {
+            color: #fff8ed;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            text-decoration-color: #f8ce91;
+        }
+        .hero-reserve-methods a:hover { color: #f8ce91; }
+        .hero-reserve-dot { color: rgba(248, 206, 145, 0.85); font-weight: 400; }
         .hero-photo {
             position: relative;
             min-height: 610px;
@@ -902,6 +941,10 @@
             .hero-divider { display: none; }
             .hero-subtitle { font-size: 0.88rem; line-height: 1.45; margin-bottom: 0.45rem; }
             .hero-title { font-size: 1.7rem; line-height: 1.08; margin-bottom: 0.45rem; }
+            .hero-reserve-note { margin-bottom: 0.55rem; padding: 0.6rem 0.7rem 0.65rem; }
+            .hero-reserve-lead { font-size: 0.95rem; }
+            .hero-reserve-detail,
+            .hero-reserve-methods { font-size: 0.84rem; }
             .hero-photo-caption { display: none; }
             .hero-copy .flex.flex-wrap { font-size: 0.75rem; gap: 0.35rem 0.85rem; }
             .booking-form-card { padding: 1.25rem; }
@@ -958,6 +1001,19 @@
                     </a>
                 </nav>
                 <p class="hero-subtitle brand-font text-base sm:text-xl mb-3 max-w-xl leading-7 sm:leading-8">台中外埔預約制土雞料理；內用各價位原則含烤雞一隻。</p>
+                <div class="hero-reserve-note">
+                    <p class="hero-reserve-lead">本店採預約制，請先訂位再出發。</p>
+                    <p class="hero-reserve-detail">料理依預約準備；當日臨時用餐請先來電確認，未預約不保證供應烤雞。</p>
+                    <p class="hero-reserve-methods">
+                        <a href="#booking-section">線上預約</a>
+                        <span class="hero-reserve-dot" aria-hidden="true">·</span>
+                        <a href="#takeout">外帶</a>
+                        <span class="hero-reserve-dot" aria-hidden="true">·</span>
+                        <a href="https://line.me/R/ti/p/@xwg4507a" target="_blank" rel="noopener noreferrer">LINE @xwg4507a</a>
+                        <span class="hero-reserve-dot" aria-hidden="true">·</span>
+                        <a href="tel:0426887895">04-2688-7895</a>
+                    </p>
+                </div>
                 <div class="hero-divider h-1 w-20 bg-orange-400 rounded-full mb-6"></div>
                 <p class="hero-story leading-8 text-base max-w-xl mb-6">自養土雞、預約現做。從台中外埔山上小屋的一道桶仔雞開始，端上適合家人朋友圍桌共享的鄉土料理。</p>
 
@@ -1107,7 +1163,7 @@
                 </div>
                 <div class="arrival-item">
                     <p class="arrival-number mb-2">02 · PARKING</p>
-                    <p class="font-bold text-stone-800 mb-1">附戶外停車區</p>
+                    <p class="font-bold text-stone-800 mb-1">附戶外停車區、免費</p>
                     <p class="text-stone-600 leading-6">開車前來較方便，出發前可先開啟導航確認路線。</p>
                 </div>
                 <div class="arrival-item">
@@ -1155,7 +1211,7 @@
                     <div class="text-stone-600 text-sm leading-relaxed space-y-2 pl-1">
                         <p>📍 <b>地址：</b>台中市外埔區二崁路658巷88號（鄰近大甲）</p>
                         <p>🕒 <b>營業時間：</b>中午 11:30 - 14:00、晚上 17:30 - 21:00（每週三公休）</p>
-                        <p>🚙 <b>停車方便：</b>附有戶外停車區，讓您安心用餐。</p>
+                        <p>🚙 <b>停車：</b>附戶外停車區、免費。</p>
                         <p>🌙 <b>夜間提醒：</b>山路夜間較暗，晚餐時段敬請放慢車速，小心駕駛。</p>
                     </div>
 
