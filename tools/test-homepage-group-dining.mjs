@@ -51,17 +51,31 @@ const sectionEnd = html.indexOf('</section>', sectionStart);
 assert(sectionStart > 0 && sectionEnd > sectionStart, 'homepage has #group-dining');
 const section = sectionStart > 0 ? html.slice(sectionStart, sectionEnd) : '';
 assert(section.includes('團體聚餐・家庭聚會'), 'section heading');
-for (const needle of ['家庭聚餐', '同學會', '公司聚餐', '親友聚會', '最多可容納 9 桌', '官網預約', '#booking-section', 'line.me/R/ti/p/@xwg4507a', '04-2688-7895', '每週三公休', '11:30 - 14:00', '17:30 - 21:00', '免費停車', '採預約制']) {
+for (const needle of ['家庭聚餐', '同學會', '公司聚餐', '親友聚會', '最多可容納 9 桌', '官網預約', '#booking-section', 'line.me/R/ti/p/@xwg4507a', '04-2688-7895', '採預約制', '每桌建議最多坐12位']) {
     assert(section.includes(needle), `section missing ${needle}`);
 }
+assert(!section.includes('免費停車'), '團體區不再重寫停車說明');
+assert(!section.includes('11:30 - 14:00'), '團體區不再重寫營業時間');
 assert(!section.includes('包場'), 'section does not claim 包場');
 assert(!/NT\$|\$\d|\d元/.test(section), 'section does not add a price');
 
 const menuAt = html.indexOf('id="menu"');
-const visitAt = html.indexOf('id="visit-title"');
-assert(menuAt > 0 && sectionStart > menuAt && sectionStart < visitAt, 'section sits after the menu and before the visit block');
+const locationAt = html.indexOf('id="location-section"');
+assert(menuAt > 0 && sectionStart > menuAt && sectionStart < locationAt, 'section sits after the menu and before the location block');
+assert(!html.includes('id="visit-title"'), '來店安排三卡已併入交通區');
 
-const question = '想找台中土雞城家庭聚餐，水美土雞城適合嗎？';
+const locationEnd = html.indexOf('</section>', locationAt);
+const location = locationAt > 0 ? html.slice(locationAt, locationEnd) : '';
+for (const needle of ['免費', '11:30 - 14:00', '17:30 - 21:00', '每週三公休', '山路夜間較暗']) {
+    assert(location.includes(needle), `location missing ${needle}`);
+}
+assert(html.includes('查看 Google 評價'), 'Google 評價改連到來源頁');
+assert(html.includes('Restaurant Guru 推薦'), 'Restaurant Guru 單獨標示來源');
+assert(!html.includes('>4.4<') && !html.includes('★★★★☆'), '評價不再寫死分數或星等');
+assert(html.includes('安排前會先確認餐點與價錢'), '臨時客寫安排前先確認餐點與價錢');
+assert(html.includes('未預約不保證供應烤雞'), '未預約不保證供應烤雞仍在');
+
+const question = '團體聚餐怎麼預約？';
 assert((faq.match(new RegExp(question, 'g')) || []).length >= 2, 'family FAQ in JSON-LD and on the page');
 const ldText = attr(faq, new RegExp(`${question.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?"text": "([^"]*)"`));
 assert(ldText.includes('最多可容納 9 桌'), 'FAQ JSON-LD mentions 最多可容納 9 桌');
@@ -74,6 +88,11 @@ assert(visibleText.includes('最多可容納 9 桌'), 'FAQ page mentions 最多�
 assert(!/4500|5000|5500|\$500/.test(visibleText), 'FAQ page does not repeat the price list');
 assert(visible.includes('./#booking-section'), 'FAQ booking link stays on the reservation form');
 assert(visible.includes('04-2688-7895'), 'FAQ shows the shop phone');
+assert(!faq.includes('想找台中土雞城'), 'FAQ 不再用搜尋語氣當題名');
+assert(!faq.includes('山路較暗') && !faq.includes('放慢車速'), 'FAQ 不再重寫首頁的夜間路線說明');
+assert(faq.includes('免費戶外停車場'), 'FAQ 仍保留有免費停車場');
+const summaries = faq.match(/<summary>/g) || [];
+assert(summaries.length === 14, `FAQ 可見題數 ${summaries.length} 應為 14`);
 
 const ldBlocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map((m) => JSON.parse(m[1]));
 const restaurant = ldBlocks.find((o) => o['@type'] === 'Restaurant');

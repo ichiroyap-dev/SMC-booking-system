@@ -44,7 +44,7 @@
       "menu": "https://www.sweetmeichicken.com/#menu",
       "hasMenu": { "@id": "https://www.sweetmeichicken.com/#menu-data" },
       "acceptsReservations": true,
-      "description": "台中市外埔區預約制無菜單土雞料理，鄰近大甲。本店採預約制，請先訂位再出發。料理依預約準備；當日臨時用餐請先來電確認，未預約不保證供應烤雞。內用各價位原則每桌含招牌桶仔雞（烤雞）一隻，烤雞可外帶預約。團體聚餐最多可容納 9 桌。營業時間中午 11:30 - 14:00、晚上 17:30 - 21:00，每週三公休。附戶外停車區、免費停車。",
+      "description": "台中市外埔區預約制無菜單土雞料理，鄰近大甲。本店採預約制，請先訂位再出發。臨時來店可視當日情況安排，安排前會先確認餐點與價錢；未預約不保證供應烤雞。內用各價位原則每桌含招牌桶仔雞（烤雞）一隻，烤雞可外帶預約。團體聚餐最多可容納 9 桌。營業時間中午 11:30 - 14:00、晚上 17:30 - 21:00，每週三公休。附戶外停車區、免費停車。",
       "address": {
         "@type": "PostalAddress",
         "streetAddress": "二崁路658巷88號",
@@ -932,8 +932,7 @@
             #booking-notice,
             #menu,
             #group-dining,
-            #location-section,
-            section[aria-labelledby="visit-title"] { padding: 1.5rem; }
+            #location-section { padding: 1.5rem; }
             #booking-notice { min-width: 0; }
             #booking-notice > * { min-width: 0; }
             .map-frame { height: 300px; }
@@ -979,7 +978,7 @@
                     </a>
                 </nav>
                 <p class="hero-subtitle brand-font text-base sm:text-xl mb-3 max-w-xl leading-7 sm:leading-8">台中外埔・鄰近大甲，提供預約制土雞料理與招牌桶仔雞，適合家人朋友聚餐。</p>
-                <p class="hero-intro mb-3 max-w-xl">請先預約再出發；當日臨時用餐建議先來電詢問。</p>
+                <p class="hero-intro mb-3 max-w-xl">請先預約再出發。臨時來店可視當日情況安排，安排前會先確認餐點與價錢，建議先來電詢問。<a href="faq.html#faq-walkin" class="contact-link">臨時用餐說明</a></p>
                 <p class="hero-reserve-chicken">未預約不保證供應烤雞。</p>
                 <p class="hero-phone-row mt-4 text-sm">
                     <a href="tel:0426887895" class="hero-phone">電話詢問 04-26887895</a>
@@ -1103,44 +1102,20 @@
         <section id="group-dining" class="glass-card p-8 mb-8" aria-labelledby="group-dining-title">
             <p class="section-kicker mb-2">GROUP DINING</p>
             <h2 id="group-dining-title" class="brand-font text-2xl text-stone-800 mb-2">團體聚餐・家庭聚會</h2>
-            <p class="text-sm text-stone-600 leading-7 mb-6">外埔山上適合把家人、同學和同事約在同一天圍桌吃飯。本店採預約制，請先訂位再出發；料理依預約準備，未預約不保證供應烤雞。</p>
+            <p class="text-sm text-stone-600 leading-7 mb-6">適合家庭聚餐、同學會、公司聚餐與親友聚會。本店採預約制，請先訂位再出發。最多可容納 9 桌；每桌建議最多坐12位。</p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm text-stone-700">
                 <div>
                     <h3 class="font-bold text-stone-800 mb-2">適合的場合</h3>
-                    <p class="leading-7">家庭聚餐、同學會、公司聚餐、親友聚會。桌菜與桶仔雞（烤雞）依人數安排，價位見上方<a href="#menu" class="contact-link">菜單與價格</a>。最多可容納 9 桌。</p>
+                    <p class="leading-7">家庭聚餐、同學會、公司聚餐、親友聚會。桌菜與桶仔雞（烤雞）依人數安排，價位見上方<a href="#menu" class="contact-link">菜單與價格</a>。</p>
                 </div>
                 <div>
                     <h3 class="font-bold text-stone-800 mb-2">多桌怎麼訂</h3>
-                    <p class="leading-7">可走<a href="#booking-section" onclick="switchMode('dining')" class="contact-link">官網預約</a>，或聯絡官方 <a href="https://line.me/R/ti/p/@xwg4507a" target="_blank" rel="noopener noreferrer" class="contact-link">LINE</a>、電話 <a href="tel:0426887895" class="contact-link">04-2688-7895</a>。超過 3 桌請一併來電或 LINE，方便確認座位。</p>
-                    <p class="leading-7 mt-2">營業時間中午 11:30 - 14:00、晚上 17:30 - 21:00，每週三公休。附戶外停車區、免費停車。</p>
+                    <p class="leading-7">可走<a href="#booking-section" onclick="switchMode('dining')" class="contact-link">官網預約</a>，或聯絡官方 <a href="https://line.me/R/ti/p/@xwg4507a" target="_blank" rel="noopener noreferrer" class="contact-link">LINE</a>、電話 <a href="tel:0426887895" class="contact-link">04-2688-7895</a>。超過 3 桌請一併來電或 LINE，座位配置由店家確認。</p>
                 </div>
             </div>
         </section>
 
-        <!-- 來店體驗：用已確認資訊降低第一次上山用餐的不確定感 -->
-        <section class="visit-section glass-card p-8 mb-8" aria-labelledby="visit-title">
-            <p class="section-kicker mb-2">PLAN YOUR VISIT</p>
-            <h2 id="visit-title" class="brand-font text-2xl text-stone-800">一趟好好吃飯的安排</h2>
-            <div class="arrival-grid text-sm">
-                <div class="arrival-item">
-                    <p class="arrival-number mb-2">01 · LOCATION</p>
-                    <p class="font-bold text-stone-800 mb-1">台中外埔・大甲附近水美山上</p>
-                    <p class="text-stone-600 leading-6">不是匆匆吃一餐，而是留一段時間和家人朋友圍桌吃飯。</p>
-                </div>
-                <div class="arrival-item">
-                    <p class="arrival-number mb-2">02 · PARKING</p>
-                    <p class="font-bold text-stone-800 mb-1">附戶外停車區、免費</p>
-                    <p class="text-stone-600 leading-6">開車前來較方便，出發前可先開啟導航確認路線。</p>
-                </div>
-                <div class="arrival-item">
-                    <p class="arrival-number mb-2">03 · DINNER</p>
-                    <p class="font-bold text-stone-800 mb-1">夜間山路請慢行</p>
-                    <p class="text-stone-600 leading-6">晚餐時段山路較暗，請預留行車時間並注意安全。</p>
-                </div>
-            </div>
-        </section>
-
-        <!-- 📍 交通與位置 -->
+        <!-- 📍 交通與位置：路線、免費停車與夜間提醒只寫在這裡 -->
         <section id="location-section" class="glass-card p-8 mb-8" aria-labelledby="location-title">
             <p class="section-kicker mb-2">FIND US</p>
             <h2 id="location-title" class="brand-font text-2xl mb-6 flex items-center text-stone-800">
@@ -1152,23 +1127,19 @@
                     
                     <!-- 智慧自適應好評牆 -->
                     <div class="flex flex-col gap-4 sm:flex-row md:flex-col lg:flex-row">
-                        <!-- Google 評價推薦 -->
-                        <div class="flex-1 flex items-center space-x-4 bg-white p-4 rounded-2xl border border-stone-100 shadow-sm min-w-0">
-                            <div class="bg-orange-50 p-3 rounded-full text-2xl flex-shrink-0">🏆</div>
+                        <a href="https://maps.app.goo.gl/p8xuCW6kpwypR7iKA" target="_blank" rel="noopener noreferrer"
+                           class="flex-1 flex items-center space-x-4 bg-white p-4 rounded-2xl border border-stone-100 shadow-sm min-w-0 hover:border-orange-200">
+                            <div class="bg-orange-50 p-3 rounded-full text-2xl flex-shrink-0" aria-hidden="true">🏆</div>
                             <div class="min-w-0 flex-1">
-                                <p class="text-xs text-stone-400 font-bold uppercase tracking-widest truncate">Google 評價推薦</p>
-                                <div class="flex items-center mt-1 flex-wrap gap-y-1">
-                                    <span class="text-stone-800 font-bold text-xl mr-2">4.4</span>
-                                    <span class="text-yellow-500 tracking-widest text-sm">★★★★☆</span>
-                                </div>
+                                <p class="text-xs text-stone-400 font-bold tracking-widest">Google 評價</p>
+                                <p class="text-stone-800 font-bold mt-1">查看 Google 評價</p>
                             </div>
-                        </div>
-                        
-                        <!-- Restaurant Guru 國際推薦徽章 -->
-                        <div class="flex-1 flex items-center justify-center bg-white p-4 rounded-2xl border border-stone-100 shadow-sm overflow-hidden min-h-[84px] flex-shrink-0">
+                        </a>
+                        <div class="flex-1 flex flex-col items-center justify-center gap-1 bg-white p-4 rounded-2xl border border-stone-100 shadow-sm overflow-hidden min-h-[84px]">
+                            <p class="text-xs text-stone-400 font-bold tracking-widest">Restaurant Guru 推薦</p>
                             <a id="b-circledLeaves27" target="_blank" rel="noopener noreferrer" href="https://restaurantguru.com/水美土雞城-大東里" class="b-circledLeaves27--light b-circledLeaves27--2025 scale-90 transform origin-center">
-                                <span class="b-circledLeaves27__title">Recommended</span> 
-                                <span class="b-circledLeaves27__separator"></span> 
+                                <span class="b-circledLeaves27__title">Recommended</span>
+                                <span class="b-circledLeaves27__separator"></span>
                                 <span class="b-circledLeaves27__name">水美土雞城</span>
                             </a>
                         </div>
