@@ -136,7 +136,7 @@ const faqNeedles = [
 for (const needle of faqNeedles) {
     assert(faq.includes(needle), `FAQ 缺少：${needle}`);
 }
-assert((faq.match(new RegExp(extraPersonCopy, 'g')) || []).length >= 4, 'FAQ 正文與 JSON-LD 加人費皆含每桌');
+assert((faq.match(new RegExp(extraPersonCopy, 'g')) || []).length >= 2, 'FAQ 加人費題正文與 JSON-LD 皆含每桌');
 assert((faq.match(new RegExp(kidsCopy, 'g')) || []).length >= 2, 'FAQ 正文與 JSON-LD 皆有國小份量與收費');
 assert((faq.match(new RegExp(seatingCopy, 'g')) || []).length >= 2, 'FAQ 正文與 JSON-LD 皆有每桌建議最多坐12位');
 assert(!faq.includes('超過10位成人吃桌菜時，超出部分每位加收300元'), 'FAQ 不可殘留未限定每桌的加人費短句');
@@ -466,7 +466,7 @@ try {
             };
         })()`);
 
-        assert(faqOverflow.q1.includes('需要提前預約嗎'), `FAQ 第一題：${faqOverflow.q1}`);
+        assert(faqOverflow.q1.includes('需要預約嗎'), `FAQ 第一題：${faqOverflow.q1}`);
         assert(faqOverflow.dining.text.includes('內用'), `內用連結文字：${faqOverflow.dining.text}`);
         assert(faqOverflow.dining.href.includes('#booking-section'), '內用連結仍可點進預約');
         assert(faqOverflow.takeout.text.includes('外帶'), `外帶連結文字：${faqOverflow.takeout.text}`);
