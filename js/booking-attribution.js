@@ -8,11 +8,15 @@
  * 品牌／非品牌只認白名單與核准別名；原值另外保留。br!and 不會洗成 brand。
  *
  * 儲存讀寫失敗時改用同一個記憶體備援，且不可拋出。追蹤失敗不能擋住送單。
+ * 探測成功之後若寫入失敗，改把最新來源固定寫進共用記憶體，不再讀舊的原生紀錄。
  * 帶標記的新進站整組替換（缺的 utm 或 gclid 清空）。完全無標記的站內導覽才保留前一組。
+ * 同一條帶標記網址（重新整理或 bfcache 返回）不重建已過期來源，也不把閒置計時重新起算。
  * 閒置超過 30 分鐘，讀取時清除。
  *
+ * 九個來源欄位一律是字串。群組分類只允許「品牌」「非品牌」或空白。
  * 送出的來源字串會做試算表公式防護（= + - @ 開頭加單引號）。cleanToken 只去掉控制字元。
- * 正式寫入的 Apps Script 不在本 repo，是否忽略新欄位是「待驗證」。見 docs/booking-attribution.md。
+ * SEND_ATTRIBUTION_TO_BACKEND 預設 false：來源只留在這次分頁，正式 POST 不加新欄位。
+ * 正式 Apps Script 不在本 repo。本機契約測試不能證明後端相容。見 docs/booking-attribution.md。
  */
 (function (root, factory) {
     var api = factory();
@@ -34,14 +38,19 @@
         { key: 'revenue', label: '實收金額' },
         { key: 'updatedAt', label: '更新時間' }
     ];
-    var ADGROUP_BUCKETS = {
-        brand: '品牌',
-        '品牌': '品牌',
-        nonbrand: '非品牌',
-        non_brand: '非品牌',
-        'non-brand': '非品牌',
-        '非品牌': '非品牌'
-    };
+    // 無原型，避免 __proto__ / constructor / toString 被當成分類結果。
+    var ADGROUP_BUCKETS = Object.create(null);
+    ADGROUP_BUCKETS.brand = '品牌';
+    ADGROUP_BUCKETS['品牌'] = '品牌';
+    ADGROUP_BUCKETS.nonbrand = '非品牌';
+    ADGROUP_BUCKETS.non_brand = '非品牌';
+    ADGROUP_BUCKETS['non-brand'] = '非品牌';
+    ADGROUP_BUCKETS['非品牌'] = '非品牌';
+    var storageFallbacks = typeof WeakMap === 'function' ? new WeakMap() : null;
+    // 預設關閉。隔離環境確認寫表與寄信之後，才把這行改成 true，並另案部署靜態官網。
+    // 本機契約測試不能證明後端相容，也不能當作打開這行的理由。
+    var SEND_ATTRIBUTION_TO_BACKEND = false;
+    var ORIGINAL_PAYLOAD_KEYS = ['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems'];
 
     function cleanToken(value, max) {
         if (value == null) return '';
@@ -59,7 +68,33 @@
     }
 
     function emptyVisit() {
-        return { utm: {}, gclid: '', seenAt: 0 };
+        return { utm: {}, gclid: '', seenAt: 0, sig: '' };
+    }
+
+    function signatureOf(utm, gclid) {
+        var canonical = {};
+        var source = utm || {};
+        UTM_KEYS.forEach(function (key) {
+            var value = cleanToken(source[key], 120);
+            if (value) canonical[key] = value;
+        });
+        return JSON.stringify({ utm: canonical, gclid: cleanToken(gclid, 200) });
+    }
+
+    function activeStorage(storage) {
+        if (!storage || !storageFallbacks) return storage;
+        var mapped = storageFallbacks.get(storage);
+        return mapped || storage;
+    }
+
+    function ensureFallback(storage) {
+        var existing = storage && storageFallbacks ? storageFallbacks.get(storage) : null;
+        if (existing) return existing;
+        var memory = memoryStorage();
+        if (storage && storageFallbacks) {
+            try { storageFallbacks.set(storage, memory); } catch (err) {}
+        }
+        return memory;
     }
 
     function emptyBookingFields() {
@@ -115,10 +150,20 @@
         } catch (err) {}
     }
 
+    function pinStorage(win, storage, asMemory) {
+        try { if (win) win.__smcAttrStorage = storage; } catch (err) {}
+        if (!asMemory) return;
+        try { if (win) win.__smcAttrMemory = storage; } catch (err) {}
+    }
+
     function resolveStorage(win) {
-        try {
-            if (win && win.__smcAttrStorage) return win.__smcAttrStorage;
-        } catch (err) {}
+        var cached = null;
+        try { cached = win && win.__smcAttrStorage; } catch (err) { cached = null; }
+        if (cached) {
+            var mapped = activeStorage(cached);
+            if (mapped && mapped !== cached) pinStorage(win, mapped, true);
+            return mapped || cached;
+        }
         var nativeStore = null;
         try {
             nativeStore = win ? win.sessionStorage : null;
@@ -127,17 +172,20 @@
         }
         var storage = memoryStorage();
         if (nativeStore) {
-            try {
-                nativeStore.setItem('__smc_attr_probe', '1');
-                try { nativeStore.removeItem('__smc_attr_probe'); } catch (err) {}
-                storage = nativeStore;
-            } catch (err) {
-                storage = memoryStorage();
+            var nativeMapped = activeStorage(nativeStore);
+            if (nativeMapped !== nativeStore) {
+                storage = nativeMapped;
+            } else {
+                try {
+                    nativeStore.setItem('__smc_attr_probe', '1');
+                    try { nativeStore.removeItem('__smc_attr_probe'); } catch (err) {}
+                    storage = nativeStore;
+                } catch (err) {
+                    storage = ensureFallback(nativeStore);
+                }
             }
         }
-        try {
-            if (win) win.__smcAttrStorage = storage;
-        } catch (err) {}
+        pinStorage(win, storage, storage !== nativeStore);
         return storage;
     }
 
@@ -145,26 +193,53 @@
         return typeof now === 'number' && isFinite(now) ? now : Date.now();
     }
 
+    function isExpired(seenAt, clock) {
+        return !isFinite(seenAt) || clock < seenAt || clock - seenAt >= VISIT_TTL_MS;
+    }
+
+    function utmFrom(raw) {
+        var utm = {};
+        if (!raw || typeof raw !== 'object') return utm;
+        UTM_KEYS.forEach(function (key) {
+            var value = cleanToken(raw[key], 120);
+            if (value) utm[key] = value;
+        });
+        return utm;
+    }
+
+    function peekVisit(storage) {
+        try {
+            var raw = readItem(activeStorage(storage), STORAGE_KEY);
+            if (!raw) return null;
+            var parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
     function readVisit(storage, now) {
         var clock = clockOf(now);
+        var target = activeStorage(storage);
         try {
-            var raw = readItem(storage, STORAGE_KEY);
+            var raw = readItem(target, STORAGE_KEY);
             if (!raw) return emptyVisit();
             var parsed = JSON.parse(raw);
+            if (parsed && parsed.expired) return emptyVisit();
             var seenAt = parsed && typeof parsed.seenAt === 'number' ? parsed.seenAt : NaN;
-            if (!isFinite(seenAt) || clock < seenAt || clock - seenAt >= VISIT_TTL_MS) {
-                removeItem(storage, STORAGE_KEY);
+            if (isExpired(seenAt, clock)) {
+                var expiredUtm = utmFrom(parsed && parsed.utm);
+                var expiredGclid = cleanToken(parsed && parsed.gclid, 200);
+                var expiredSig = parsed && typeof parsed.sig === 'string' && parsed.sig
+                    ? parsed.sig
+                    : signatureOf(expiredUtm, expiredGclid);
+                rememberExpired(storage, expiredSig);
                 return emptyVisit();
             }
-            var utm = {};
-            var incoming = parsed && parsed.utm;
-            if (incoming && typeof incoming === 'object') {
-                UTM_KEYS.forEach(function (key) {
-                    var value = cleanToken(incoming[key], 120);
-                    if (value) utm[key] = value;
-                });
-            }
-            return { utm: utm, gclid: cleanToken(parsed && parsed.gclid, 200), seenAt: seenAt };
+            var utm = utmFrom(parsed && parsed.utm);
+            var gclid = cleanToken(parsed && parsed.gclid, 200);
+            var sig = parsed && typeof parsed.sig === 'string' && parsed.sig ? parsed.sig : signatureOf(utm, gclid);
+            return { utm: utm, gclid: gclid, seenAt: seenAt, sig: sig };
         } catch (err) {
             return emptyVisit();
         }
@@ -187,12 +262,33 @@
         return { utm: utm, gclid: cleanToken(params.get('gclid'), 200) };
     }
 
+    function rememberExpired(storage, sig) {
+        var target = activeStorage(storage) || storage;
+        if (!sig) {
+            removeItem(target, STORAGE_KEY);
+            return;
+        }
+        var body = JSON.stringify({ utm: {}, gclid: '', seenAt: 0, sig: sig, expired: true });
+        if (!writeItem(target, STORAGE_KEY, body)) removeItem(target, STORAGE_KEY);
+    }
+
     function persistVisit(storage, visit) {
-        writeItem(storage, STORAGE_KEY, JSON.stringify({
+        var body = JSON.stringify({
             utm: visit.utm || {},
             gclid: visit.gclid || '',
-            seenAt: visit.seenAt || 0
-        }));
+            seenAt: visit.seenAt || 0,
+            sig: visit.sig || signatureOf(visit.utm || {}, visit.gclid || '')
+        });
+        var target = activeStorage(storage) || storage;
+        if (writeItem(target, STORAGE_KEY, body)) return true;
+        removeItem(target, STORAGE_KEY);
+        if (target !== storage) removeItem(storage, STORAGE_KEY);
+        var memory = ensureFallback(storage || target);
+        if (target && target !== memory && storageFallbacks) {
+            try { storageFallbacks.set(target, memory); } catch (err) {}
+        }
+        if (memory === target) return false;
+        return writeItem(memory, STORAGE_KEY, body);
     }
 
     function capture(search, storage, now) {
@@ -208,10 +304,24 @@
                 }
                 return prev;
             }
+            var sig = signatureOf(incoming.utm, incoming.gclid || '');
+            var peeked = peekVisit(storage);
+            var peekedSeen = peeked && typeof peeked.seenAt === 'number' ? peeked.seenAt : NaN;
+            var peekedUtm = utmFrom(peeked && peeked.utm);
+            var peekedGclid = cleanToken(peeked && peeked.gclid, 200);
+            var peekedSig = peeked && typeof peeked.sig === 'string' && peeked.sig
+                ? peeked.sig
+                : (peeked ? signatureOf(peekedUtm, peekedGclid) : '');
+            if (peeked && peekedSig === sig && (peeked.expired || isExpired(peekedSeen, clock))) {
+                rememberExpired(storage, sig);
+                return emptyVisit();
+            }
+            if (peeked && peekedSig === sig) return readVisit(storage, clock);
             var next = {
                 utm: incoming.utm,
                 gclid: incoming.gclid || '',
-                seenAt: clock
+                seenAt: clock,
+                sig: sig
             };
             persistVisit(storage, next);
             return next;
@@ -220,10 +330,27 @@
         }
     }
 
+    function handlePageShow(win, event, now) {
+        try {
+            var storage = resolveStorage(win);
+            if (event && event.persisted) return readVisit(storage, now);
+            return capture(win && win.location && win.location.search, storage, now);
+        } catch (err) {
+            return emptyVisit();
+        }
+    }
+
+    function lookupBucket(token) {
+        if (!token || !Object.prototype.hasOwnProperty.call(ADGROUP_BUCKETS, token)) return '';
+        var value = ADGROUP_BUCKETS[token];
+        return value === '品牌' || value === '非品牌' ? value : '';
+    }
+
     function classifyAdgroup(raw) {
         var trimmed = cleanToken(raw, 80);
         if (!trimmed) return { raw: '', bucket: '' };
-        var bucket = ADGROUP_BUCKETS[trimmed] || ADGROUP_BUCKETS[trimmed.toLowerCase()] || '';
+        var bucket = lookupBucket(trimmed) || lookupBucket(trimmed.toLowerCase());
+        if (bucket !== '品牌' && bucket !== '非品牌') bucket = '';
         return { raw: trimmed, bucket: bucket };
     }
 
@@ -247,7 +374,8 @@
             var source = 'direct/unknown';
             if (tagged) source = utm.utm_source || 'utm_missing_source';
             else if (visit.gclid) source = GCLID_ONLY_SOURCE;
-            return {
+            var bucket = group.bucket === '品牌' || group.bucket === '非品牌' ? group.bucket : '';
+            var fields = {
                 source: plainSheetText(source),
                 utmSource: plainSheetText(utm.utm_source || ''),
                 utmMedium: plainSheetText(utm.utm_medium || ''),
@@ -255,9 +383,13 @@
                 utmContent: plainSheetText(utm.utm_content || ''),
                 utmTerm: plainSheetText(utm.utm_term || ''),
                 utmAdgroup: plainSheetText(group.raw),
-                adgroupBucket: group.bucket,
+                adgroupBucket: bucket,
                 gclid: plainSheetText(visit.gclid || '')
             };
+            ATTRIBUTION_KEYS.forEach(function (key) {
+                if (typeof fields[key] !== 'string') fields[key] = '';
+            });
+            return fields;
         } catch (err) {
             return emptyBookingFields();
         }
@@ -323,6 +455,7 @@
 
     function recordSubmission(storage, orderId) {
         try {
+            storage = activeStorage(storage);
             var id = cleanToken(orderId, 40);
             if (!id) return { counted: false, reason: 'missing' };
             var ids = readIdList(storage);
@@ -338,14 +471,32 @@
         }
     }
 
+    function attributionSendingEnabled() {
+        return SEND_ATTRIBUTION_TO_BACKEND === true;
+    }
+
+    function payloadForBooking(base, fields) {
+        var payload = {};
+        var source = base && typeof base === 'object' ? base : {};
+        ORIGINAL_PAYLOAD_KEYS.forEach(function (key) {
+            if (Object.prototype.hasOwnProperty.call(source, key)) payload[key] = source[key];
+        });
+        if (!attributionSendingEnabled()) return payload;
+        var extra = fields && typeof fields === 'object' ? fields : emptyBookingFields();
+        ATTRIBUTION_KEYS.forEach(function (key) {
+            payload[key] = typeof extra[key] === 'string' ? extra[key] : '';
+        });
+        return payload;
+    }
+
     function install(win) {
         try {
             if (!win || !win.document || win.__smcAttributionInstalled) return;
             win.__smcAttributionInstalled = true;
             var storage = resolveStorage(win);
             capture(win.location && win.location.search, storage);
-            win.addEventListener('pageshow', function () {
-                try { capture(win.location && win.location.search, resolveStorage(win)); } catch (err) {}
+            win.addEventListener('pageshow', function (event) {
+                try { handlePageShow(win, event); } catch (err) {}
             });
             win.document.addEventListener('click', function (event) {
                 try {
@@ -371,6 +522,9 @@
         MANUAL_STATUS_FIELDS: MANUAL_STATUS_FIELDS,
         capture: capture,
         parseLanding: parseLanding,
+        handlePageShow: handlePageShow,
+        attributionSendingEnabled: attributionSendingEnabled,
+        payloadForBooking: payloadForBooking,
         bookingFields: bookingFields,
         emptyBookingFields: emptyBookingFields,
         classifyAdgroup: classifyAdgroup,

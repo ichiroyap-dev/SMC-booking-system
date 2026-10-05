@@ -90,6 +90,103 @@ assert(safe.source.startsWith("'") && safe.utmSource.startsWith("'") && !safe.ut
 assert(safe.utmCampaign.startsWith("'") && safe.utmAdgroup.startsWith("'") && safe.adgroupBucket === '', '@brand 不是白名單，分類留白');
 assert(attr.plainSheetText('=1+1').startsWith("'") && attr.plainSheetText('brand') === 'brand', '公式防護不改一般文字');
 
+function assertStringFields(fields, label) {
+    const round = JSON.parse(JSON.stringify(fields));
+    for (const key of attr.ATTRIBUTION_KEYS) {
+        assert(typeof fields[key] === 'string', `${label} ${key} 必須是字串`);
+        assert(Object.prototype.hasOwnProperty.call(round, key) && typeof round[key] === 'string', `${label} JSON 後 ${key} 必須仍是字串`);
+    }
+}
+assertStringFields(branded, '一般進站');
+for (const raw of ['__proto__', 'constructor', 'toString']) {
+    const protoStore = attr.memoryStorage();
+    attr.capture('?utm_source=google&utm_adgroup=' + encodeURIComponent(raw), protoStore, t0);
+    const protoFields = attr.bookingFields(protoStore, t0);
+    assert(protoFields.utmAdgroup === raw, `${raw} 原值要保留，實際 ${protoFields.utmAdgroup}`);
+    assert(protoFields.adgroupBucket === '', `${raw} 不可分成品牌或非品牌，實際 ${protoFields.adgroupBucket}`);
+    assert(attr.classifyAdgroup(raw).bucket === '', `${raw} 分類必須留白`);
+    assertStringFields(protoFields, raw);
+}
+
+let writesAfterProbe = 0;
+const nativeBag = {};
+const flakyNative = {
+    getItem(key) { return Object.prototype.hasOwnProperty.call(nativeBag, key) ? nativeBag[key] : null; },
+    setItem(key, value) {
+        writesAfterProbe += 1;
+        if (writesAfterProbe > 2) throw new Error('QuotaExceededError');
+        nativeBag[key] = String(value);
+    },
+    removeItem(key) { delete nativeBag[key]; },
+};
+const flakyWin = {
+    document: { addEventListener() {}, dispatchEvent() {} },
+    location: { search: '' },
+    addEventListener() {},
+    sessionStorage: flakyNative,
+};
+const flakyStore = attr.resolveStorage(flakyWin);
+attr.capture('?utm_source=google&utm_medium=cpc&utm_adgroup=brand&gclid=TESTGCLID9000', flakyStore, t0);
+attr.capture('?utm_source=facebook&utm_medium=cpc&utm_adgroup=nonbrand', attr.resolveStorage(flakyWin), t0 + 1000);
+const latestStore = attr.resolveStorage(flakyWin);
+const afterWriteFail = attr.bookingFields(latestStore, t0 + 1000);
+assert(latestStore !== flakyNative, '寫入失敗後不可再讀原生儲存');
+assert(afterWriteFail.source === 'facebook' && afterWriteFail.utmAdgroup === 'nonbrand', `寫入失敗後應改記最新來源，實際 ${afterWriteFail.source}/${afterWriteFail.utmAdgroup}`);
+assert(afterWriteFail.adgroupBucket === '非品牌' && afterWriteFail.gclid === '', '寫入失敗後不可留下舊的 gclid 或品牌分類');
+assertStringFields(afterWriteFail, '寫入失敗後');
+assert(attr.bookingFields(flakyNative, t0 + 1000).source === 'facebook', '就算還拿著舊的 storage 參考，也要讀到最新來源');
+
+const life = attr.memoryStorage();
+const lifeUrl = '?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000';
+const lifeWin = {
+    document: { addEventListener() {}, dispatchEvent() {} },
+    location: { search: lifeUrl },
+    addEventListener() {},
+    sessionStorage: life,
+};
+attr.capture(lifeUrl, attr.resolveStorage(lifeWin), t0);
+const keptOnReturn = attr.handlePageShow(lifeWin, { persisted: true }, t0 + 5 * 60 * 1000);
+assert(keptOnReturn.gclid === 'TESTGCLID9000', '未過期的快取返回要保留來源');
+assert(attr.bookingFields(attr.resolveStorage(lifeWin), t0 + 5 * 60 * 1000).source === 'google', '未過期返回不可清成 direct/unknown');
+const seenBeforeRefresh = JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt;
+attr.capture(lifeUrl, life, t0 + 10 * 60 * 1000);
+assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === seenBeforeRefresh, '同一條帶標記網址不可把閒置計時重新起算');
+attr.handlePageShow(lifeWin, { persisted: true }, t0 + attr.VISIT_TTL_MS);
+const expiredReturn = attr.bookingFields(attr.resolveStorage(lifeWin), t0 + attr.VISIT_TTL_MS);
+assert(expiredReturn.source === 'direct/unknown' && expiredReturn.gclid === '' && expiredReturn.utmAdgroup === '', '快取返回不可用舊網址救回過期來源');
+attr.capture(lifeUrl, life, t0 + attr.VISIT_TTL_MS + 1000);
+assert(attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 1000).source === 'direct/unknown', '重新整理同一條過期網址不可重建來源');
+attr.capture('?utm_source=facebook&utm_adgroup=nonbrand', life, t0 + attr.VISIT_TTL_MS + 2000);
+const replacedAfterExpiry = attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 2000);
+assert(replacedAfterExpiry.source === 'facebook' && replacedAfterExpiry.adgroupBucket === '非品牌' && replacedAfterExpiry.gclid === '', '另一條帶標記網址在過期後仍要整組換成新來源');
+assertStringFields(replacedAfterExpiry, '過期後新進站');
+
+const prePrKeys = ['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems'];
+function prePrOrder(type) {
+    return {
+        action: 'book',
+        type,
+        name: '測試同學',
+        phone: '0900000000',
+        email: '',
+        people: '2',
+        tables: '1',
+        date: '2026-10-22',
+        time: '12:00',
+        note: type === 'takeout' ? '客製包裝' : '散客 大人2位；靠窗',
+        orderItems: type === 'takeout' ? '桶仔雞 x 1\n' : '',
+    };
+}
+assert(attr.attributionSendingEnabled() === false, '來源欄位預設不送後端');
+for (const type of ['dining', 'takeout']) {
+    const plain = prePrOrder(type);
+    const withTags = attr.payloadForBooking(plain, branded);
+    const withoutTags = attr.payloadForBooking(plain, attr.emptyBookingFields());
+    assert(JSON.stringify(withTags) === JSON.stringify(plain), `${type} 有來源時正式 payload 仍要與改動前逐字相同`);
+    assert(JSON.stringify(withoutTags) === JSON.stringify(plain), `${type} 沒來源時正式 payload 仍要與改動前逐字相同`);
+    assert(JSON.stringify(Object.keys(withTags)) === JSON.stringify(prePrKeys), `${type} 欄位集合與順序要與改動前相同`);
+}
+
 let storageThrew = false;
 const broken = {
     getItem() { throw new Error('SecurityError'); },
@@ -100,8 +197,8 @@ try {
     attr.capture('?utm_source=google&utm_adgroup=brand', broken, t0);
     const unread = attr.bookingFields(broken, t0);
     const unstored = attr.recordSubmission(broken, 'SMC900051');
-    assert(unread.source === 'direct/unknown', '讀不到儲存時改記 direct/unknown');
-    assert(unstored && unstored.counted === false, '寫不進去就不記轉換，且不可拋錯');
+    assert(unread.source === 'google' && unread.utmAdgroup === 'brand', '讀寫都丟錯時要改記在記憶體備援');
+    assert(unstored && unstored.counted === true, '備援記憶體要能記下這次編號，且不可拋錯');
 } catch (err) {
     storageThrew = true;
 }
@@ -166,7 +263,9 @@ assert(receiptFn && !/utm|gclid|attribution|direct\/unknown|adgroup/i.test(recei
 assert(html.includes('src="js/booking-attribution.js"'), '首頁要載入來源腳本');
 assert(faq.includes('src="js/booking-attribution.js"'), '常見問題頁也要記住進站參數');
 assert(/note: currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value/.test(html), '備註仍只含餐點內容');
-assert(html.includes('source: attribution.source'), '送出要附 source');
+assert(html.includes('payloadForBooking(data, attribution)'), '送出要經過來源旗標');
+assert(!html.includes('source: attribution.source'), '預設的送出物件不可直接帶來源欄');
+assert(readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '旗標預設必須關閉');
 assert(!html.slice(html.indexOf("action: 'cancel'"), html.indexOf("action: 'cancel'") + 500).includes('utm'), '取消申請不附來源欄');
 assert(html.includes('recordBookingSubmission(orderId)'), '轉換以訂單編號記一次');
 assert(!receiptFn.includes('recordBookingSubmission'), '不可在每次顯示收件時重計');
@@ -178,6 +277,9 @@ const showAt = successBlock.indexOf('showReceipt(data, orderId)');
 const buttonAt = successBlock.indexOf("btn.innerText = '送出預約申請'");
 const trackAt = successBlock.lastIndexOf('recordBookingSubmission(orderId)');
 assert(showAt > 0 && buttonAt > showAt && trackAt > buttonAt, '收件與按鈕復原要先於追蹤');
+assert(successBlock.includes('訂單編號：'), '收件失敗時成功提示要含訂單編號');
+assert(!/showReceipt\(data, orderId\);\s*\}\s*catch\s*\(err\)\s*\{\s*\}/.test(successBlock), '不可空 catch 吞掉收件錯誤');
+assert(successBlock.includes('receiptShown'), '收件失敗時不可照常清空表單');
 assert(extractFn(html, 'recordBookingSubmission').includes('catch'), '追蹤函式本身要接住例外');
 assert(extractFn(html, 'attributionStore').includes('catch'), '取得 sessionStorage 要接住 SecurityError');
 assert(html.includes('不會當成廣告'), '隱私權說明要講沒有參數時不當成廣告');
@@ -285,6 +387,41 @@ async function evalExpr(wsUrl, expression) {
         throw new Error(result.exceptionDetails.text || JSON.stringify(result.exceptionDetails));
     }
     return result.result.value;
+}
+
+function navigateAndWait(wsUrl, url) {
+    return new Promise((resolve, reject) => {
+        const ws = new WebSocket(wsUrl);
+        const timer = setTimeout(() => {
+            ws.close();
+            reject(new Error('navigate timeout'));
+        }, 10000);
+        ws.addEventListener('open', () => {
+            ws.send(JSON.stringify({ id: 1, method: 'Page.enable' }));
+        });
+        ws.addEventListener('message', (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.id === 1) {
+                ws.send(JSON.stringify({ id: 2, method: 'Page.navigate', params: { url } }));
+                return;
+            }
+            if (msg.id === 2 && msg.error) {
+                clearTimeout(timer);
+                ws.close();
+                reject(new Error(JSON.stringify(msg.error)));
+                return;
+            }
+            if (msg.method === 'Page.loadEventFired') {
+                clearTimeout(timer);
+                ws.close();
+                resolve();
+            }
+        });
+        ws.addEventListener('error', () => {
+            clearTimeout(timer);
+            reject(new Error('navigate failed'));
+        });
+    });
 }
 
 async function goto(wsUrl, url) {
@@ -436,7 +573,9 @@ try {
         assert(submitted.events.includes('tel') && !submitted.events.includes('line'), '市話點擊要記成互動');
         assert(submitted.events.filter((item) => item === 'submit').length === 1, '同一編號顯示收件兩次也只能計一次轉換');
         const post = submitted.post;
-        assert(post && post.source === 'google' && post.utmAdgroup === 'brand' && post.gclid === 'TESTGCLID9000', '送出內容要帶進站來源');
+        const prePrKeys = ['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems'];
+        assert(post && !('source' in post) && !('utmAdgroup' in post) && !('gclid' in post), '旗標關閉時正式請求不可帶來源');
+        assert(JSON.stringify(Object.keys(post)) === JSON.stringify(prePrKeys), `正式請求欄位要與改動前相同：${Object.keys(post).join(',')}`);
         assert(post.name === '測試同學' && post.phone === '0900000000' && post.type === 'dining', '原有訂位欄位仍要送出');
         assert(post.note.includes('靠窗') && !post.note.includes('utm') && !post.note.includes('TESTGCLID9000'), `備註不可混入來源：${post.note}`);
         assert(!('confirmed' in post) && !('revenue' in post) && !('cancelled' in post), '人工狀態不可跟著表單送出');
@@ -478,7 +617,7 @@ try {
         })()`);
         assert(direct.title === '內用訂位' && direct.diningHidden === false, '沒有 utm 時仍可用 mode=dining');
         assert(direct.fields.source === 'direct/unknown' && direct.fields.gclid === '' && direct.fields.utmAdgroup === '', '沒有 utm 要記 direct/unknown');
-        assert(direct.post && direct.post.source === 'direct/unknown', '沒有 utm 的送出不可填成廣告');
+        assert(direct.post && !('source' in direct.post) && !('gclid' in direct.post), '沒有 utm 的正式請求也不加來源欄');
         assert(direct.post.action === 'book' && direct.post.note && direct.post.people === '2' && direct.post.tables === '1', '沒有 utm 時原訂位內容要維持');
         assert(!direct.post.note.includes('direct/unknown'), 'direct/unknown 不可寫進備註');
 
@@ -526,9 +665,9 @@ try {
                 originalKeys.forEach((key) => { original[key] = post ? post[key] : null; });
                 return {
                     original,
-                    source: post && post.source,
-                    utmAdgroup: post && post.utmAdgroup,
-                    gclid: post && post.gclid,
+                    keys: post ? Object.keys(post) : [],
+                    body: post ? JSON.stringify(post) : '',
+                    fields: bookingAttributionFields(),
                     receipt: document.getElementById('receiptContent').textContent,
                     button: document.getElementById('submitBtn').innerText,
                     enabled: document.getElementById('submitBtn').disabled === false,
@@ -548,8 +687,11 @@ try {
         assert(matrix.takeoutPlain.original.type === 'takeout' && matrix.takeoutPlain.original.note === '客製包裝', '外帶備註仍是客人自填');
         assert(matrix.takeoutPlain.original.orderItems.includes('桶仔雞'), '外帶品項維持原欄位');
         assert(!matrix.diningPlain.original.note.includes('utm') && !matrix.takeoutTagged.original.note.includes('TESTGCLID9000'), '備註不可混入來源');
-        assert(matrix.diningPlain.source === 'direct/unknown' && matrix.takeoutPlain.source === 'direct/unknown', '沒標記的內用與外帶都是 direct/unknown');
-        assert(matrix.diningTagged.source === 'google' && matrix.takeoutTagged.utmAdgroup === 'brand' && matrix.takeoutTagged.gclid === 'TESTGCLID9000', '有標記的內用與外帶都要帶來源');
+        assert(matrix.diningPlain.body === matrix.diningTagged.body, `內用有無 UTM 的正式 payload 要逐字相同：${matrix.diningPlain.body} vs ${matrix.diningTagged.body}`);
+        assert(matrix.takeoutPlain.body === matrix.takeoutTagged.body, `外帶有無 UTM 的正式 payload 要逐字相同：${matrix.takeoutPlain.body} vs ${matrix.takeoutTagged.body}`);
+        assert(JSON.stringify(matrix.diningTagged.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '內用正式請求不可多出來源欄');
+        assert(matrix.diningPlain.fields.source === 'direct/unknown' && matrix.takeoutPlain.fields.source === 'direct/unknown', '沒標記時瀏覽器內仍記 direct/unknown');
+        assert(matrix.diningTagged.fields.source === 'google' && matrix.takeoutTagged.fields.utmAdgroup === 'brand' && matrix.takeoutTagged.fields.gclid === 'TESTGCLID9000', '有標記時來源留在瀏覽器，不進正式請求');
         assert(matrix.diningTagged.enabled && matrix.diningTagged.button === '送出預約申請', '成功後按鈕要恢復');
         for (const row of [matrix.diningPlain, matrix.diningTagged, matrix.takeoutPlain, matrix.takeoutTagged]) {
             assert(!row.receipt.includes('launch_202610') && !row.receipt.includes('TESTGCLID9000'), '收件畫面不可出現來源');
@@ -624,9 +766,60 @@ try {
         assert(guarded.rejected.message.includes('目前無法確認預約申請結果') && guarded.rejected.message.includes('請勿重複送出'), '後端拒絕要顯示不確定提示');
         assert(guarded.offline.disabled && guarded.offline.text.includes('請先來電確認預約申請結果'), `網路失敗按鈕：${guarded.offline.text}`);
         assert(guarded.offline.message.includes('目前無法確認預約申請結果'), '網路失敗要顯示不確定提示');
-        assert(guarded.tracked.postSource === 'direct/unknown' && guarded.tracked.note.includes('靠窗'), '來源函式拋錯時仍要送出，並改記 direct/unknown');
+        assert(guarded.tracked.postSource == null && guarded.tracked.note.includes('靠窗'), '來源函式拋錯時仍要送出，且正式請求不含來源欄');
         assert(guarded.tracked.receiptHidden === false && guarded.tracked.receipt.includes('SMC900041'), '追蹤拋錯後仍要顯示收件畫面');
         assert(guarded.tracked.disabled === false && guarded.tracked.text === '送出預約申請', '追蹤拋錯後按鈕仍要恢復');
+
+        async function submitDining(orderId) {
+            return evalExpr(wsUrl, `(async () => {
+                window.alert = () => {};
+                const day = new Date();
+                day.setDate(day.getDate() + 2);
+                while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+                const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+                const date = document.getElementById('date');
+                date.value = iso;
+                date.dispatchEvent(new Event('change', { bubbles: true }));
+                document.querySelector('input[name="partyType"][value="casual"]').checked = true;
+                document.getElementById('adults').value = '2';
+                document.getElementById('name').value = '測試同學';
+                document.getElementById('phone').value = '0900000000';
+                document.getElementById('note').value = '靠窗';
+                document.getElementById('privacyConsent').checked = true;
+                document.getElementById('time').value = '12:00';
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').innerText = '送出預約申請';
+                window.fetch = async () => ({ json: async () => ({ status: 'success', orderId: '${orderId}', message: '已保留座位' }) });
+                document.getElementById('bookingForm').requestSubmit();
+                await new Promise((resolve) => setTimeout(resolve, 40));
+                return {
+                    name: document.getElementById('name').value,
+                    message: document.getElementById('messageBox').textContent,
+                    button: document.getElementById('submitBtn').innerText,
+                    disabled: document.getElementById('submitBtn').disabled,
+                    receipt: document.getElementById('receiptContent').textContent,
+                    receiptHidden: document.getElementById('bookingReceipt').classList.contains('hidden'),
+                    replaced: String(showReceipt).includes('receipt render failed'),
+                };
+            })()`);
+        }
+
+        await navigateAndWait(wsUrl, `${url}?mode=dining&probe=reset#booking-section`);
+        await evalExpr(wsUrl, `document.getElementById('bookingForm').reset = function () { throw new Error('reset failed'); };`);
+        const resetFailed = await submitDining('SMC900061');
+        assert(resetFailed.message.includes('訂單編號：SMC900061'), `表單重設失敗時成功提示要留下編號：${resetFailed.message}`);
+        assert(resetFailed.disabled === false && resetFailed.button === '送出預約申請', '表單重設失敗後按鈕仍要恢復');
+        assert(resetFailed.receiptHidden === false && resetFailed.receipt.includes('SMC900061'), '重設失敗時收件畫面本身仍在');
+
+        await navigateAndWait(wsUrl, `${url}?mode=dining&probe=receipt#booking-section`);
+        await evalExpr(wsUrl, `showReceipt = function () { throw new Error('receipt render failed'); };`);
+        const receiptFailed = await submitDining('SMC900062');
+        assert(receiptFailed.message.includes('訂單編號：SMC900062'), `收件失敗時要顯示訂單編號：${receiptFailed.message}`);
+        assert(receiptFailed.message.includes('請勿重複送出'), '收件失敗時要提示不要重送');
+        assert(receiptFailed.name === '測試同學', '收件失敗時不可清掉已填的姓名');
+        assert(receiptFailed.disabled === false && receiptFailed.button === '送出預約申請', '收件失敗後按鈕仍要恢復');
+        assert(receiptFailed.replaced === true, '測試要讓 showReceipt 丟錯');
+        assert(receiptFailed.receiptHidden === true && !receiptFailed.receipt.includes('SMC900062'), '收件畫不出來時面板維持隱藏');
     });
 } finally {
     server.close();

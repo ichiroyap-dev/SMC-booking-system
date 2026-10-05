@@ -4,7 +4,11 @@
 
 帶參數進站時，客人仍可在網址列看到 `utm_*` 與 `gclid`。隱私權告知會提到這兩個參數名稱，不會寫出活動代碼。收件畫面與備註不放來源。
 
-正式把訂單寫進試算表的 Google Apps Script **不在這個 repo**。這次只改靜態官網會送出的欄位，**沒有部署 Apps Script，也沒有讀寫正式試算表**。既有腳本看到這 9 個新欄位會不會寫表、會不會影響寄信，目前是 **待驗證**。本機契約測試不呼叫 `script.google.com`，不能代替隔離環境的寫表與寄信驗證。
+正式把訂單寫進試算表的 Google Apps Script **不在這個 repo**。這次**沒有部署 Apps Script，也沒有讀寫正式試算表**。既有腳本看到這 9 個新欄位會不會寫表、會不會影響寄信，目前是 **待驗證**。
+
+來源欄位**預設關閉**，不放進正式 POST。`js/booking-attribution.js` 的 `SEND_ATTRIBUTION_TO_BACKEND` 維持 `false` 時，內用與外帶、有沒有 UTM，送出的 JSON 都與這次改動前相同（同樣的欄位、同樣的備註）。來源只留在這次分頁。
+
+`tools/test-booking-backend-contract.mjs` **不能證明後端相容**。它不連線、不讀寫試算表，也**不能**當作把旗標打開的理由。
 
 ## 官網怎麼記來源
 
@@ -14,11 +18,13 @@
 
 上次寫入後閒置超過 30 分鐘，讀取時清除。過期之後的直接造訪記 `direct/unknown`。
 
-`sessionStorage` 讀取或寫入失敗（包含讀取本身丟出 SecurityError）時，改用這次頁面共用的同一個記憶體備援。追蹤失敗不可擋住預約送出、收件畫面或按鈕復原。
+`sessionStorage` 讀取或寫入失敗（包含讀取本身丟出 SecurityError）時，改用這次頁面共用的同一個記憶體備援。探測成功之後若寫入失敗，會清掉舊紀錄、把**最新**來源固定寫進這個備援，之後不再讀原生儲存裡的舊來源。追蹤失敗不可擋住預約送出、收件畫面或按鈕復原。收件畫面若畫不出來，畫面上仍要留下含訂單編號的成功提示，而且不可把表單清掉。
 
-送出預約時，下面 9 個欄位跟原有的 `action`／`type`／`name`／`phone`／`email`／`people`／`tables`／`date`／`time`／`note`／`orderItems` 一起 POST。`utm_id` 目前只留在造訪紀錄，**不在這 9 欄裡**；要不要送出留待後續，避免和已對過的欄位數不一致。
+從上一頁快取回來（`pageshow` 且 `persisted`）只檢查 30 分鐘期限，**不會**用網址列上的舊參數把已過期來源重建。重新整理同一條帶標記網址也一樣：過期就清除，未過期則保留、不把閒置計時重新起算。只有**另一條**帶標記網址才整組換成新來源。
 
-| 送出欄位 | 內容 |
+下面 9 個欄位目前只在瀏覽器裡計算。旗標維持關閉時**不會**跟訂單一起 POST。`utm_id` 只留在造訪紀錄，**不在這 9 欄裡**；要不要送出留待後續。九個欄位的值一律是字串。群組分類只會是 `品牌`、`非品牌` 或空白，`__proto__`、`constructor`、`toString` 這類名字不會變成物件或函式。
+
+| 瀏覽器內欄位 | 內容 |
 |---|---|
 | `source` | 有任一 `utm_*` 時用 `utm_source`；有 utm 但沒有 `utm_source` 時為 `utm_missing_source`；完全沒有 utm、也沒有 gclid 時為 `direct/unknown`；只有 gclid 時為 `有點擊識別碼、來源待核對` |
 | `utmSource` `utmMedium` `utmCampaign` `utmContent` `utmTerm` | 對應的 utm 原值，沒有就空白 |
@@ -79,11 +85,11 @@
 - 拿到訂單編號、且這個編號有成功寫進這次造訪的去重紀錄：送出一次 `smc:booking-submitted`。只顯示收件畫面不會再計一次。儲存寫入失敗時不送這個事件，也不影響收件。
 - 點市話 `tel:` 或 `https://line.me/`：送出 `smc:contact-click`。這是互動，不算預約送出，也不寫進訂單。
 
-## 後端契約（待驗證）
+## 後端契約（待驗證，旗標預設關閉）
 
-官網多送的 9 個欄位是：`source`、`utmSource`、`utmMedium`、`utmCampaign`、`utmContent`、`utmTerm`、`utmAdgroup`、`adgroupBucket`、`gclid`。
+日後若打開旗標，才會多送這 9 個欄位：`source`、`utmSource`、`utmMedium`、`utmCampaign`、`utmContent`、`utmTerm`、`utmAdgroup`、`adgroupBucket`、`gclid`。
 
-沒有現行 Apps Script 的去識別化程式，因此後端會不會收下新欄位、會不會改到寫表或寄信，都還沒有證據。狀態就是待驗證。
+沒有現行 Apps Script 的去識別化程式，因此後端會不會收下新欄位、會不會改到寫表或寄信，都還沒有證據。狀態就是待驗證。這份 PR 不把新欄位送進正式請求。
 
 隔離環境要做的檢查（不要用正式試算表、不要部署到正式 web app、不要寫正式訂單）：
 
@@ -91,15 +97,15 @@
 2. 只用假資料送原有欄位（姓名「測試同學」、電話 `0900000000`、編號例如 `SMC900001`），記下寫進表的欄位與寄出的信。
 3. 同一隔離複本再送一筆，加上面 9 個欄位。其中一筆的 `utmCampaign` 用 `=1+1` 這類公式開頭的假字串，確認儲存格是純文字、沒有執行公式。
 4. 比對：原有欄位仍寫入、訂單編號仍會回傳、信的正文沒有被新欄位改掉或變成公式。
-5. 通過之後才另案部署。這份 PR 不部署。
+5. 上面四步都通過之後，才把 `js/booking-attribution.js` 的 `SEND_ATTRIBUTION_TO_BACKEND` 改成 `true`，並**另案**部署靜態官網。這份 PR 不改那一行，也不部署。
 
-`tools/test-booking-backend-contract.mjs` 只鎖定官網送出的形狀與文件字句，不連線、不讀寫試算表。
+`tools/test-booking-backend-contract.mjs` 只核對「旗標關閉時送出形狀與改動前相同」以及這份文件的字句。它**不能證明後端相容**，也不能代替上面的寫表與寄信檢查。
 
 ## 合併之後仍待做（這次不要做）
 
 1. 不要為了這份 PR 去部署或覆蓋正式 Apps Script，也不要改正式試算表的既有訂單。
-2. 官網要等這個 PR 合併後，GitHub Pages 才會更新；合併前正式站不會送出新欄位。
-3. 上線前先做上一節的隔離檢查。結果出來之前，後端行為維持待驗證。
+2. 旗標維持關閉時，就算這個 PR 之後合併、GitHub Pages 更新，正式請求仍是舊欄位。不要在隔離檢查完成前把 `SEND_ATTRIBUTION_TO_BACKEND` 改成 `true`。
+3. 打開旗標之前先做上一節的隔離檢查。結果出來之前，後端行為維持待驗證。
 4. 人工六欄可以先在試算表加上，不必等腳本；不要用網站送出的空值覆蓋。
 5. 廣告後台的最終到達網址要帶 `utm_adgroup=brand` 或 `nonbrand`。只靠沒有 `utm_adgroup` 的那條網址，無法分開品牌與非品牌。
 6. 像素編號核發後再另案接到 `smc:booking-submitted`。後端重複建單的防護也另案。

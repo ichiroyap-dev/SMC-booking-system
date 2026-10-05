@@ -1598,9 +1598,13 @@
     <script src="js/booking-attribution.js"></script>
     <script>
         // Existing keys stay: action/type/name/phone/email/people/tables/date/time/note/orderItems.
-        // Attribution is extra flat fields on the book payload only. It is not copied into note or the receipt.
-        // The address bar still shows utm/gclid when the landing URL has them. Tracking must not block submit, the receipt, or button recovery.
-        // Live Apps Script is not in this repo. Whether it accepts the extra fields is 待驗證. See docs/booking-attribution.md.
+        // Attribution stays on this page. SEND_ATTRIBUTION_TO_BACKEND defaults to false, so the POST body
+        // stays the pre-change payload until that flag is turned on after isolated backend verification.
+        // It is not copied into note or the receipt. The address bar still shows utm/gclid when the landing URL has them.
+        // Tracking must not block submit, the receipt, or button recovery. If the receipt fails, keep a success
+        // notice that includes the order id and do not clear the form.
+        // Live Apps Script is not in this repo. Accepting extra fields is 待驗證. See docs/booking-attribution.md.
+        // The local contract test does not prove backend compatibility.
         // Dining extras are written into `note` only, in SHORT form (Option 甲, 2026-09-28):
         //   <plan code>[ 大人N位、小朋友N位、幼兒N位][ 素食N位][ 加購烤雞N隻][ common needs…][；customer text]
         //   e.g. 散客 大人6位；不吃辣 / 散客 大人9位、小朋友1位、幼兒1位 / 5k1a 大人10位、小朋友2位 素食1位；慶生
@@ -2321,12 +2325,10 @@
                 if(!itemsStr) itemsStr = "未選擇具體品項 (見備註)";
             }
 
-            let attribution;
+            let attribution = emptyAttributionFields();
             try {
                 attribution = bookingAttributionFields();
-            } catch (err) {
-                attribution = emptyAttributionFields();
-            }
+            } catch (err) {}
             const data = {
                 action: 'book',
                 type: currentMode,
@@ -2340,19 +2342,16 @@
                 date: document.getElementById('date').value,
                 time: selectedTime,
                 note: currentMode === 'dining' ? buildDiningNote() : document.getElementById('note').value,
-                orderItems: itemsStr,
-                source: attribution.source,
-                utmSource: attribution.utmSource,
-                utmMedium: attribution.utmMedium,
-                utmCampaign: attribution.utmCampaign,
-                utmContent: attribution.utmContent,
-                utmTerm: attribution.utmTerm,
-                utmAdgroup: attribution.utmAdgroup,
-                adgroupBucket: attribution.adgroupBucket,
-                gclid: attribution.gclid
+                orderItems: itemsStr
             };
+            let outbound = data;
+            try {
+                if (window.SmcAttribution && typeof window.SmcAttribution.payloadForBooking === 'function') {
+                    outbound = window.SmcAttribution.payloadForBooking(data, attribution);
+                }
+            } catch (err) {}
 
-            fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
+            fetch(scriptURL, { method: 'POST', body: JSON.stringify(outbound)})
             .then(res => res.json())
             .then(res => {
                 if (res && res.status === 'success') {
@@ -2371,20 +2370,43 @@
                         + receivedBodyFor(data.type) + '\n'
                         + guestFacingBackendMessage(res.message)
                         + emailNotice(data);
-                    try { showReceipt(data, orderId); } catch (err) {}
+                    let receiptShown = false;
+                    const receiptPanelEl = document.getElementById('bookingReceipt');
+                    try {
+                        showReceipt(data, orderId);
+                        const receiptNode = document.getElementById('receiptContent');
+                        const receiptBody = receiptNode ? String(receiptNode.textContent || '') : '';
+                        const panelHidden = !receiptPanelEl || receiptPanelEl.classList.contains('hidden');
+                        receiptShown = receiptBody.indexOf(orderId) !== -1 && !panelHidden;
+                    } catch (err) {
+                        receiptShown = false;
+                    }
                     btn.disabled = false;
                     btn.innerText = '送出預約申請';
-                    try {
-                        form.reset();
-                        document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
-                        document.getElementById('tables').value = '1';
-                        document.getElementById('extraChicken').value = '0';
-                        document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
-                        updateDiningUI();
-                        updateTakeoutSummary();
-                        updateTimeConstraint();
-                        msg.scrollIntoView({ behavior: 'smooth' });
-                    } catch (err) {}
+                    if (!receiptShown) {
+                        if (receiptPanelEl) receiptPanelEl.classList.add('hidden');
+                        msg.textContent = receivedTitle + '\n'
+                            + receivedBodyFor(data.type) + '\n'
+                            + '訂單編號：' + orderId + '\n'
+                            + '收件明細暫時無法顯示，請先保存訂單編號，請勿重複送出。\n'
+                            + emailNotice(data);
+                    } else {
+                        try {
+                            form.reset();
+                            document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
+                            document.getElementById('tables').value = '1';
+                            document.getElementById('extraChicken').value = '0';
+                            document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
+                            updateDiningUI();
+                            updateTakeoutSummary();
+                            updateTimeConstraint();
+                            msg.scrollIntoView({ behavior: 'smooth' });
+                        } catch (err) {
+                            if (String(msg.textContent || '').indexOf(orderId) === -1) {
+                                msg.textContent += '\n訂單編號：' + orderId;
+                            }
+                        }
+                    }
                     recordBookingSubmission(orderId);
                 } else {
                     showUncertainResult(btn, '預約申請', res && res.message);
