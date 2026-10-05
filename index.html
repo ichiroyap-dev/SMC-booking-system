@@ -1598,8 +1598,9 @@
     <script src="js/booking-attribution.js"></script>
     <script>
         // Existing keys stay: action/type/name/phone/email/people/tables/date/time/note/orderItems.
-        // Attribution is extra flat fields on the book payload only. It is never copied into note or the receipt.
-        // Live Apps Script is not in this repo and is not deployed here; see docs/booking-attribution.md.
+        // Attribution is extra flat fields on the book payload only. It is not copied into note or the receipt.
+        // The address bar still shows utm/gclid when the landing URL has them. Tracking must not block submit, the receipt, or button recovery.
+        // Live Apps Script is not in this repo. Whether it accepts the extra fields is 待驗證. See docs/booking-attribution.md.
         // Dining extras are written into `note` only, in SHORT form (Option 甲, 2026-09-28):
         //   <plan code>[ 大人N位、小朋友N位、幼兒N位][ 素食N位][ 加購烤雞N隻][ common needs…][；customer text]
         //   e.g. 散客 大人6位；不吃辣 / 散客 大人9位、小朋友1位、幼兒1位 / 5k1a 大人10位、小朋友2位 素食1位；慶生
@@ -2118,14 +2119,7 @@
             }
         }
 
-        function attributionStore() {
-            return window.__smcAttrStorage || window.sessionStorage;
-        }
-
-        function bookingAttributionFields() {
-            if (window.SmcAttribution && typeof window.SmcAttribution.bookingFields === 'function') {
-                return window.SmcAttribution.bookingFields(attributionStore());
-            }
+        function emptyAttributionFields() {
             return {
                 source: 'direct/unknown',
                 utmSource: '',
@@ -2139,12 +2133,48 @@
             };
         }
 
-        function recordBookingSubmission(orderId) {
-            if (!window.SmcAttribution || typeof window.SmcAttribution.recordSubmission !== 'function') return;
-            const rec = window.SmcAttribution.recordSubmission(attributionStore(), orderId);
-            if (rec && rec.counted) {
-                document.dispatchEvent(new CustomEvent('smc:booking-submitted', { detail: { orderId: String(orderId) } }));
+        function attributionStore() {
+            try {
+                if (window.SmcAttribution && typeof window.SmcAttribution.resolveStorage === 'function') {
+                    return window.SmcAttribution.resolveStorage(window);
+                }
+            } catch (err) {}
+            try {
+                if (window.__smcAttrMemory) return window.__smcAttrMemory;
+                const memory = {
+                    getItem: function () { return null; },
+                    setItem: function () {},
+                    removeItem: function () {}
+                };
+                window.__smcAttrMemory = memory;
+                return memory;
+            } catch (err) {
+                return {
+                    getItem: function () { return null; },
+                    setItem: function () {},
+                    removeItem: function () {}
+                };
             }
+        }
+
+        function bookingAttributionFields() {
+            try {
+                if (window.SmcAttribution && typeof window.SmcAttribution.bookingFields === 'function') {
+                    const fields = window.SmcAttribution.bookingFields(attributionStore());
+                    if (fields && typeof fields.source === 'string') return fields;
+                }
+            } catch (err) {}
+            return emptyAttributionFields();
+        }
+
+        function recordBookingSubmission(orderId) {
+            try {
+                if (!window.SmcAttribution || typeof window.SmcAttribution.recordSubmission !== 'function') return;
+                const rec = window.SmcAttribution.recordSubmission(attributionStore(), orderId);
+                if (rec && rec.counted) {
+                    document.dispatchEvent(new CustomEvent('smc:booking-submitted', { detail: { orderId: String(orderId) } }));
+                }
+            } catch (err) {}
         }
 
         function switchMode(mode, options) {
@@ -2208,7 +2238,9 @@
         window.addEventListener('hashchange', () => applyBookingHash({ scroll: true }));
         window.addEventListener('popstate', () => applyBookingHash());
         window.onload = function() {
-            if (window.SmcAttribution) window.SmcAttribution.capture(window.location.search, attributionStore());
+            try {
+                if (window.SmcAttribution) window.SmcAttribution.capture(window.location.search, attributionStore());
+            } catch (err) {}
             updateTimeConstraint();
             applyBookingHash({ scroll: Boolean(window.location.hash) });
             updateDiningUI();
@@ -2289,7 +2321,12 @@
                 if(!itemsStr) itemsStr = "未選擇具體品項 (見備註)";
             }
 
-            const attribution = bookingAttributionFields();
+            let attribution;
+            try {
+                attribution = bookingAttributionFields();
+            } catch (err) {
+                attribution = emptyAttributionFields();
+            }
             const data = {
                 action: 'book',
                 type: currentMode,
@@ -2334,19 +2371,21 @@
                         + receivedBodyFor(data.type) + '\n'
                         + guestFacingBackendMessage(res.message)
                         + emailNotice(data);
-                    recordBookingSubmission(orderId);
-                    showReceipt(data, orderId);
+                    try { showReceipt(data, orderId); } catch (err) {}
                     btn.disabled = false;
                     btn.innerText = '送出預約申請';
-                    form.reset();
-                    document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
-                    document.getElementById('tables').value = '1';
-                    document.getElementById('extraChicken').value = '0';
-                    document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
-                    updateDiningUI();
-                    updateTakeoutSummary();
-                    updateTimeConstraint();
-                    msg.scrollIntoView({ behavior: 'smooth' });
+                    try {
+                        form.reset();
+                        document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
+                        document.getElementById('tables').value = '1';
+                        document.getElementById('extraChicken').value = '0';
+                        document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
+                        updateDiningUI();
+                        updateTakeoutSummary();
+                        updateTimeConstraint();
+                        msg.scrollIntoView({ behavior: 'smooth' });
+                    } catch (err) {}
+                    recordBookingSubmission(orderId);
                 } else {
                     showUncertainResult(btn, '預約申請', res && res.message);
                 }
