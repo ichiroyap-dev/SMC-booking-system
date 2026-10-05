@@ -1538,6 +1538,7 @@
             </form>
 
             <div id="messageBox" role="status" aria-live="polite" class="hidden mt-8 p-5 rounded-xl text-center text-sm font-medium animate-pulse"></div>
+            <button type="button" id="anotherBookingBtn" class="hidden mt-4 w-full rounded-xl border border-stone-300 bg-white py-3 font-bold text-stone-800">再預約一筆</button>
             <section id="bookingReceipt" aria-labelledby="receiptTitle" class="hidden mt-5 p-5 rounded-xl border border-stone-200 bg-stone-50">
                 <h3 id="receiptTitle" class="font-bold text-stone-800">預約申請已收到</h3>
                 <pre id="receiptContent" class="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed font-sans text-stone-700"></pre>
@@ -1602,7 +1603,8 @@
         // stays the pre-change payload until that flag is turned on after isolated backend verification.
         // It is not copied into note or the receipt. The address bar still shows utm/gclid when the landing URL has them.
         // Tracking must not block submit, the receipt, or button recovery. If the receipt fails, keep a success
-        // notice that includes the order id and do not clear the form.
+        // notice with the order id, leave the form filled but locked, and keep submit disabled until
+        // the customer presses 再預約一筆.
         // Live Apps Script is not in this repo. Accepting extra fields is 待驗證. See docs/booking-attribution.md.
         // The local contract test does not prove backend compatibility.
         // Dining extras are written into `note` only, in SHORT form (Option 甲, 2026-09-28):
@@ -2251,6 +2253,51 @@
             updateTakeoutSummary();
         };
 
+        function clearBookingForm() {
+            form.reset();
+            document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
+            document.getElementById('tables').value = '1';
+            document.getElementById('extraChicken').value = '0';
+            document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
+            updateDiningUI();
+            updateTakeoutSummary();
+            updateTimeConstraint();
+        }
+
+        function lockBookingForm() {
+            form.inert = true;
+            form.setAttribute('data-booking-locked', '1');
+            form.querySelectorAll('input, select, textarea, button').forEach((el) => { el.disabled = true; });
+            btn.disabled = true;
+            btn.innerText = '申請已收到';
+            const another = document.getElementById('anotherBookingBtn');
+            if (another) another.classList.remove('hidden');
+        }
+
+        function unlockBookingForm() {
+            form.inert = false;
+            form.removeAttribute('data-booking-locked');
+            form.querySelectorAll('input, select, textarea, button').forEach((el) => { el.disabled = false; });
+            btn.disabled = false;
+            btn.innerText = '送出預約申請';
+            const another = document.getElementById('anotherBookingBtn');
+            if (another) another.classList.add('hidden');
+        }
+
+        document.getElementById('anotherBookingBtn').addEventListener('click', () => {
+            let cleared = false;
+            try {
+                clearBookingForm();
+                cleared = true;
+            } catch (err) {
+                cleared = false;
+            }
+            unlockBookingForm();
+            if (!cleared) {
+                msg.textContent += '\n表單未能完全清空，請再確認欄位後送出。';
+            }
+        });
+
         form.addEventListener('submit', e => {
             e.preventDefault();
             if (btn.disabled) return;
@@ -2381,25 +2428,20 @@
                     } catch (err) {
                         receiptShown = false;
                     }
-                    btn.disabled = false;
-                    btn.innerText = '送出預約申請';
                     if (!receiptShown) {
                         if (receiptPanelEl) receiptPanelEl.classList.add('hidden');
                         msg.textContent = receivedTitle + '\n'
                             + receivedBodyFor(data.type) + '\n'
                             + '訂單編號：' + orderId + '\n'
-                            + '收件明細暫時無法顯示，請先保存訂單編號，請勿重複送出。\n'
+                            + '申請已收到，請勿重複送出。\n'
+                            + '若要再預約另一筆，請按「再預約一筆」。\n'
                             + emailNotice(data);
+                        lockBookingForm();
                     } else {
+                        btn.disabled = false;
+                        btn.innerText = '送出預約申請';
                         try {
-                            form.reset();
-                            document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
-                            document.getElementById('tables').value = '1';
-                            document.getElementById('extraChicken').value = '0';
-                            document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
-                            updateDiningUI();
-                            updateTakeoutSummary();
-                            updateTimeConstraint();
+                            clearBookingForm();
                             msg.scrollIntoView({ behavior: 'smooth' });
                         } catch (err) {
                             if (String(msg.textContent || '').indexOf(orderId) === -1) {

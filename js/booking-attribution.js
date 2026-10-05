@@ -312,6 +312,8 @@
             var peekedSig = peeked && typeof peeked.sig === 'string' && peeked.sig
                 ? peeked.sig
                 : (peeked ? signatureOf(peekedUtm, peekedGclid) : '');
+            // TODO: 同一條廣告網址過期後再進來，目前會記成 direct/unknown，不會當成新的進站。
+            // 打開 SEND_ATTRIBUTION_TO_BACKEND 之前必須先修：重新點同一條廣告連結要記新來源。
             if (peeked && peekedSig === sig && (peeked.expired || isExpired(peekedSeen, clock))) {
                 rememberExpired(storage, sig);
                 return emptyVisit();
