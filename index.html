@@ -1579,14 +1579,14 @@
             <p>
                 統一編號：72376167 <span class="mx-1 text-stone-300">|</span> 
                 © 2026 水美土雞城. 版權所有。<br class="sm:hidden">
-                <span class="text-stone-400/70 italic block sm:inline sm:ml-1">※ 本表單收集之個人資料僅用於餐飲預約及聯絡確認</span>
+                <span class="text-stone-400/70 italic block sm:inline sm:ml-1">※ 本表單收集之個人資料僅用於餐飲預約、聯絡確認及預約來源對帳</span>
             </p>
             <details id="privacy-notice" class="max-w-2xl mx-auto mt-5 rounded-xl border border-stone-300/70 bg-white/60 p-4 text-left text-stone-600 tracking-normal">
                 <summary class="cursor-pointer text-center font-bold text-stone-700 text-sm">個人資料蒐集告知</summary>
                 <div class="mt-4 space-y-2 text-xs leading-6">
                     <p><b>蒐集者：</b>水美土雞城。</p>
-                    <p><b>蒐集目的：</b>辦理內用訂位、外帶預約、取消申請、聯絡確認及相關顧客服務。</p>
-                    <p><b>資料類別：</b>姓名、聯絡電話、電子郵件（選填）、預約日期時間、用餐或取餐需求及訂單編號。</p>
+                    <p><b>蒐集目的：</b>辦理內用訂位、外帶預約、取消申請、聯絡確認、預約來源對帳及相關顧客服務。</p>
+                    <p><b>資料類別：</b>姓名、聯絡電話、電子郵件（選填）、預約日期時間、用餐或取餐需求及訂單編號。從帶有來源參數的網址進入時，會一併保存該次的來源參數（utm、gclid）供預約對帳；沒有這些參數則記為直接進入／未知，不會當成廣告。</p>
                     <p><b>利用期間、地區、對象及方式：</b>自蒐集日起至預約服務完成及必要之帳務、客服或爭議處理期間止；於台灣地區由水美土雞城及提供本預約系統所必要之受託服務商，以電子或人工方式處理及利用。</p>
                     <p><b>當事人權利：</b>您可依法請求查詢、閱覽、製給複製本、補充、更正、停止蒐集處理利用或刪除；請致電 <a href="tel:0426887895" class="contact-link">04-26887895</a> 聯繫。</p>
                     <p><b>不提供資料的影響：</b>必要欄位若未提供，將無法完成線上預約或取消；電子郵件為選填，不提供不影響申請，但無法收到電子郵件收件通知。正式細節仍以電話確認為準。</p>
@@ -1595,8 +1595,11 @@
         </footer>
     </div>
 
+    <script src="js/booking-attribution.js"></script>
     <script>
-        // Submit payload stays backend-compatible: action/type/name/phone/email/people/tables/date/time/note/orderItems.
+        // Existing keys stay: action/type/name/phone/email/people/tables/date/time/note/orderItems.
+        // Attribution is extra flat fields on the book payload only. It is never copied into note or the receipt.
+        // Live Apps Script is not in this repo and is not deployed here; see docs/booking-attribution.md.
         // Dining extras are written into `note` only, in SHORT form (Option 甲, 2026-09-28):
         //   <plan code>[ 大人N位、小朋友N位、幼兒N位][ 素食N位][ 加購烤雞N隻][ common needs…][；customer text]
         //   e.g. 散客 大人6位；不吃辣 / 散客 大人9位、小朋友1位、幼兒1位 / 5k1a 大人10位、小朋友2位 素食1位；慶生
@@ -2107,10 +2110,40 @@
         function syncModeHash(mode) {
             const target = hashForMode(mode);
             if ((window.location.hash || '') === target) return;
+            const next = window.location.pathname + window.location.search + target;
             if (history.pushState) {
-                history.pushState({ bookingMode: mode }, '', target);
+                history.pushState({ bookingMode: mode }, '', next);
             } else {
                 window.location.hash = target;
+            }
+        }
+
+        function attributionStore() {
+            return window.__smcAttrStorage || window.sessionStorage;
+        }
+
+        function bookingAttributionFields() {
+            if (window.SmcAttribution && typeof window.SmcAttribution.bookingFields === 'function') {
+                return window.SmcAttribution.bookingFields(attributionStore());
+            }
+            return {
+                source: 'direct/unknown',
+                utmSource: '',
+                utmMedium: '',
+                utmCampaign: '',
+                utmContent: '',
+                utmTerm: '',
+                utmAdgroup: '',
+                adgroupBucket: '',
+                gclid: ''
+            };
+        }
+
+        function recordBookingSubmission(orderId) {
+            if (!window.SmcAttribution || typeof window.SmcAttribution.recordSubmission !== 'function') return;
+            const rec = window.SmcAttribution.recordSubmission(attributionStore(), orderId);
+            if (rec && rec.counted) {
+                document.dispatchEvent(new CustomEvent('smc:booking-submitted', { detail: { orderId: String(orderId) } }));
             }
         }
 
@@ -2166,12 +2199,16 @@
             const mode = modeFromLocation();
             if (!mode) return;
             switchMode(mode, { skipHash: true });
-            if (options.scroll && bookingSection) bookingSection.scrollIntoView();
+            if (options.scroll && bookingSection) {
+                bookingSection.scrollIntoView({ block: 'start' });
+                requestAnimationFrame(() => bookingSection.scrollIntoView({ block: 'start' }));
+            }
         }
 
         window.addEventListener('hashchange', () => applyBookingHash({ scroll: true }));
         window.addEventListener('popstate', () => applyBookingHash());
         window.onload = function() {
+            if (window.SmcAttribution) window.SmcAttribution.capture(window.location.search, attributionStore());
             updateTimeConstraint();
             applyBookingHash({ scroll: Boolean(window.location.hash) });
             updateDiningUI();
@@ -2252,6 +2289,7 @@
                 if(!itemsStr) itemsStr = "未選擇具體品項 (見備註)";
             }
 
+            const attribution = bookingAttributionFields();
             const data = {
                 action: 'book',
                 type: currentMode,
@@ -2265,7 +2303,16 @@
                 date: document.getElementById('date').value,
                 time: selectedTime,
                 note: currentMode === 'dining' ? buildDiningNote() : document.getElementById('note').value,
-                orderItems: itemsStr
+                orderItems: itemsStr,
+                source: attribution.source,
+                utmSource: attribution.utmSource,
+                utmMedium: attribution.utmMedium,
+                utmCampaign: attribution.utmCampaign,
+                utmContent: attribution.utmContent,
+                utmTerm: attribution.utmTerm,
+                utmAdgroup: attribution.utmAdgroup,
+                adgroupBucket: attribution.adgroupBucket,
+                gclid: attribution.gclid
             };
 
             fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
@@ -2287,6 +2334,7 @@
                         + receivedBodyFor(data.type) + '\n'
                         + guestFacingBackendMessage(res.message)
                         + emailNotice(data);
+                    recordBookingSubmission(orderId);
                     showReceipt(data, orderId);
                     btn.disabled = false;
                     btn.innerText = '送出預約申請';

@@ -84,4 +84,4 @@ if (existsSync(basePath)) {
 ok(/note: currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value/.test(html), 'note wiring changed');
 
 if (failures.length) { console.error('FAIL\n- ' + failures.join('\n- ')); process.exit(1); }
-console.log('PASS webform Option 甲 note: a = tables, people in full words, ；customer text kept; payload shape unchanged');
+console.log('PASS webform Option 甲 note: a = tables, people in full words, ；customer text kept');
