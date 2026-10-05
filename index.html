@@ -1538,6 +1538,7 @@
             </form>
 
             <div id="messageBox" role="status" aria-live="polite" class="hidden mt-8 p-5 rounded-xl text-center text-sm font-medium animate-pulse"></div>
+            <button type="button" id="anotherBookingBtn" class="hidden mt-4 w-full rounded-xl border border-stone-300 bg-white py-3 font-bold text-stone-800">再預約一筆</button>
             <section id="bookingReceipt" aria-labelledby="receiptTitle" class="hidden mt-5 p-5 rounded-xl border border-stone-200 bg-stone-50">
                 <h3 id="receiptTitle" class="font-bold text-stone-800">預約申請已收到</h3>
                 <pre id="receiptContent" class="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed font-sans text-stone-700"></pre>
@@ -1579,14 +1580,14 @@
             <p>
                 統一編號：72376167 <span class="mx-1 text-stone-300">|</span> 
                 © 2026 水美土雞城. 版權所有。<br class="sm:hidden">
-                <span class="text-stone-400/70 italic block sm:inline sm:ml-1">※ 本表單收集之個人資料僅用於餐飲預約及聯絡確認</span>
+                <span class="text-stone-400/70 italic block sm:inline sm:ml-1">※ 本表單收集之個人資料僅用於餐飲預約、聯絡確認及預約來源對帳</span>
             </p>
             <details id="privacy-notice" class="max-w-2xl mx-auto mt-5 rounded-xl border border-stone-300/70 bg-white/60 p-4 text-left text-stone-600 tracking-normal">
                 <summary class="cursor-pointer text-center font-bold text-stone-700 text-sm">個人資料蒐集告知</summary>
                 <div class="mt-4 space-y-2 text-xs leading-6">
                     <p><b>蒐集者：</b>水美土雞城。</p>
-                    <p><b>蒐集目的：</b>辦理內用訂位、外帶預約、取消申請、聯絡確認及相關顧客服務。</p>
-                    <p><b>資料類別：</b>姓名、聯絡電話、電子郵件（選填）、預約日期時間、用餐或取餐需求及訂單編號。</p>
+                    <p><b>蒐集目的：</b>辦理內用訂位、外帶預約、取消申請、聯絡確認、預約來源對帳及相關顧客服務。</p>
+                    <p><b>資料類別：</b>姓名、聯絡電話、電子郵件（選填）、預約日期時間、用餐或取餐需求及訂單編號。從帶有來源參數的網址進入時，會一併保存該次的來源參數（utm、gclid）供預約對帳；沒有這些參數則記為直接進入／未知，不會當成廣告。</p>
                     <p><b>利用期間、地區、對象及方式：</b>自蒐集日起至預約服務完成及必要之帳務、客服或爭議處理期間止；於台灣地區由水美土雞城及提供本預約系統所必要之受託服務商，以電子或人工方式處理及利用。</p>
                     <p><b>當事人權利：</b>您可依法請求查詢、閱覽、製給複製本、補充、更正、停止蒐集處理利用或刪除；請致電 <a href="tel:0426887895" class="contact-link">04-26887895</a> 聯繫。</p>
                     <p><b>不提供資料的影響：</b>必要欄位若未提供，將無法完成線上預約或取消；電子郵件為選填，不提供不影響申請，但無法收到電子郵件收件通知。正式細節仍以電話確認為準。</p>
@@ -1595,8 +1596,17 @@
         </footer>
     </div>
 
+    <script src="js/booking-attribution.js"></script>
     <script>
-        // Submit payload stays backend-compatible: action/type/name/phone/email/people/tables/date/time/note/orderItems.
+        // Existing keys stay: action/type/name/phone/email/people/tables/date/time/note/orderItems.
+        // Attribution stays on this page. SEND_ATTRIBUTION_TO_BACKEND defaults to false, so the POST body
+        // stays the pre-change payload until that flag is turned on after isolated backend verification.
+        // It is not copied into note or the receipt. The address bar still shows utm/gclid when the landing URL has them.
+        // Tracking must not block submit, the receipt, or button recovery. If the receipt fails, keep a success
+        // notice with the order id, leave the form filled but locked, and keep submit disabled until
+        // the customer presses 再預約一筆.
+        // Live Apps Script is not in this repo. Accepting extra fields is 待驗證. See docs/booking-attribution.md.
+        // The local contract test does not prove backend compatibility.
         // Dining extras are written into `note` only, in SHORT form (Option 甲, 2026-09-28):
         //   <plan code>[ 大人N位、小朋友N位、幼兒N位][ 素食N位][ 加購烤雞N隻][ common needs…][；customer text]
         //   e.g. 散客 大人6位；不吃辣 / 散客 大人9位、小朋友1位、幼兒1位 / 5k1a 大人10位、小朋友2位 素食1位；慶生
@@ -2107,11 +2117,70 @@
         function syncModeHash(mode) {
             const target = hashForMode(mode);
             if ((window.location.hash || '') === target) return;
+            const next = window.location.pathname + window.location.search + target;
             if (history.pushState) {
-                history.pushState({ bookingMode: mode }, '', target);
+                history.pushState({ bookingMode: mode }, '', next);
             } else {
                 window.location.hash = target;
             }
+        }
+
+        function emptyAttributionFields() {
+            return {
+                source: 'direct/unknown',
+                utmSource: '',
+                utmMedium: '',
+                utmCampaign: '',
+                utmContent: '',
+                utmTerm: '',
+                utmAdgroup: '',
+                adgroupBucket: '',
+                gclid: ''
+            };
+        }
+
+        function attributionStore() {
+            try {
+                if (window.SmcAttribution && typeof window.SmcAttribution.resolveStorage === 'function') {
+                    return window.SmcAttribution.resolveStorage(window);
+                }
+            } catch (err) {}
+            try {
+                if (window.__smcAttrMemory) return window.__smcAttrMemory;
+                const memory = {
+                    getItem: function () { return null; },
+                    setItem: function () {},
+                    removeItem: function () {}
+                };
+                window.__smcAttrMemory = memory;
+                return memory;
+            } catch (err) {
+                return {
+                    getItem: function () { return null; },
+                    setItem: function () {},
+                    removeItem: function () {}
+                };
+            }
+        }
+
+        function bookingAttributionFields() {
+            try {
+                if (window.SmcAttribution && typeof window.SmcAttribution.bookingFields === 'function') {
+                    const fields = window.SmcAttribution.bookingFields(attributionStore());
+                    if (fields && typeof fields.source === 'string') return fields;
+                }
+            } catch (err) {}
+            return emptyAttributionFields();
+        }
+
+        function recordBookingSubmission(orderId) {
+            try {
+                if (!window.SmcAttribution || typeof window.SmcAttribution.recordSubmission !== 'function') return;
+                const rec = window.SmcAttribution.recordSubmission(attributionStore(), orderId);
+                if (rec && rec.counted) {
+                    document.dispatchEvent(new CustomEvent('smc:booking-submitted', { detail: { orderId: String(orderId) } }));
+                }
+            } catch (err) {}
         }
 
         function switchMode(mode, options) {
@@ -2166,17 +2235,68 @@
             const mode = modeFromLocation();
             if (!mode) return;
             switchMode(mode, { skipHash: true });
-            if (options.scroll && bookingSection) bookingSection.scrollIntoView();
+            if (options.scroll && bookingSection) {
+                bookingSection.scrollIntoView({ block: 'start' });
+                requestAnimationFrame(() => bookingSection.scrollIntoView({ block: 'start' }));
+            }
         }
 
         window.addEventListener('hashchange', () => applyBookingHash({ scroll: true }));
         window.addEventListener('popstate', () => applyBookingHash());
         window.onload = function() {
+            try {
+                if (window.SmcAttribution) window.SmcAttribution.capture(window.location.search, attributionStore());
+            } catch (err) {}
             updateTimeConstraint();
             applyBookingHash({ scroll: Boolean(window.location.hash) });
             updateDiningUI();
             updateTakeoutSummary();
         };
+
+        function clearBookingForm() {
+            form.reset();
+            document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
+            document.getElementById('tables').value = '1';
+            document.getElementById('extraChicken').value = '0';
+            document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
+            updateDiningUI();
+            updateTakeoutSummary();
+            updateTimeConstraint();
+        }
+
+        function lockBookingForm() {
+            form.inert = true;
+            form.setAttribute('data-booking-locked', '1');
+            form.querySelectorAll('input, select, textarea, button').forEach((el) => { el.disabled = true; });
+            btn.disabled = true;
+            btn.innerText = '申請已收到';
+            const another = document.getElementById('anotherBookingBtn');
+            if (another) another.classList.remove('hidden');
+        }
+
+        function unlockBookingForm() {
+            form.inert = false;
+            form.removeAttribute('data-booking-locked');
+            form.querySelectorAll('input, select, textarea, button').forEach((el) => { el.disabled = false; });
+            btn.disabled = false;
+            btn.innerText = '送出預約申請';
+            const another = document.getElementById('anotherBookingBtn');
+            if (another) another.classList.add('hidden');
+        }
+
+        document.getElementById('anotherBookingBtn').addEventListener('click', () => {
+            let cleared = false;
+            try {
+                clearBookingForm();
+                cleared = true;
+            } catch (err) {
+                cleared = false;
+            }
+            unlockBookingForm();
+            if (!cleared) {
+                msg.textContent += '\n表單未能完全清空，請再確認欄位後送出。';
+            }
+        });
 
         form.addEventListener('submit', e => {
             e.preventDefault();
@@ -2252,6 +2372,10 @@
                 if(!itemsStr) itemsStr = "未選擇具體品項 (見備註)";
             }
 
+            let attribution = emptyAttributionFields();
+            try {
+                attribution = bookingAttributionFields();
+            } catch (err) {}
             const data = {
                 action: 'book',
                 type: currentMode,
@@ -2267,8 +2391,14 @@
                 note: currentMode === 'dining' ? buildDiningNote() : document.getElementById('note').value,
                 orderItems: itemsStr
             };
+            let outbound = data;
+            try {
+                if (window.SmcAttribution && typeof window.SmcAttribution.payloadForBooking === 'function') {
+                    outbound = window.SmcAttribution.payloadForBooking(data, attribution);
+                }
+            } catch (err) {}
 
-            fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
+            fetch(scriptURL, { method: 'POST', body: JSON.stringify(outbound)})
             .then(res => res.json())
             .then(res => {
                 if (res && res.status === 'success') {
@@ -2287,18 +2417,39 @@
                         + receivedBodyFor(data.type) + '\n'
                         + guestFacingBackendMessage(res.message)
                         + emailNotice(data);
-                    showReceipt(data, orderId);
-                    btn.disabled = false;
-                    btn.innerText = '送出預約申請';
-                    form.reset();
-                    document.querySelectorAll('#takeoutFields [data-item]').forEach(el => el.value = "0");
-                    document.getElementById('tables').value = '1';
-                    document.getElementById('extraChicken').value = '0';
-                    document.querySelectorAll('#bookingForm details.form-disclose').forEach((el) => { el.open = false; });
-                    updateDiningUI();
-                    updateTakeoutSummary();
-                    updateTimeConstraint();
-                    msg.scrollIntoView({ behavior: 'smooth' });
+                    let receiptShown = false;
+                    const receiptPanelEl = document.getElementById('bookingReceipt');
+                    try {
+                        showReceipt(data, orderId);
+                        const receiptNode = document.getElementById('receiptContent');
+                        const receiptBody = receiptNode ? String(receiptNode.textContent || '') : '';
+                        const panelHidden = !receiptPanelEl || receiptPanelEl.classList.contains('hidden');
+                        receiptShown = receiptBody.indexOf(orderId) !== -1 && !panelHidden;
+                    } catch (err) {
+                        receiptShown = false;
+                    }
+                    if (!receiptShown) {
+                        if (receiptPanelEl) receiptPanelEl.classList.add('hidden');
+                        msg.textContent = receivedTitle + '\n'
+                            + receivedBodyFor(data.type) + '\n'
+                            + '訂單編號：' + orderId + '\n'
+                            + '申請已收到，請勿重複送出。\n'
+                            + '若要再預約另一筆，請按「再預約一筆」。\n'
+                            + emailNotice(data);
+                        lockBookingForm();
+                    } else {
+                        btn.disabled = false;
+                        btn.innerText = '送出預約申請';
+                        try {
+                            clearBookingForm();
+                            msg.scrollIntoView({ behavior: 'smooth' });
+                        } catch (err) {
+                            if (String(msg.textContent || '').indexOf(orderId) === -1) {
+                                msg.textContent += '\n訂單編號：' + orderId;
+                            }
+                        }
+                    }
+                    recordBookingSubmission(orderId);
                 } else {
                     showUncertainResult(btn, '預約申請', res && res.message);
                 }
