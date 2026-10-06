@@ -1604,7 +1604,8 @@
         // It is not copied into note or the receipt. The address bar still shows utm/gclid when the landing URL has them.
         // Tracking must not block submit, the receipt, or button recovery. If the receipt fails, keep a success
         // notice with the order id, leave the form filled but locked, and keep submit disabled until
-        // the customer presses 再預約一筆.
+        // 再預約一筆 actually clears the form. If that reset throws, or the receipt is shown but the
+        // automatic reset throws, keep the form locked, keep the order number, and ask for a reload.
         // Live Apps Script is not in this repo. Accepting extra fields is 待驗證. See docs/booking-attribution.md.
         // The local contract test does not prove backend compatibility.
         // Dining extras are written into `note` only, in SHORT form (Option 甲, 2026-09-28):
@@ -2284,17 +2285,24 @@
             if (another) another.classList.add('hidden');
         }
 
+        const bookingResetFailedNotice = '表單未能清空。請重新整理頁面後，再進行新的預約。';
+
+        function keepFormLockedAfterResetFailure(orderId) {
+            lockBookingForm();
+            if (orderId && String(msg.textContent || '').indexOf(String(orderId)) === -1) {
+                msg.textContent += '\n訂單編號：' + orderId;
+            }
+            if (String(msg.textContent || '').indexOf(bookingResetFailedNotice) === -1) {
+                msg.textContent += '\n' + bookingResetFailedNotice;
+            }
+        }
+
         document.getElementById('anotherBookingBtn').addEventListener('click', () => {
-            let cleared = false;
             try {
                 clearBookingForm();
-                cleared = true;
+                unlockBookingForm();
             } catch (err) {
-                cleared = false;
-            }
-            unlockBookingForm();
-            if (!cleared) {
-                msg.textContent += '\n表單未能完全清空，請再確認欄位後送出。';
+                keepFormLockedAfterResetFailure();
             }
         });
 
@@ -2438,15 +2446,17 @@
                             + emailNotice(data);
                         lockBookingForm();
                     } else {
-                        btn.disabled = false;
-                        btn.innerText = '送出預約申請';
+                        let formCleared = false;
                         try {
                             clearBookingForm();
-                            msg.scrollIntoView({ behavior: 'smooth' });
+                            formCleared = true;
                         } catch (err) {
-                            if (String(msg.textContent || '').indexOf(orderId) === -1) {
-                                msg.textContent += '\n訂單編號：' + orderId;
-                            }
+                            keepFormLockedAfterResetFailure(orderId);
+                        }
+                        if (formCleared) {
+                            btn.disabled = false;
+                            btn.innerText = '送出預約申請';
+                            try { msg.scrollIntoView({ behavior: 'smooth' }); } catch (err) {}
                         }
                     }
                     recordBookingSubmission(orderId);
