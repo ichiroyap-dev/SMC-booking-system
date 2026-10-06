@@ -283,6 +283,14 @@ assert(successBlock.includes('receiptShown'), '收件失敗時不可照常清空
 assert(successBlock.includes('lockBookingForm()'), '收件失敗要鎖住表單');
 assert(successBlock.includes('請勿重複送出'), '收件失敗提示要寫請勿重複送出');
 assert(html.includes('id="anotherBookingBtn"') && html.includes('再預約一筆'), '要提供再預約一筆');
+assert(html.includes('表單未能清空。請重新整理頁面後，再進行新的預約。'), '清空失敗要提示重新整理後再預約');
+assert(!html.includes('請再確認欄位後送出'), '清空失敗不可請客人確認後送出');
+const anotherAt = html.indexOf("getElementById('anotherBookingBtn').addEventListener");
+const anotherBlock = html.slice(anotherAt, html.indexOf("form.addEventListener('submit'", anotherAt));
+const anotherUnlock = anotherBlock.indexOf('unlockBookingForm()');
+const anotherCatch = anotherBlock.indexOf('catch (err)');
+assert(anotherUnlock > anotherBlock.indexOf('clearBookingForm()') && anotherCatch > anotherUnlock, '再預約一筆只有清空成功才解開表單');
+assert(!anotherBlock.slice(anotherCatch).includes('unlockBookingForm()'), '清空失敗的分支不可解開表單');
 assert(readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('打開 SEND_ATTRIBUTION_TO_BACKEND 之前必須先修'), '過期後同一廣告網址要留待開旗標前再修');
 assert(extractFn(html, 'recordBookingSubmission').includes('catch'), '追蹤函式本身要接住例外');
 assert(extractFn(html, 'attributionStore').includes('catch'), '取得 sessionStorage 要接住 SecurityError');
@@ -819,8 +827,22 @@ try {
         await evalExpr(wsUrl, `document.getElementById('bookingForm').reset = function () { throw new Error('reset failed'); };`);
         const resetFailed = await submitDining('SMC900061');
         assert(resetFailed.message.includes('訂單編號：SMC900061'), `表單重設失敗時成功提示要留下編號：${resetFailed.message}`);
-        assert(resetFailed.disabled === false && resetFailed.button === '送出預約申請', '表單重設失敗後按鈕仍要恢復');
+        assert(resetFailed.message.includes('請重新整理頁面'), '內用自動清空失敗要提示重新整理後再預約');
+        assert(resetFailed.disabled === true && resetFailed.button === '申請已收到', '內用自動清空失敗後送出要維持停用');
+        assert(resetFailed.locked === true && resetFailed.nameDisabled === true && resetFailed.name === '測試同學', '內用自動清空失敗後要鎖住並保留已填姓名');
         assert(resetFailed.receiptHidden === false && resetFailed.receipt.includes('SMC900061'), '重設失敗時收件畫面本身仍在');
+        const resetRetry = await evalExpr(wsUrl, `(async () => {
+            let fetches = 0;
+            window.fetch = async () => {
+                fetches += 1;
+                return { json: async () => ({ status: 'success', orderId: 'SMC900071', message: '已保留座位' }) };
+            };
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            return { fetches, name: document.getElementById('name').value, message: document.getElementById('messageBox').textContent };
+        })()`);
+        assert(resetRetry.fetches === 0, `內用自動清空失敗後再送出必須是 0 次，實際 ${resetRetry.fetches}`);
+        assert(resetRetry.name === '測試同學' && resetRetry.message.includes('訂單編號：SMC900061'), '再送出失敗後仍要留下原編號與已填姓名');
 
         await navigateAndWait(wsUrl, `${url}?mode=dining&probe=receipt#booking-section`);
         const receiptFailed = await evalExpr(wsUrl, `(async () => {
@@ -935,6 +957,173 @@ try {
         assert(takeoutFallback.locked.name === '測試同學' && takeoutFallback.locked.chicken === '1' && takeoutFallback.locked.anotherHidden === false, '外帶收件失敗時先保留已填內容並提供再預約');
         assert(takeoutFallback.name === '' && takeoutFallback.chicken === '0', '再預約一筆要清空外帶表單');
         assert(takeoutFallback.disabled === false && takeoutFallback.button === '送出預約申請' && takeoutFallback.anotherHidden === true, '外帶再預約一筆後才能再送出');
+
+        async function retryWhileResetThrows(mode, orderId) {
+            await navigateAndWait(wsUrl, `${url}?mode=${mode}&probe=reset-again#booking-section`);
+            return evalExpr(wsUrl, `(async () => {
+                window.alert = () => {};
+                showReceipt = function () { throw new Error('receipt render failed'); };
+                if ('${mode}' === 'takeout') switchMode('takeout');
+                const day = new Date();
+                day.setDate(day.getDate() + 2);
+                while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+                const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+                const date = document.getElementById('date');
+                date.value = iso;
+                date.dispatchEvent(new Event('change', { bubbles: true }));
+                if ('${mode}' === 'dining') {
+                    document.querySelector('input[name="partyType"][value="casual"]').checked = true;
+                    document.getElementById('adults').value = '2';
+                } else {
+                    document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = '1';
+                }
+                document.getElementById('name').value = '測試同學';
+                document.getElementById('phone').value = '0900000000';
+                document.getElementById('note').value = '${mode}' === 'dining' ? '靠窗' : '客製包裝';
+                document.getElementById('privacyConsent').checked = true;
+                document.getElementById('time').value = '12:00';
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').innerText = '送出預約申請';
+                let booked = 0;
+                window.fetch = async () => {
+                    booked += 1;
+                    return { json: async () => ({ status: 'success', orderId: '${orderId}', message: '已保留座位' }) };
+                };
+                document.getElementById('bookingForm').requestSubmit();
+                await new Promise((resolve) => setTimeout(resolve, 40));
+                document.getElementById('bookingForm').reset = function () { throw new Error('reset failed'); };
+                document.getElementById('anotherBookingBtn').click();
+                let extra = 0;
+                window.fetch = async () => {
+                    extra += 1;
+                    return { json: async () => ({ status: 'success', orderId: 'SMC900079', message: '已保留座位' }) };
+                };
+                document.getElementById('bookingForm').requestSubmit();
+                await new Promise((resolve) => setTimeout(resolve, 40));
+                return {
+                    booked,
+                    extra,
+                    name: document.getElementById('name').value,
+                    chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
+                    message: document.getElementById('messageBox').textContent,
+                    button: document.getElementById('submitBtn').innerText,
+                    disabled: document.getElementById('submitBtn').disabled,
+                    locked: document.getElementById('bookingForm').getAttribute('data-booking-locked') === '1',
+                };
+            })()`);
+        }
+
+        await navigateAndWait(wsUrl, `${url}?mode=takeout&probe=reset#takeout`);
+        const takeoutResetFailed = await evalExpr(wsUrl, `(async () => {
+            window.alert = () => {};
+            switchMode('takeout');
+            document.getElementById('bookingForm').reset = function () { throw new Error('reset failed'); };
+            const day = new Date();
+            day.setDate(day.getDate() + 2);
+            while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+            const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+            const date = document.getElementById('date');
+            date.value = iso;
+            date.dispatchEvent(new Event('change', { bubbles: true }));
+            document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = '1';
+            document.getElementById('name').value = '測試同學';
+            document.getElementById('phone').value = '0900000000';
+            document.getElementById('note').value = '客製包裝';
+            document.getElementById('privacyConsent').checked = true;
+            document.getElementById('time').value = '12:00';
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerText = '送出預約申請';
+            window.fetch = async () => ({ json: async () => ({ status: 'success', orderId: 'SMC900072', message: '已保留座位' }) });
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            const after = {
+                name: document.getElementById('name').value,
+                chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
+                message: document.getElementById('messageBox').textContent,
+                button: document.getElementById('submitBtn').innerText,
+                disabled: document.getElementById('submitBtn').disabled,
+                locked: document.getElementById('bookingForm').getAttribute('data-booking-locked') === '1',
+                receipt: document.getElementById('receiptContent').textContent,
+            };
+            let extra = 0;
+            window.fetch = async () => {
+                extra += 1;
+                return { json: async () => ({ status: 'success', orderId: 'SMC900078', message: '已保留座位' }) };
+            };
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            return { after, extra };
+        })()`);
+        assert(takeoutResetFailed.after.message.includes('訂單編號：SMC900072'), `外帶自動清空失敗要留下編號：${takeoutResetFailed.after.message}`);
+        assert(takeoutResetFailed.after.message.includes('請重新整理頁面'), '外帶自動清空失敗要提示重新整理後再預約');
+        assert(takeoutResetFailed.after.disabled === true && takeoutResetFailed.after.button === '申請已收到', '外帶自動清空失敗後送出要維持停用');
+        assert(takeoutResetFailed.after.locked === true && takeoutResetFailed.after.name === '測試同學' && takeoutResetFailed.after.chicken === '1', '外帶自動清空失敗後要鎖住並保留已填品項');
+        assert(takeoutResetFailed.after.receipt.includes('SMC900072'), '外帶自動清空失敗時收件畫面仍要有編號');
+        assert(takeoutResetFailed.extra === 0, `外帶自動清空失敗後再送出必須是 0 次，實際 ${takeoutResetFailed.extra}`);
+
+        const anotherResetDining = await retryWhileResetThrows('dining', 'SMC900073');
+        assert(anotherResetDining.booked === 1, `內用再預約前應只送出一次，實際 ${anotherResetDining.booked}`);
+        assert(anotherResetDining.extra === 0, `內用再預約清空失敗後再送出必須是 0 次，實際 ${anotherResetDining.extra}`);
+        assert(anotherResetDining.disabled === true && anotherResetDining.locked === true && anotherResetDining.button === '申請已收到', '內用再預約清空失敗要維持鎖定');
+        assert(anotherResetDining.name === '測試同學' && anotherResetDining.message.includes('訂單編號：SMC900073') && anotherResetDining.message.includes('請重新整理頁面'), '內用再預約清空失敗要留下編號並請重新整理');
+
+        const anotherResetTakeout = await retryWhileResetThrows('takeout', 'SMC900074');
+        assert(anotherResetTakeout.booked === 1, `外帶再預約前應只送出一次，實際 ${anotherResetTakeout.booked}`);
+        assert(anotherResetTakeout.extra === 0, `外帶再預約清空失敗後再送出必須是 0 次，實際 ${anotherResetTakeout.extra}`);
+        assert(anotherResetTakeout.disabled === true && anotherResetTakeout.locked === true && anotherResetTakeout.button === '申請已收到', '外帶再預約清空失敗要維持鎖定');
+        assert(anotherResetTakeout.name === '測試同學' && anotherResetTakeout.chicken === '1' && anotherResetTakeout.message.includes('訂單編號：SMC900074') && anotherResetTakeout.message.includes('請重新整理頁面'), '外帶再預約清空失敗要留下編號、品項，並請重新整理');
+
+        await navigateAndWait(wsUrl, `${url}?mode=dining&probe=reset-ok#booking-section`);
+        const resetOk = await evalExpr(wsUrl, `(async () => {
+            window.alert = () => {};
+            const day = new Date();
+            day.setDate(day.getDate() + 2);
+            while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+            const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+            function fill(note) {
+                const date = document.getElementById('date');
+                date.value = iso;
+                date.dispatchEvent(new Event('change', { bubbles: true }));
+                document.querySelector('input[name="partyType"][value="casual"]').checked = true;
+                document.getElementById('adults').value = '2';
+                document.getElementById('name').value = '測試同學';
+                document.getElementById('phone').value = '0900000000';
+                document.getElementById('note').value = note;
+                document.getElementById('privacyConsent').checked = true;
+                document.getElementById('time').value = '12:00';
+            }
+            let posts = [];
+            window.fetch = async (resource, opts) => {
+                posts.push(JSON.parse(opts.body));
+                const orderId = posts.length === 1 ? 'SMC900081' : 'SMC900082';
+                return { json: async () => ({ status: 'success', orderId, message: '已保留座位' }) };
+            };
+            fill('靠窗');
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            const unlocked = {
+                name: document.getElementById('name').value,
+                disabled: document.getElementById('submitBtn').disabled,
+                button: document.getElementById('submitBtn').innerText,
+                locked: document.getElementById('bookingForm').getAttribute('data-booking-locked') === '1',
+                receipt: document.getElementById('receiptContent').textContent,
+            };
+            fill('靠窗再一筆');
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            return {
+                unlocked,
+                count: posts.length,
+                secondNote: posts[1] ? posts[1].note : '',
+                keys: posts[1] ? Object.keys(posts[1]) : [],
+                receipt: document.getElementById('receiptContent').textContent,
+            };
+        })()`);
+        assert(resetOk.unlocked.name === '' && resetOk.unlocked.disabled === false && resetOk.unlocked.button === '送出預約申請' && resetOk.unlocked.locked === false, '成功清空後要解開內用表單');
+        assert(resetOk.unlocked.receipt.includes('SMC900081'), '第一筆成功後收件畫面要有編號');
+        assert(resetOk.count === 2, `成功清空後只能再送出一筆，實際共 ${resetOk.count} 次`);
+        assert(resetOk.secondNote.includes('靠窗再一筆') && resetOk.receipt.includes('SMC900082'), '第二筆要送出新備註並顯示新編號');
+        assert(JSON.stringify(resetOk.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '成功後再送出的正式請求仍是原欄位');
     });
 } finally {
     server.close();
