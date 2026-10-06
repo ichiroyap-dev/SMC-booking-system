@@ -149,17 +149,35 @@ const keptOnReturn = attr.handlePageShow(lifeWin, { persisted: true }, t0 + 5 * 
 assert(keptOnReturn.gclid === 'TESTGCLID9000', '未過期的快取返回要保留來源');
 assert(attr.bookingFields(attr.resolveStorage(lifeWin), t0 + 5 * 60 * 1000).source === 'google', '未過期返回不可清成 direct/unknown');
 const seenBeforeRefresh = JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt;
+assert(seenBeforeRefresh === t0, '30 分鐘內從上一頁回來不可把這次造訪重算成新時間');
 attr.capture(lifeUrl, life, t0 + 10 * 60 * 1000);
-assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === seenBeforeRefresh, '同一條帶標記網址不可把閒置計時重新起算');
+assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === seenBeforeRefresh, '30 分鐘內重新整理同一條帶標記網址不可把閒置計時重新起算');
+const reloadedInWindow = attr.handlePageShow(lifeWin, { persisted: false }, t0 + 12 * 60 * 1000);
+assert(reloadedInWindow.seenAt === seenBeforeRefresh && reloadedInWindow.gclid === 'TESTGCLID9000', '30 分鐘內重新整理同一條廣告網址不是新進站');
+assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === seenBeforeRefresh, '期限內的重新整理不可改寫 seenAt');
 attr.handlePageShow(lifeWin, { persisted: true }, t0 + attr.VISIT_TTL_MS);
 const expiredReturn = attr.bookingFields(attr.resolveStorage(lifeWin), t0 + attr.VISIT_TTL_MS);
 assert(expiredReturn.source === 'direct/unknown' && expiredReturn.gclid === '' && expiredReturn.utmAdgroup === '', '快取返回不可用舊網址救回過期來源');
-attr.capture(lifeUrl, life, t0 + attr.VISIT_TTL_MS + 1000);
-assert(attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 1000).source === 'direct/unknown', '重新整理同一條過期網址不可重建來源');
+attr.capture('', life, t0 + attr.VISIT_TTL_MS + 500);
+assert(attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 500).source === 'direct/unknown' && attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 500).gclid === '', '過期後沒有參數要記 direct/unknown');
+const renewedAt = t0 + attr.VISIT_TTL_MS + 1000;
+const renewed = attr.capture(lifeUrl, life, renewedAt);
+const renewedFields = attr.bookingFields(life, renewedAt);
+assert(renewed.seenAt === renewedAt && renewed.seenAt !== seenBeforeRefresh, `過期後同一條廣告網址要寫入新時間，實際 ${renewed.seenAt}`);
+assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === renewedAt, '新時間要寫進儲存');
+assert(renewedFields.source === 'google' && renewedFields.utmAdgroup === 'brand' && renewedFields.adgroupBucket === '品牌' && renewedFields.gclid === 'TESTGCLID9000', `過期後同一條廣告網址要記成廣告來源，實際 ${renewedFields.source}/${renewedFields.gclid}`);
+assert(renewedFields.source !== 'direct/unknown', '過期後同一條廣告網址不可記成 direct/unknown');
 attr.capture('?utm_source=facebook&utm_adgroup=nonbrand', life, t0 + attr.VISIT_TTL_MS + 2000);
 const replacedAfterExpiry = attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 2000);
 assert(replacedAfterExpiry.source === 'facebook' && replacedAfterExpiry.adgroupBucket === '非品牌' && replacedAfterExpiry.gclid === '', '另一條帶標記網址在過期後仍要整組換成新來源');
 assertStringFields(replacedAfterExpiry, '過期後新進站');
+const stale = attr.memoryStorage();
+attr.capture(lifeUrl, stale, t0);
+const staleReloadAt = t0 + attr.VISIT_TTL_MS + 2500;
+const staleReload = attr.capture(lifeUrl, stale, staleReloadAt);
+const staleFields = attr.bookingFields(stale, staleReloadAt);
+assert(staleReload.seenAt === staleReloadAt, `過期後尚未清標記時，同一條廣告網址仍要寫新時間，實際 ${staleReload.seenAt}`);
+assert(staleFields.source === 'google' && staleFields.utmAdgroup === 'brand' && staleFields.gclid === 'TESTGCLID9000' && staleFields.source !== 'direct/unknown', '過期後重新整理同一條廣告網址要記成廣告來源');
 
 const prePrKeys = ['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems'];
 function prePrOrder(type) {
@@ -194,11 +212,18 @@ const broken = {
     removeItem() { throw new Error('QuotaExceededError'); },
 };
 try {
-    attr.capture('?utm_source=google&utm_adgroup=brand', broken, t0);
+    const boomUrl = '?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000';
+    attr.capture(boomUrl, broken, t0);
     const unread = attr.bookingFields(broken, t0);
     const unstored = attr.recordSubmission(broken, 'SMC900051');
     assert(unread.source === 'google' && unread.utmAdgroup === 'brand', '讀寫都丟錯時要改記在記憶體備援');
     assert(unstored && unstored.counted === true, '備援記憶體要能記下這次編號，且不可拋錯');
+    const boomRenewed = attr.capture(boomUrl, broken, t0 + attr.VISIT_TTL_MS + 3000);
+    const afterBoom = attr.bookingFields(broken, t0 + attr.VISIT_TTL_MS + 3000);
+    const sent = attr.payloadForBooking(prePrOrder('dining'), afterBoom);
+    assert(boomRenewed.seenAt === t0 + attr.VISIT_TTL_MS + 3000 && afterBoom.source === 'google' && afterBoom.gclid === 'TESTGCLID9000', '原生儲存丟錯時，過期後同一條廣告網址仍要記在備援');
+    assert(JSON.stringify(Object.keys(sent)) === JSON.stringify(prePrKeys), '儲存丟錯時正式請求仍是 11 欄');
+    assert(sent.name === '測試同學' && sent.note === '散客 大人2位；靠窗' && !('source' in sent) && !('gclid' in sent), '儲存丟錯不可改到預約內容或把來源塞進正式請求');
 } catch (err) {
     storageThrew = true;
 }
@@ -291,7 +316,7 @@ const anotherUnlock = anotherBlock.indexOf('unlockBookingForm()');
 const anotherCatch = anotherBlock.indexOf('catch (err)');
 assert(anotherUnlock > anotherBlock.indexOf('clearBookingForm()') && anotherCatch > anotherUnlock, '再預約一筆只有清空成功才解開表單');
 assert(!anotherBlock.slice(anotherCatch).includes('unlockBookingForm()'), '清空失敗的分支不可解開表單');
-assert(readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('打開 SEND_ATTRIBUTION_TO_BACKEND 之前必須先修'), '過期後同一廣告網址要留待開旗標前再修');
+assert(!readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('打開 SEND_ATTRIBUTION_TO_BACKEND 之前必須先修'), '同一條廣告網址過期後再進站的 TODO 要移除');
 assert(extractFn(html, 'recordBookingSubmission').includes('catch'), '追蹤函式本身要接住例外');
 assert(extractFn(html, 'attributionStore').includes('catch'), '取得 sessionStorage 要接住 SecurityError');
 assert(html.includes('不會當成廣告'), '隱私權說明要講沒有參數時不當成廣告');
@@ -785,6 +810,72 @@ try {
         assert(guarded.tracked.postSource == null && guarded.tracked.note.includes('靠窗'), '來源函式拋錯時仍要送出，且正式請求不含來源欄');
         assert(guarded.tracked.receiptHidden === false && guarded.tracked.receipt.includes('SMC900041'), '追蹤拋錯後仍要顯示收件畫面');
         assert(guarded.tracked.disabled === false && guarded.tracked.text === '送出預約申請', '追蹤拋錯後按鈕仍要恢復');
+
+        await navigateAndWait(wsUrl, `${url}?mode=dining&probe=storage#booking-section`);
+        const storageBoom = await evalExpr(wsUrl, `(async () => {
+            window.alert = () => {};
+            const throwing = {
+                getItem() { throw new DOMException('The operation is insecure.', 'SecurityError'); },
+                setItem() { throw new Error('QuotaExceededError'); },
+                removeItem() { throw new Error('QuotaExceededError'); },
+            };
+            let captureThrew = false;
+            try { SmcAttribution.capture(location.search, throwing); }
+            catch (err) { captureThrew = true; }
+            window.__smcAttrStorage = {
+                getItem() { throw new DOMException('The operation is insecure.', 'SecurityError'); },
+                setItem() { throw new Error('QuotaExceededError'); },
+                removeItem() { throw new Error('QuotaExceededError'); },
+            };
+            const day = new Date();
+            day.setDate(day.getDate() + 2);
+            while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+            const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+            const date = document.getElementById('date');
+            date.value = iso;
+            date.dispatchEvent(new Event('change', { bubbles: true }));
+            document.querySelector('input[name="partyType"][value="casual"]').checked = true;
+            document.getElementById('adults').value = '2';
+            document.getElementById('name').value = '測試同學';
+            document.getElementById('phone').value = '0900000000';
+            document.getElementById('note').value = '靠窗';
+            document.getElementById('privacyConsent').checked = true;
+            document.getElementById('time').value = '12:00';
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').innerText = '送出預約申請';
+            let post = null;
+            let fetches = 0;
+            window.fetch = async (resource, opts) => {
+                fetches += 1;
+                post = JSON.parse(opts.body);
+                return { json: async () => ({ status: 'success', orderId: 'SMC900091', message: '已保留座位' }) };
+            };
+            let submitThrew = false;
+            try {
+                document.getElementById('bookingForm').requestSubmit();
+                await new Promise((resolve) => setTimeout(resolve, 40));
+            } catch (err) {
+                submitThrew = true;
+            }
+            return {
+                captureThrew,
+                submitThrew,
+                fetches,
+                keys: post ? Object.keys(post) : [],
+                note: post && post.note,
+                hasSource: !!(post && Object.prototype.hasOwnProperty.call(post, 'source')),
+                receipt: document.getElementById('receiptContent').textContent,
+                receiptHidden: document.getElementById('bookingReceipt').classList.contains('hidden'),
+                disabled: document.getElementById('submitBtn').disabled,
+                button: document.getElementById('submitBtn').innerText,
+            };
+        })()`);
+        assert(storageBoom.captureThrew === false && storageBoom.submitThrew === false, '儲存丟錯不可讓進站或送出拋錯');
+        assert(storageBoom.fetches === 1, `儲存丟錯時仍要送出一次，實際 ${storageBoom.fetches}`);
+        assert(JSON.stringify(storageBoom.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '儲存丟錯時正式請求仍是原 11 欄');
+        assert(storageBoom.hasSource === false && String(storageBoom.note).includes('靠窗'), '儲存丟錯不可把來源寫進正式請求或備註');
+        assert(storageBoom.receiptHidden === false && storageBoom.receipt.includes('SMC900091'), '儲存丟錯時收件畫面仍要出現');
+        assert(storageBoom.disabled === false && storageBoom.button === '送出預約申請', '儲存丟錯後按鈕仍要恢復');
 
         async function submitDining(orderId) {
             return evalExpr(wsUrl, `(async () => {

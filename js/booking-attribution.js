@@ -10,8 +10,10 @@
  * 儲存讀寫失敗時改用同一個記憶體備援，且不可拋出。追蹤失敗不能擋住送單。
  * 探測成功之後若寫入失敗，改把最新來源固定寫進共用記憶體，不再讀舊的原生紀錄。
  * 帶標記的新進站整組替換（缺的 utm 或 gclid 清空）。完全無標記的站內導覽才保留前一組。
- * 同一條帶標記網址（重新整理或 bfcache 返回）不重建已過期來源，也不把閒置計時重新起算。
- * 閒置超過 30 分鐘，讀取時清除。
+ * 30 分鐘內同一條帶標記網址（重新整理）不是新造訪，不更新 seenAt。
+ * bfcache 返回只檢查期限，不用網址重建；過期就清成 direct/unknown。
+ * 過期後再從帶 utm/gclid 的網址進來（含同一組參數）記成新進站，seenAt 用這次時間。
+ * 過期後沒有參數則記 direct/unknown。閒置超過 30 分鐘，讀取時清除。
  *
  * 九個來源欄位一律是字串。群組分類只允許「品牌」「非品牌」或空白。
  * 送出的來源字串會做試算表公式防護（= + - @ 開頭加單引號）。cleanToken 只去掉控制字元。
@@ -312,13 +314,11 @@
             var peekedSig = peeked && typeof peeked.sig === 'string' && peeked.sig
                 ? peeked.sig
                 : (peeked ? signatureOf(peekedUtm, peekedGclid) : '');
-            // TODO: 同一條廣告網址過期後再進來，目前會記成 direct/unknown，不會當成新的進站。
-            // 打開 SEND_ATTRIBUTION_TO_BACKEND 之前必須先修：重新點同一條廣告連結要記新來源。
-            if (peeked && peekedSig === sig && (peeked.expired || isExpired(peekedSeen, clock))) {
-                rememberExpired(storage, sig);
-                return emptyVisit();
+            // 期限內同一條廣告網址（重新整理）沿用原造訪，不更新 seenAt。
+            // 已過期後再看到同一組 utm/gclid：記成新進站。bfcache 返回不走這裡。
+            if (peeked && peekedSig === sig && !peeked.expired && !isExpired(peekedSeen, clock)) {
+                return readVisit(storage, clock);
             }
-            if (peeked && peekedSig === sig) return readVisit(storage, clock);
             var next = {
                 utm: incoming.utm,
                 gclid: incoming.gclid || '',
