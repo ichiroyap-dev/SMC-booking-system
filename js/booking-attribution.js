@@ -10,7 +10,12 @@
  * 儲存讀寫失敗時改用同一個記憶體備援，且不可拋出。追蹤失敗不能擋住送單。
  * 探測成功之後若寫入失敗，改把最新來源固定寫進共用記憶體，不再讀舊的原生紀錄。
  * 帶標記的新進站整組替換（缺的 utm 或 gclid 清空）。完全無標記的站內導覽才保留前一組。
- * 同一條帶標記網址（重新整理或 bfcache 返回）不重建已過期來源，也不把閒置計時重新起算。
+ * pageshow 且 persisted 為 true：只讀既有紀錄並檢查期限，不解析網址。bfcache 還原時 type 可能仍是 navigate。
+ * persisted 不是 true 時才看 Navigation Timing（navigate／reload／back_forward）。
+ * 30 分鐘內同一條帶標記網址不是新造訪，不更新 seenAt。
+ * 過期後的 reload、back_forward 不用舊網址參數恢復來源，記 direct/unknown。
+ * 只有明確的 navigate 才寫帶標記進站。這不是已證實的新廣告點擊；同一 gclid 不是新點擊。
+ * 省略、空白、讀不到或不明的導覽類型都不從網址建立來源。過期後沒有參數則記 direct/unknown。
  * 閒置超過 30 分鐘，讀取時清除。
  *
  * 九個來源欄位一律是字串。群組分類只允許「品牌」「非品牌」或空白。
@@ -291,9 +296,38 @@
         return writeItem(memory, STORAGE_KEY, body);
     }
 
-    function capture(search, storage, now) {
+    function canonicalNavType(type) {
+        return type === 'navigate' || type === 'reload' || type === 'back_forward' ? type : '';
+    }
+
+    function navigationType(win) {
+        try {
+            var performance = win && win.performance;
+            if (!performance || typeof performance.getEntriesByType !== 'function') return '';
+            var entries = performance.getEntriesByType('navigation');
+            var entry = entries && entries.length ? entries[0] : null;
+            return canonicalNavType(entry && entry.type);
+        } catch (err) {
+            return '';
+        }
+    }
+
+    // 帶標記進站：寫入這次網址上的 utm／gclid。同一 gclid 不是新廣告點擊的證據。
+    function writeTaggedVisit(storage, incoming, clock, sig) {
+        var next = {
+            utm: incoming.utm,
+            gclid: incoming.gclid || '',
+            seenAt: clock,
+            sig: sig
+        };
+        persistVisit(storage, next);
+        return next;
+    }
+
+    function capture(search, storage, now, navType) {
         try {
             var clock = clockOf(now);
+            var type = canonicalNavType(navType);
             var incoming = parseLanding(search);
             var tagged = hasUtm(incoming.utm) || !!incoming.gclid;
             if (!tagged) {
@@ -312,21 +346,17 @@
             var peekedSig = peeked && typeof peeked.sig === 'string' && peeked.sig
                 ? peeked.sig
                 : (peeked ? signatureOf(peekedUtm, peekedGclid) : '');
-            // TODO: 同一條廣告網址過期後再進來，目前會記成 direct/unknown，不會當成新的進站。
-            // 打開 SEND_ATTRIBUTION_TO_BACKEND 之前必須先修：重新點同一條廣告連結要記新來源。
-            if (peeked && peekedSig === sig && (peeked.expired || isExpired(peekedSeen, clock))) {
-                rememberExpired(storage, sig);
+            var priorLive = peeked && !peeked.expired && !isExpired(peekedSeen, clock);
+            // 期限內同一條帶標記網址：沿用原造訪，不更新 seenAt。
+            if (priorLive && peekedSig === sig) return readVisit(storage, clock);
+            // 只有明確的 navigate 才從網址寫入帶標記進站。省略、空白、reload、back_forward、不明類型都不建立來源。
+            if (type !== 'navigate') {
+                if (priorLive) return readVisit(storage, clock);
+                if (peeked) rememberExpired(storage, peekedSig || sig);
                 return emptyVisit();
             }
-            if (peeked && peekedSig === sig) return readVisit(storage, clock);
-            var next = {
-                utm: incoming.utm,
-                gclid: incoming.gclid || '',
-                seenAt: clock,
-                sig: sig
-            };
-            persistVisit(storage, next);
-            return next;
+            // 帶標記進站。同一 gclid 不是已證實的新廣告點擊。
+            return writeTaggedVisit(storage, incoming, clock, sig);
         } catch (err) {
             return emptyVisit();
         }
@@ -335,8 +365,9 @@
     function handlePageShow(win, event, now) {
         try {
             var storage = resolveStorage(win);
-            if (event && event.persisted) return readVisit(storage, now);
-            return capture(win && win.location && win.location.search, storage, now);
+            // bfcache 還原時 Navigation Timing 可能仍是 navigate，所以 persisted 優先，且不解析網址。
+            if (event && event.persisted === true) return readVisit(storage, now);
+            return capture(win && win.location && win.location.search, storage, now, navigationType(win));
         } catch (err) {
             return emptyVisit();
         }
@@ -496,7 +527,7 @@
             if (!win || !win.document || win.__smcAttributionInstalled) return;
             win.__smcAttributionInstalled = true;
             var storage = resolveStorage(win);
-            capture(win.location && win.location.search, storage);
+            capture(win.location && win.location.search, storage, undefined, navigationType(win));
             win.addEventListener('pageshow', function (event) {
                 try { handlePageShow(win, event); } catch (err) {}
             });
@@ -523,6 +554,7 @@
         GCLID_ONLY_SOURCE: GCLID_ONLY_SOURCE,
         MANUAL_STATUS_FIELDS: MANUAL_STATUS_FIELDS,
         capture: capture,
+        navigationType: navigationType,
         parseLanding: parseLanding,
         handlePageShow: handlePageShow,
         attributionSendingEnabled: attributionSendingEnabled,
