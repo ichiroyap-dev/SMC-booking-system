@@ -34,7 +34,7 @@ function extractFn(src, name) {
 const t0 = 1700000000000;
 const landing = '?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=rsa_family&utm_adgroup=brand&gclid=TESTGCLID9000';
 const store = attr.memoryStorage();
-attr.capture(landing, store, t0);
+attr.capture(landing, store, t0, 'navigate');
 const branded = attr.bookingFields(store, t0);
 assert(branded.source === 'google', `品牌進站 source：${branded.source}`);
 assert(branded.utmCampaign === 'launch_202610', '活動代碼要原樣保留');
@@ -44,18 +44,18 @@ assert(branded.gclid === 'TESTGCLID9000', '有 utm 時 gclid 一併保留');
 attr.capture('', store, t0 + 60 * 1000);
 assert(attr.bookingFields(store, t0 + 60 * 1000).utmAdgroup === 'brand', '沒參數的站內導覽不可清掉這次造訪的來源');
 assert(attr.bookingFields(store, t0 + 20 * 60 * 1000).source === 'google', '30 分鐘內返回仍要保留來源');
-attr.capture('?utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_adgroup=non-brand', store, t0 + 2 * 60 * 1000);
+attr.capture('?utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_adgroup=non-brand', store, t0 + 2 * 60 * 1000, 'navigate');
 const nonbrand = attr.bookingFields(store, t0 + 2 * 60 * 1000);
 assert(nonbrand.utmAdgroup === 'non-brand' && nonbrand.adgroupBucket === '非品牌', `非品牌原值與分類：${nonbrand.utmAdgroup}/${nonbrand.adgroupBucket}`);
 assert(nonbrand.adgroupBucket !== branded.adgroupBucket, '品牌與非品牌必須分得開');
 assert(nonbrand.gclid === '' && nonbrand.utmContent === '', '新的帶標記進站要整組替換，缺的 gclid 與 utm 要清空');
-attr.capture('?gclid=TESTGCLID9001', store, t0 + 3 * 60 * 1000);
+attr.capture('?gclid=TESTGCLID9001', store, t0 + 3 * 60 * 1000, 'navigate');
 const replacedClick = attr.bookingFields(store, t0 + 3 * 60 * 1000);
 assert(replacedClick.source === attr.GCLID_ONLY_SOURCE, '只有新 gclid 時不可沿用舊 utm');
 assert(replacedClick.utmSource === '' && replacedClick.utmAdgroup === '' && replacedClick.gclid === 'TESTGCLID9001', '新 gclid 進站要清掉舊 utm');
 
 const fresh = attr.memoryStorage();
-attr.capture('?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000', fresh, t0);
+attr.capture('?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000', fresh, t0, 'navigate');
 assert(attr.bookingFields(fresh, t0 + attr.VISIT_TTL_MS - 1000).source === 'google', '未滿 30 分鐘的返回仍要保留來源');
 assert(attr.bookingFields(fresh, t0 + attr.VISIT_TTL_MS).source === 'direct/unknown', '閒置滿 30 分鐘要改記 direct/unknown');
 assert(attr.bookingFields(fresh, t0 + attr.VISIT_TTL_MS).gclid === '', '過期後不可留下 gclid');
@@ -66,25 +66,25 @@ const bare = attr.memoryStorage();
 assert(attr.bookingFields(bare).source === 'direct/unknown', '沒進站紀錄不可當成廣告');
 assert(attr.bookingFields(bare).gclid === '' && attr.bookingFields(bare).adgroupBucket === '', '空造訪不可帶群組或 gclid');
 const gclidOnly = attr.memoryStorage();
-attr.capture('?gclid=TESTGCLID9000', gclidOnly, t0);
+attr.capture('?gclid=TESTGCLID9000', gclidOnly, t0, 'navigate');
 const onlyClick = attr.bookingFields(gclidOnly, t0);
 assert(onlyClick.source === '有點擊識別碼、來源待核對', '只有 gclid 要另列待核對');
 assert(onlyClick.source !== 'direct/unknown' && onlyClick.source !== 'google', '只有 gclid 不可混進 direct/unknown 或廣告');
 assert(onlyClick.gclid === 'TESTGCLID9000' && onlyClick.utmSource === '', 'gclid 原值保留、utm 維持空白');
 
 const partial = attr.memoryStorage();
-attr.capture('?utm_campaign=launch_202610&utm_adgroup=brand', partial, t0);
+attr.capture('?utm_campaign=launch_202610&utm_adgroup=brand', partial, t0, 'navigate');
 assert(attr.bookingFields(partial, t0).source === 'utm_missing_source', '有 utm 但沒有 utm_source 時不可填 google');
 assert(attr.normalizeAdgroup('品牌') === 'brand', '中文群組代碼可對回 brand');
 assert(attr.normalizeAdgroup('br!and') === '', 'br!and 不可洗成 brand');
 assert(attr.adgroupBucket('br!and') === '' && attr.classifyAdgroup('br!and').raw === 'br!and', '錯誤代碼原值保留、分類留白');
 assert(attr.adgroupBucket('other_group') === '', '不認得的群組代碼不要猜成品牌或非品牌');
 const other = attr.memoryStorage();
-attr.capture('?utm_source=google&utm_adgroup=br!and', other, t0);
+attr.capture('?utm_source=google&utm_adgroup=br!and', other, t0, 'navigate');
 const badGroup = attr.bookingFields(other, t0);
 assert(badGroup.utmAdgroup === 'br!and' && badGroup.adgroupBucket === '', `錯誤群組：${badGroup.utmAdgroup}/${badGroup.adgroupBucket}`);
 const formula = attr.memoryStorage();
-attr.capture('?utm_source=' + encodeURIComponent('=IMPORTDATA("http://example.test")') + '&utm_campaign=' + encodeURIComponent('+cmd') + '&utm_adgroup=' + encodeURIComponent('@brand'), formula, t0);
+attr.capture('?utm_source=' + encodeURIComponent('=IMPORTDATA("http://example.test")') + '&utm_campaign=' + encodeURIComponent('+cmd') + '&utm_adgroup=' + encodeURIComponent('@brand'), formula, t0, 'navigate');
 const safe = attr.bookingFields(formula, t0);
 assert(safe.source.startsWith("'") && safe.utmSource.startsWith("'") && !safe.utmSource.startsWith('='), '公式開頭要加單引號');
 assert(safe.utmCampaign.startsWith("'") && safe.utmAdgroup.startsWith("'") && safe.adgroupBucket === '', '@brand 不是白名單，分類留白');
@@ -100,7 +100,7 @@ function assertStringFields(fields, label) {
 assertStringFields(branded, '一般進站');
 for (const raw of ['__proto__', 'constructor', 'toString']) {
     const protoStore = attr.memoryStorage();
-    attr.capture('?utm_source=google&utm_adgroup=' + encodeURIComponent(raw), protoStore, t0);
+    attr.capture('?utm_source=google&utm_adgroup=' + encodeURIComponent(raw), protoStore, t0, 'navigate');
     const protoFields = attr.bookingFields(protoStore, t0);
     assert(protoFields.utmAdgroup === raw, `${raw} 原值要保留，實際 ${protoFields.utmAdgroup}`);
     assert(protoFields.adgroupBucket === '', `${raw} 不可分成品牌或非品牌，實際 ${protoFields.adgroupBucket}`);
@@ -126,8 +126,8 @@ const flakyWin = {
     sessionStorage: flakyNative,
 };
 const flakyStore = attr.resolveStorage(flakyWin);
-attr.capture('?utm_source=google&utm_medium=cpc&utm_adgroup=brand&gclid=TESTGCLID9000', flakyStore, t0);
-attr.capture('?utm_source=facebook&utm_medium=cpc&utm_adgroup=nonbrand', attr.resolveStorage(flakyWin), t0 + 1000);
+attr.capture('?utm_source=google&utm_medium=cpc&utm_adgroup=brand&gclid=TESTGCLID9000', flakyStore, t0, 'navigate');
+attr.capture('?utm_source=facebook&utm_medium=cpc&utm_adgroup=nonbrand', attr.resolveStorage(flakyWin), t0 + 1000, 'navigate');
 const latestStore = attr.resolveStorage(flakyWin);
 const afterWriteFail = attr.bookingFields(latestStore, t0 + 1000);
 assert(latestStore !== flakyNative, '寫入失敗後不可再讀原生儲存');
@@ -158,13 +158,13 @@ function navWin(search, storage, type) {
 const lifeUrl = '?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000';
 const life = attr.memoryStorage();
 const lifeWin = navWin(lifeUrl, life, 'back_forward');
-attr.capture(lifeUrl, attr.resolveStorage(lifeWin), t0);
+attr.capture(lifeUrl, attr.resolveStorage(lifeWin), t0, 'navigate');
 const keptOnReturn = attr.handlePageShow(lifeWin, { persisted: true }, t0 + 5 * 60 * 1000);
 assert(keptOnReturn.gclid === 'TESTGCLID9000', '未過期的快取返回要保留來源');
 assert(attr.bookingFields(attr.resolveStorage(lifeWin), t0 + 5 * 60 * 1000).source === 'google', '未過期返回不可清成 direct/unknown');
 const seenBeforeRefresh = JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt;
 assert(seenBeforeRefresh === t0, '30 分鐘內從上一頁回來不可把這次造訪重算成新時間');
-attr.capture(lifeUrl, life, t0 + 10 * 60 * 1000);
+attr.capture(lifeUrl, life, t0 + 10 * 60 * 1000, 'reload');
 assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === seenBeforeRefresh, '30 分鐘內重新整理同一條帶標記網址不可把閒置計時重新起算');
 lifeWin.performance = navPerformance('reload');
 const reloadedInWindow = attr.handlePageShow(lifeWin, { persisted: false }, t0 + 12 * 60 * 1000);
@@ -179,7 +179,7 @@ assert(attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 500).source === 'direct
 
 function seededVisit() {
     const storage = attr.memoryStorage();
-    attr.capture(lifeUrl, storage, t0);
+    attr.capture(lifeUrl, storage, t0, 'navigate');
     return storage;
 }
 function showAfter(type, persisted) {
@@ -213,6 +213,48 @@ assert(prerender.fields.source === 'direct/unknown' && prerender.fields.gclid ==
 const untyped = seededVisit();
 attr.capture(lifeUrl, untyped, t0 + attr.VISIT_TTL_MS + 1500);
 assert(attr.bookingFields(untyped, t0 + attr.VISIT_TTL_MS + 1500).source === 'direct/unknown', '未提供導覽類型時不可用過期網址救回來源');
+const omittedFirst = attr.memoryStorage();
+attr.capture(lifeUrl, omittedFirst, t0);
+attr.capture(lifeUrl, omittedFirst, t0, '');
+attr.capture(lifeUrl, omittedFirst, t0, 'prerender');
+assert(attr.bookingFields(omittedFirst, t0).source === 'direct/unknown' && attr.bookingFields(omittedFirst, t0).gclid === '', '省略、空白或不明類型不可從網址建立來源');
+const bfcacheNavigate = showAfter('navigate', true);
+assert(bfcacheNavigate.fields.source === 'direct/unknown' && bfcacheNavigate.fields.gclid === '' && bfcacheNavigate.fields.utmAdgroup === '', 'persisted 為 true 且 Navigation Timing 仍是 navigate 時，過期後不可恢復 google/gclid');
+assert(bfcacheNavigate.visit.gclid === '' && bfcacheNavigate.raw && bfcacheNavigate.raw.gclid === '' && bfcacheNavigate.raw.expired === true, '快取返回只可留下過期標記，不可把舊 gclid 寫回');
+
+function entrySequence(performance) {
+    const listeners = [];
+    const win = {
+        document: {
+            addEventListener(type, fn) { listeners.push([type, fn]); },
+            dispatchEvent() {},
+        },
+        location: { search: lifeUrl },
+        addEventListener(type, fn) { listeners.push([type, fn]); },
+        sessionStorage: attr.memoryStorage(),
+    };
+    if (performance) win.performance = performance;
+    attr.install(win);
+    const afterInstall = attr.bookingFields(attr.resolveStorage(win), t0);
+    attr.capture(win.location.search, attr.resolveStorage(win), t0, attr.navigationType(win));
+    const afterOnload = attr.bookingFields(attr.resolveStorage(win), t0);
+    attr.handlePageShow(win, { persisted: false }, t0);
+    const afterShow = attr.bookingFields(attr.resolveStorage(win), t0);
+    const raw = attr.resolveStorage(win).getItem(attr.STORAGE_KEY);
+    return { afterInstall, afterOnload, afterShow, raw };
+}
+function assertNoUrlSource(fields, raw, label) {
+    assert(fields.source === 'direct/unknown' && fields.gclid === '' && fields.utmSource === '' && fields.utmAdgroup === '', `${label}不可建立網址來源，實際 ${fields.source}/${fields.gclid}`);
+    assert(!raw || !String(raw).includes('utm_source'), `${label}不可把 utm 寫進儲存`);
+}
+const missingEntry = entrySequence(null);
+assertNoUrlSource(missingEntry.afterInstall, missingEntry.raw, '沒有 Navigation Timing 的 install');
+assertNoUrlSource(missingEntry.afterOnload, missingEntry.raw, '沒有 Navigation Timing 的首頁 onload');
+assertNoUrlSource(missingEntry.afterShow, missingEntry.raw, '沒有 Navigation Timing 的 pageshow');
+const throwingEntry = entrySequence({ getEntriesByType() { throw new Error('blocked'); } });
+assertNoUrlSource(throwingEntry.afterInstall, throwingEntry.raw, 'Navigation Timing 丟錯的 install');
+assertNoUrlSource(throwingEntry.afterOnload, throwingEntry.raw, 'Navigation Timing 丟錯的首頁 onload');
+assertNoUrlSource(throwingEntry.afterShow, throwingEntry.raw, 'Navigation Timing 丟錯的 pageshow');
 const otherTagged = seededVisit();
 const otherWin = navWin('?utm_source=facebook&utm_adgroup=nonbrand', otherTagged, 'navigate');
 attr.handlePageShow(otherWin, { persisted: false }, t0 + attr.VISIT_TTL_MS + 2000);
@@ -254,7 +296,7 @@ const broken = {
 };
 try {
     const boomUrl = '?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000';
-    attr.capture(boomUrl, broken, t0);
+    attr.capture(boomUrl, broken, t0, 'navigate');
     const unread = attr.bookingFields(broken, t0);
     const unstored = attr.recordSubmission(broken, 'SMC900051');
     assert(unread.source === 'google' && unread.utmAdgroup === 'brand', '讀寫都丟錯時要改記在記憶體備援');
@@ -715,7 +757,7 @@ try {
             async function send(mode, withTags) {
                 sessionStorage.removeItem(SmcAttribution.STORAGE_KEY);
                 if (store !== sessionStorage) store.removeItem(SmcAttribution.STORAGE_KEY);
-                SmcAttribution.capture(withTags ? tagged : '', store);
+                SmcAttribution.capture(withTags ? tagged : '', store, undefined, 'navigate');
                 switchMode(mode);
                 const date = document.getElementById('date');
                 date.value = iso;

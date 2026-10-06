@@ -10,11 +10,12 @@
  * 儲存讀寫失敗時改用同一個記憶體備援，且不可拋出。追蹤失敗不能擋住送單。
  * 探測成功之後若寫入失敗，改把最新來源固定寫進共用記憶體，不再讀舊的原生紀錄。
  * 帶標記的新進站整組替換（缺的 utm 或 gclid 清空）。完全無標記的站內導覽才保留前一組。
- * 重整與返回看 Navigation Timing 的 type（reload／back_forward），不靠 pageshow.persisted。
+ * pageshow 且 persisted 為 true：只讀既有紀錄並檢查期限，不解析網址。bfcache 還原時 type 可能仍是 navigate。
+ * persisted 不是 true 時才看 Navigation Timing（navigate／reload／back_forward）。
  * 30 分鐘內同一條帶標記網址不是新造訪，不更新 seenAt。
- * 過期後的 reload、back_forward（不論有沒有用快取）不用舊網址參數恢復來源，記 direct/unknown。
- * 過期後只有 type 為 navigate 才寫新的帶標記進站。這不是已證實的新廣告點擊；同一 gclid 不是新點擊。
- * 讀不到導覽類型或類型不明時，不用網址重建。過期後沒有參數則記 direct/unknown。
+ * 過期後的 reload、back_forward 不用舊網址參數恢復來源，記 direct/unknown。
+ * 只有明確的 navigate 才寫帶標記進站。這不是已證實的新廣告點擊；同一 gclid 不是新點擊。
+ * 省略、空白、讀不到或不明的導覽類型都不從網址建立來源。過期後沒有參數則記 direct/unknown。
  * 閒置超過 30 分鐘，讀取時清除。
  *
  * 九個來源欄位一律是字串。群組分類只允許「品牌」「非品牌」或空白。
@@ -326,10 +327,9 @@
     function capture(search, storage, now, navType) {
         try {
             var clock = clockOf(now);
+            var type = canonicalNavType(navType);
             var incoming = parseLanding(search);
             var tagged = hasUtm(incoming.utm) || !!incoming.gclid;
-            var type = navType === undefined ? undefined : canonicalNavType(navType);
-            var typeChecked = navType !== undefined;
             if (!tagged) {
                 var prev = readVisit(storage, clock);
                 if (hasUtm(prev.utm) || prev.gclid) {
@@ -349,23 +349,13 @@
             var priorLive = peeked && !peeked.expired && !isExpired(peekedSeen, clock);
             // 期限內同一條帶標記網址：沿用原造訪，不更新 seenAt。
             if (priorLive && peekedSig === sig) return readVisit(storage, clock);
-            if (type === 'reload' || type === 'back_forward') {
-                if (priorLive) return readVisit(storage, clock);
-                rememberExpired(storage, (peeked && peekedSig) || sig);
-                return emptyVisit();
-            }
-            // 類型讀不到、或不是 navigate／reload／back_forward：不用網址重建。
-            if (typeChecked && type !== 'navigate') {
+            // 只有明確的 navigate 才從網址寫入帶標記進站。省略、空白、reload、back_forward、不明類型都不建立來源。
+            if (type !== 'navigate') {
                 if (priorLive) return readVisit(storage, clock);
                 if (peeked) rememberExpired(storage, peekedSig || sig);
                 return emptyVisit();
             }
-            // 沒有帶入類型的呼叫（例如既有測試）也不得把過期紀錄用舊網址救回。
-            if (type !== 'navigate' && peeked && (peeked.expired || isExpired(peekedSeen, clock))) {
-                rememberExpired(storage, peekedSig || sig);
-                return emptyVisit();
-            }
-            // 期限內另一條帶標記網址，或 navigate 的帶標記進站。不是已證實的新點擊。
+            // 帶標記進站。同一 gclid 不是已證實的新廣告點擊。
             return writeTaggedVisit(storage, incoming, clock, sig);
         } catch (err) {
             return emptyVisit();
@@ -374,9 +364,9 @@
 
     function handlePageShow(win, event, now) {
         try {
-            // 不使用 event.persisted 分類。快取返回與非快取返回都看 Navigation Timing。
-            void event;
             var storage = resolveStorage(win);
+            // bfcache 還原時 Navigation Timing 可能仍是 navigate，所以 persisted 優先，且不解析網址。
+            if (event && event.persisted === true) return readVisit(storage, now);
             return capture(win && win.location && win.location.search, storage, now, navigationType(win));
         } catch (err) {
             return emptyVisit();
@@ -564,6 +554,7 @@
         GCLID_ONLY_SOURCE: GCLID_ONLY_SOURCE,
         MANUAL_STATUS_FIELDS: MANUAL_STATUS_FIELDS,
         capture: capture,
+        navigationType: navigationType,
         parseLanding: parseLanding,
         handlePageShow: handlePageShow,
         attributionSendingEnabled: attributionSendingEnabled,

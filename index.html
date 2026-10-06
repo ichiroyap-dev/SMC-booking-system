@@ -2246,7 +2246,7 @@
         window.addEventListener('popstate', () => applyBookingHash());
         window.onload = function() {
             try {
-                if (window.SmcAttribution) window.SmcAttribution.capture(window.location.search, attributionStore());
+                if (window.SmcAttribution) window.SmcAttribution.capture(window.location.search, attributionStore(), undefined, window.SmcAttribution.navigationType(window));
             } catch (err) {}
             updateTimeConstraint();
             applyBookingHash({ scroll: Boolean(window.location.hash) });

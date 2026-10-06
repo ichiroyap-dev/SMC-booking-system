@@ -20,13 +20,13 @@
 
 `sessionStorage` 讀取或寫入失敗（包含讀取本身丟出 SecurityError）時，改用這次頁面共用的同一個記憶體備援。探測成功之後若寫入失敗，會清掉舊紀錄、把**最新**來源固定寫進這個備援，之後不再讀原生儲存裡的舊來源。追蹤失敗不可擋住預約送出、收件畫面或按鈕復原。收件畫面若畫不出來，畫面上仍要留下含訂單編號的成功提示，表單維持已填內容但先鎖住，送出按鈕保持停用，避免客人再按一次。要再填下一筆，須按「再預約一筆」且表單確實清空後才重開。清空若失敗（收件後自動清空，或按了再預約一筆），表單維持鎖定、送出維持停用，原訂單編號留在畫面上，並請客人重新整理頁面後再預約下一筆。
 
-重整與返回用 Navigation Timing，不靠 `pageshow.persisted` 單獨決定。`performance.getEntriesByType('navigation')[0].type` 為 `reload` 是重新整理，`back_forward` 是歷史返回。快取返回（`persisted` 為 true）與沒用快取的返回（`persisted` 為 false）都屬於 `back_forward`。
+`pageshow` 且 `persisted === true`（從上一頁快取還原）優先只讀既有紀錄並檢查 30 分鐘期限，**不解析網址**重建來源。快取還原時 Navigation Timing 的 type 可能仍是 `navigate`，也不能拿來重建。
 
-30 分鐘內，同一條帶 `utm_*`／`gclid` 的網址再被讀到（含重新整理與返回），不算新造訪，也不把閒置計時重新起算（`seenAt` 維持上次寫入）。
+只有 `persisted` 不是 true 時，才看 `performance.getEntriesByType('navigation')[0].type`：`reload` 是重新整理，`back_forward` 是沒用快取的歷史返回。30 分鐘內同一條帶標記網址再被讀到，不算新造訪，也不把閒置計時重新起算（`seenAt` 維持上次寫入）。
 
-已過期之後，`reload` 與 `back_forward` 都**不用**網址上的舊參數恢復廣告來源，記 `direct/unknown`。只有 `navigate` 且網址帶 `utm_*` 或 `gclid` 時，才寫成一筆新的**帶標記進站**並更新 `seenAt`。這只表示這次導覽網址帶著那些參數，**不是**已證實的新廣告點擊；網址上的同一個 `gclid` 不能當成新點擊。另一條帶標記網址若是 `navigate`，整組換成新來源。
+已過期之後，`reload` 與 `back_forward` 都**不用**網址上的舊參數恢復廣告來源，記 `direct/unknown`。只有明確的 `navigate` 且網址帶 `utm_*` 或 `gclid` 時，才寫成一筆新的**帶標記進站**並更新 `seenAt`。這只表示這次導覽網址帶著那些參數，**不是**已證實的新廣告點擊；網址上的同一個 `gclid` 不能當成新點擊。另一條帶標記網址若是 `navigate`，整組換成新來源。
 
-Navigation Timing 讀不到、丟出例外，或類型不是 `navigate`／`reload`／`back_forward` 時，不用網址參數重建。未過期的既有紀錄仍可讀；已過期則記 `direct/unknown`。過期後網址完全沒有這些參數，也記 `direct/unknown`，不恢復舊來源。
+沒有傳入導覽類型、傳入空白、Navigation Timing 讀不到、丟出例外，或類型不是 `navigate`／`reload`／`back_forward` 時，都不從網址參數建立來源。未過期的既有紀錄仍可讀；已過期或本來就沒有紀錄，則記 `direct/unknown`。過期後網址完全沒有這些參數，也記 `direct/unknown`，不恢復舊來源。
 
 下面 9 個欄位目前只在瀏覽器裡計算。旗標維持關閉時**不會**跟訂單一起 POST。`utm_id` 只留在造訪紀錄，**不在這 9 欄裡**；要不要送出留待後續。九個欄位的值一律是字串。群組分類只會是 `品牌`、`非品牌` 或空白，`__proto__`、`constructor`、`toString` 這類名字不會變成物件或函式。
 

@@ -34,7 +34,7 @@ function baseOrder(type) {
 }
 
 const store = attr.memoryStorage();
-attr.capture('?utm_source==HYPERLINK("http://example.test")&utm_medium=cpc&utm_campaign=launch_202610&utm_adgroup=brand&gclid=TESTGCLID9000', store, t0);
+attr.capture('?utm_source==HYPERLINK("http://example.test")&utm_medium=cpc&utm_campaign=launch_202610&utm_adgroup=brand&gclid=TESTGCLID9000', store, t0, 'navigate');
 const fields = attr.bookingFields(store, t0);
 
 assert(attr.attributionSendingEnabled() === false, '來源欄位預設不送後端');
