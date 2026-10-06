@@ -1109,21 +1109,98 @@ try {
                 receipt: document.getElementById('receiptContent').textContent,
             };
             fill('靠窗再一筆');
+            let secondCount = 0;
+            let secondBody = null;
+            let releaseSecond = () => {};
+            window.fetch = (resource, opts) => {
+                secondCount += 1;
+                if (!secondBody) secondBody = JSON.parse(opts.body);
+                return new Promise((resolve) => {
+                    releaseSecond = () => resolve({
+                        json: async () => ({ status: 'success', orderId: 'SMC900082', message: '已保留座位' }),
+                    });
+                });
+            };
             document.getElementById('bookingForm').requestSubmit();
+            document.getElementById('bookingForm').requestSubmit();
+            const rapid = {
+                fetches: secondCount,
+                disabled: document.getElementById('submitBtn').disabled,
+                text: document.getElementById('submitBtn').innerText,
+            };
+            releaseSecond();
             await new Promise((resolve) => setTimeout(resolve, 40));
             return {
                 unlocked,
-                count: posts.length,
-                secondNote: posts[1] ? posts[1].note : '',
-                keys: posts[1] ? Object.keys(posts[1]) : [],
+                rapid,
+                secondNote: secondBody ? secondBody.note : '',
+                keys: secondBody ? Object.keys(secondBody) : [],
                 receipt: document.getElementById('receiptContent').textContent,
             };
         })()`);
         assert(resetOk.unlocked.name === '' && resetOk.unlocked.disabled === false && resetOk.unlocked.button === '送出預約申請' && resetOk.unlocked.locked === false, '成功清空後要解開內用表單');
         assert(resetOk.unlocked.receipt.includes('SMC900081'), '第一筆成功後收件畫面要有編號');
-        assert(resetOk.count === 2, `成功清空後只能再送出一筆，實際共 ${resetOk.count} 次`);
+        assert(resetOk.rapid.fetches === 1, `第二筆請求尚未回來時連按兩次只能多一筆 POST，實際 ${resetOk.rapid.fetches}`);
+        assert(resetOk.rapid.disabled === true && resetOk.rapid.text.includes('正在傳送'), '第二筆傳送中按鈕要停用');
         assert(resetOk.secondNote.includes('靠窗再一筆') && resetOk.receipt.includes('SMC900082'), '第二筆要送出新備註並顯示新編號');
         assert(JSON.stringify(resetOk.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '成功後再送出的正式請求仍是原欄位');
+
+        await navigateAndWait(wsUrl, `${url}?mode=takeout&probe=reset-ok#takeout`);
+        const takeoutResetOk = await evalExpr(wsUrl, `(async () => {
+            window.alert = () => {};
+            switchMode('takeout');
+            const day = new Date();
+            day.setDate(day.getDate() + 2);
+            while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+            const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+            function fill(chicken, note) {
+                const date = document.getElementById('date');
+                date.value = iso;
+                date.dispatchEvent(new Event('change', { bubbles: true }));
+                document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = String(chicken);
+                document.getElementById('name').value = '測試同學';
+                document.getElementById('phone').value = '0900000000';
+                document.getElementById('note').value = note;
+                document.getElementById('privacyConsent').checked = true;
+                document.getElementById('time').value = '12:00';
+            }
+            const posts = [];
+            window.fetch = async (resource, opts) => {
+                posts.push(JSON.parse(opts.body));
+                const orderId = posts.length === 1 ? 'SMC900083' : 'SMC900084';
+                return { json: async () => ({ status: 'success', orderId, message: '已保留座位' }) };
+            };
+            fill(1, '客製包裝');
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            const unlocked = {
+                name: document.getElementById('name').value,
+                chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
+                disabled: document.getElementById('submitBtn').disabled,
+                button: document.getElementById('submitBtn').innerText,
+                locked: document.getElementById('bookingForm').getAttribute('data-booking-locked') === '1',
+                receipt: document.getElementById('receiptContent').textContent,
+            };
+            fill(2, '客製包裝再一筆');
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            const second = posts[1] || null;
+            return {
+                unlocked,
+                count: posts.length,
+                type: second && second.type,
+                orderItems: second && second.orderItems,
+                note: second && second.note,
+                keys: second ? Object.keys(second) : [],
+                receipt: document.getElementById('receiptContent').textContent,
+            };
+        })()`);
+        assert(takeoutResetOk.unlocked.name === '' && takeoutResetOk.unlocked.chicken === '0' && takeoutResetOk.unlocked.disabled === false && takeoutResetOk.unlocked.button === '送出預約申請' && takeoutResetOk.unlocked.locked === false, '成功清空後要解開外帶表單');
+        assert(takeoutResetOk.unlocked.receipt.includes('SMC900083'), '外帶第一筆成功後收件畫面要有編號');
+        assert(takeoutResetOk.count === 2, `外帶清空成功後依序再送一筆，連同第一筆共 ${takeoutResetOk.count} 次`);
+        assert(takeoutResetOk.type === 'takeout' && String(takeoutResetOk.orderItems).includes('桶仔雞 x 2') && takeoutResetOk.note === '客製包裝再一筆', '第二筆外帶要送出新的品項與備註');
+        assert(takeoutResetOk.receipt.includes('SMC900084'), '第二筆外帶要顯示新編號');
+        assert(JSON.stringify(takeoutResetOk.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '外帶再送出的正式請求仍是原 11 欄');
     });
 } finally {
     server.close();
