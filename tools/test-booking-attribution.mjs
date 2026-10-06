@@ -136,14 +136,28 @@ assert(afterWriteFail.adgroupBucket === '非品牌' && afterWriteFail.gclid === 
 assertStringFields(afterWriteFail, '寫入失敗後');
 assert(attr.bookingFields(flakyNative, t0 + 1000).source === 'facebook', '就算還拿著舊的 storage 參考，也要讀到最新來源');
 
-const life = attr.memoryStorage();
+function navPerformance(type) {
+    if (type === 'throw') return { getEntriesByType() { throw new Error('blocked'); } };
+    return {
+        getEntriesByType(kind) {
+            if (kind !== 'navigation' || type === 'missing') return [];
+            return [{ type }];
+        },
+    };
+}
+function navWin(search, storage, type) {
+    const win = {
+        document: { addEventListener() {}, dispatchEvent() {} },
+        location: { search },
+        addEventListener() {},
+        sessionStorage: storage,
+    };
+    if (type !== 'absent') win.performance = navPerformance(type);
+    return win;
+}
 const lifeUrl = '?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000';
-const lifeWin = {
-    document: { addEventListener() {}, dispatchEvent() {} },
-    location: { search: lifeUrl },
-    addEventListener() {},
-    sessionStorage: life,
-};
+const life = attr.memoryStorage();
+const lifeWin = navWin(lifeUrl, life, 'back_forward');
 attr.capture(lifeUrl, attr.resolveStorage(lifeWin), t0);
 const keptOnReturn = attr.handlePageShow(lifeWin, { persisted: true }, t0 + 5 * 60 * 1000);
 assert(keptOnReturn.gclid === 'TESTGCLID9000', '未過期的快取返回要保留來源');
@@ -152,32 +166,59 @@ const seenBeforeRefresh = JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt;
 assert(seenBeforeRefresh === t0, '30 分鐘內從上一頁回來不可把這次造訪重算成新時間');
 attr.capture(lifeUrl, life, t0 + 10 * 60 * 1000);
 assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === seenBeforeRefresh, '30 分鐘內重新整理同一條帶標記網址不可把閒置計時重新起算');
+lifeWin.performance = navPerformance('reload');
 const reloadedInWindow = attr.handlePageShow(lifeWin, { persisted: false }, t0 + 12 * 60 * 1000);
 assert(reloadedInWindow.seenAt === seenBeforeRefresh && reloadedInWindow.gclid === 'TESTGCLID9000', '30 分鐘內重新整理同一條廣告網址不是新進站');
 assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === seenBeforeRefresh, '期限內的重新整理不可改寫 seenAt');
+lifeWin.performance = navPerformance('back_forward');
 attr.handlePageShow(lifeWin, { persisted: true }, t0 + attr.VISIT_TTL_MS);
 const expiredReturn = attr.bookingFields(attr.resolveStorage(lifeWin), t0 + attr.VISIT_TTL_MS);
-assert(expiredReturn.source === 'direct/unknown' && expiredReturn.gclid === '' && expiredReturn.utmAdgroup === '', '快取返回不可用舊網址救回過期來源');
+assert(expiredReturn.source === 'direct/unknown' && expiredReturn.gclid === '' && expiredReturn.utmAdgroup === '', '過期後快取返回不可用舊網址救回來源');
 attr.capture('', life, t0 + attr.VISIT_TTL_MS + 500);
 assert(attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 500).source === 'direct/unknown' && attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 500).gclid === '', '過期後沒有參數要記 direct/unknown');
-const renewedAt = t0 + attr.VISIT_TTL_MS + 1000;
-const renewed = attr.capture(lifeUrl, life, renewedAt);
-const renewedFields = attr.bookingFields(life, renewedAt);
-assert(renewed.seenAt === renewedAt && renewed.seenAt !== seenBeforeRefresh, `過期後同一條廣告網址要寫入新時間，實際 ${renewed.seenAt}`);
-assert(JSON.parse(life.getItem(attr.STORAGE_KEY)).seenAt === renewedAt, '新時間要寫進儲存');
-assert(renewedFields.source === 'google' && renewedFields.utmAdgroup === 'brand' && renewedFields.adgroupBucket === '品牌' && renewedFields.gclid === 'TESTGCLID9000', `過期後同一條廣告網址要記成廣告來源，實際 ${renewedFields.source}/${renewedFields.gclid}`);
-assert(renewedFields.source !== 'direct/unknown', '過期後同一條廣告網址不可記成 direct/unknown');
-attr.capture('?utm_source=facebook&utm_adgroup=nonbrand', life, t0 + attr.VISIT_TTL_MS + 2000);
-const replacedAfterExpiry = attr.bookingFields(life, t0 + attr.VISIT_TTL_MS + 2000);
-assert(replacedAfterExpiry.source === 'facebook' && replacedAfterExpiry.adgroupBucket === '非品牌' && replacedAfterExpiry.gclid === '', '另一條帶標記網址在過期後仍要整組換成新來源');
-assertStringFields(replacedAfterExpiry, '過期後新進站');
-const stale = attr.memoryStorage();
-attr.capture(lifeUrl, stale, t0);
-const staleReloadAt = t0 + attr.VISIT_TTL_MS + 2500;
-const staleReload = attr.capture(lifeUrl, stale, staleReloadAt);
-const staleFields = attr.bookingFields(stale, staleReloadAt);
-assert(staleReload.seenAt === staleReloadAt, `過期後尚未清標記時，同一條廣告網址仍要寫新時間，實際 ${staleReload.seenAt}`);
-assert(staleFields.source === 'google' && staleFields.utmAdgroup === 'brand' && staleFields.gclid === 'TESTGCLID9000' && staleFields.source !== 'direct/unknown', '過期後重新整理同一條廣告網址要記成廣告來源');
+
+function seededVisit() {
+    const storage = attr.memoryStorage();
+    attr.capture(lifeUrl, storage, t0);
+    return storage;
+}
+function showAfter(type, persisted) {
+    const storage = seededVisit();
+    const win = navWin(lifeUrl, storage, type);
+    const at = t0 + attr.VISIT_TTL_MS + 1000;
+    const visit = attr.handlePageShow(win, { persisted }, at);
+    return { visit, fields: attr.bookingFields(storage, at), raw: JSON.parse(storage.getItem(attr.STORAGE_KEY) || 'null') };
+}
+const sameUrlNavigate = showAfter('navigate', false);
+assert(sameUrlNavigate.visit.seenAt === t0 + attr.VISIT_TTL_MS + 1000, `過期後同一網址的 navigate 要寫新時間，實際 ${sameUrlNavigate.visit.seenAt}`);
+assert(sameUrlNavigate.fields.source === 'google' && sameUrlNavigate.fields.utmAdgroup === 'brand' && sameUrlNavigate.fields.gclid === 'TESTGCLID9000', '過期後 navigate 是帶標記進站，不是已證實的新點擊');
+assert(sameUrlNavigate.raw && sameUrlNavigate.raw.expired !== true, '帶標記進站要覆寫過期標記');
+for (const [label, type, persisted] of [
+    ['重新整理', 'reload', false],
+    ['快取返回', 'back_forward', true],
+    ['非快取返回', 'back_forward', false],
+]) {
+    const row = showAfter(type, persisted);
+    assert(row.fields.source === 'direct/unknown' && row.fields.gclid === '' && row.fields.utmAdgroup === '', `${label}過期後不可用舊網址恢復來源，實際 ${row.fields.source}/${row.fields.gclid}`);
+    assert(!row.raw || row.raw.gclid === '' || row.raw.expired === true, `${label}不可把舊 gclid 寫回儲存`);
+}
+const missingTiming = showAfter('missing', false);
+assert(missingTiming.fields.source === 'direct/unknown' && missingTiming.fields.gclid === '', `沒有 Navigation Timing 時過期後要記 direct/unknown，實際 ${missingTiming.fields.source}`);
+const absentTiming = showAfter('absent', true);
+assert(absentTiming.fields.source === 'direct/unknown' && absentTiming.fields.gclid === '', 'performance 不存在時過期後不可恢復舊來源');
+const thrownTiming = showAfter('throw', false);
+assert(thrownTiming.fields.source === 'direct/unknown' && thrownTiming.fields.gclid === '', 'Navigation Timing 丟錯時過期後要記 direct/unknown');
+const prerender = showAfter('prerender', false);
+assert(prerender.fields.source === 'direct/unknown' && prerender.fields.gclid === '', '不明導覽類型過期後要保守記 direct/unknown');
+const untyped = seededVisit();
+attr.capture(lifeUrl, untyped, t0 + attr.VISIT_TTL_MS + 1500);
+assert(attr.bookingFields(untyped, t0 + attr.VISIT_TTL_MS + 1500).source === 'direct/unknown', '未提供導覽類型時不可用過期網址救回來源');
+const otherTagged = seededVisit();
+const otherWin = navWin('?utm_source=facebook&utm_adgroup=nonbrand', otherTagged, 'navigate');
+attr.handlePageShow(otherWin, { persisted: false }, t0 + attr.VISIT_TTL_MS + 2000);
+const replacedAfterExpiry = attr.bookingFields(otherTagged, t0 + attr.VISIT_TTL_MS + 2000);
+assert(replacedAfterExpiry.source === 'facebook' && replacedAfterExpiry.adgroupBucket === '非品牌' && replacedAfterExpiry.gclid === '', '另一條帶標記的 navigate 在過期後要整組換成新來源');
+assertStringFields(replacedAfterExpiry, '過期後帶標記進站');
 
 const prePrKeys = ['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems'];
 function prePrOrder(type) {
@@ -218,10 +259,13 @@ try {
     const unstored = attr.recordSubmission(broken, 'SMC900051');
     assert(unread.source === 'google' && unread.utmAdgroup === 'brand', '讀寫都丟錯時要改記在記憶體備援');
     assert(unstored && unstored.counted === true, '備援記憶體要能記下這次編號，且不可拋錯');
-    const boomRenewed = attr.capture(boomUrl, broken, t0 + attr.VISIT_TTL_MS + 3000);
-    const afterBoom = attr.bookingFields(broken, t0 + attr.VISIT_TTL_MS + 3000);
+    const boomReload = attr.capture(boomUrl, broken, t0 + attr.VISIT_TTL_MS + 3000, 'reload');
+    const afterReload = attr.bookingFields(broken, t0 + attr.VISIT_TTL_MS + 3000);
+    assert(boomReload.gclid === '' && afterReload.source === 'direct/unknown' && afterReload.gclid === '', '原生儲存丟錯時，過期後重整仍不可恢復舊來源');
+    const boomRenewed = attr.capture(boomUrl, broken, t0 + attr.VISIT_TTL_MS + 4000, 'navigate');
+    const afterBoom = attr.bookingFields(broken, t0 + attr.VISIT_TTL_MS + 4000);
     const sent = attr.payloadForBooking(prePrOrder('dining'), afterBoom);
-    assert(boomRenewed.seenAt === t0 + attr.VISIT_TTL_MS + 3000 && afterBoom.source === 'google' && afterBoom.gclid === 'TESTGCLID9000', '原生儲存丟錯時，過期後同一條廣告網址仍要記在備援');
+    assert(boomRenewed.seenAt === t0 + attr.VISIT_TTL_MS + 4000 && afterBoom.source === 'google' && afterBoom.gclid === 'TESTGCLID9000', '原生儲存丟錯時，帶標記的 navigate 仍要寫進記憶體備援');
     assert(JSON.stringify(Object.keys(sent)) === JSON.stringify(prePrKeys), '儲存丟錯時正式請求仍是 11 欄');
     assert(sent.name === '測試同學' && sent.note === '散客 大人2位；靠窗' && !('source' in sent) && !('gclid' in sent), '儲存丟錯不可改到預約內容或把來源塞進正式請求');
 } catch (err) {
@@ -234,6 +278,7 @@ const blockedWin = {
     document: { addEventListener() {}, dispatchEvent() {} },
     location: { search: '?utm_source=google&utm_medium=cpc&utm_adgroup=brand&gclid=TESTGCLID9000' },
     addEventListener() {},
+    performance: { getEntriesByType(kind) { return kind === 'navigation' ? [{ type: 'navigate' }] : []; } },
 };
 Object.defineProperty(blockedWin, 'sessionStorage', {
     configurable: true,
