@@ -17,6 +17,7 @@ const html = readFileSync(join(root, 'index.html'), 'utf8');
 const gs = readFileSync(join(root, 'apps-script/booking-attribution-isolated.gs'), 'utf8');
 const runbook = readFileSync(join(root, 'docs/booking-attribution-isolated-runbook.md'), 'utf8');
 const checkPage = readFileSync(join(root, 'tools/isolated-dining-check.html'), 'utf8');
+const checkGuard = readFileSync(join(root, 'tools/isolated-check-guard.js'), 'utf8');
 const failures = [];
 const assert = (cond, message) => { if (!cond) failures.push(message); };
 
@@ -272,16 +273,63 @@ function expectedShop(orderId, expectedAttr, note = NOTE, items = '無') {
 }
 
 function emptyAttr() {
-  const out = {};
-  for (const key of attr.ATTRIBUTION_KEYS) out[key] = '';
-  return out;
+  return {
+    source: '',
+    utmSource: '',
+    utmMedium: '',
+    utmCampaign: '',
+    utmContent: '',
+    utmTerm: '',
+    utmAdgroup: '',
+    adgroupBucket: '',
+    gclid: '',
+  };
 }
 
-function attrOf(fields) {
-  const out = {};
-  for (const key of attr.ATTRIBUTION_KEYS) out[key] = fields[key];
-  return out;
-}
+const BRAND_ATTR = {
+  source: 'google',
+  utmSource: 'google',
+  utmMedium: 'cpc',
+  utmCampaign: 'launch_202610',
+  utmContent: 'ag_brand',
+  utmTerm: '',
+  utmAdgroup: '',
+  adgroupBucket: '品牌',
+  gclid: '',
+};
+const GEO_ATTR = {
+  source: 'google',
+  utmSource: 'google',
+  utmMedium: 'cpc',
+  utmCampaign: 'launch_202610',
+  utmContent: 'ag_geo_dining',
+  utmTerm: '',
+  utmAdgroup: '',
+  adgroupBucket: '非品牌',
+  gclid: '',
+};
+const DIRECT_ATTR = {
+  source: 'direct/unknown',
+  utmSource: '',
+  utmMedium: '',
+  utmCampaign: '',
+  utmContent: '',
+  utmTerm: '',
+  utmAdgroup: '',
+  adgroupBucket: '',
+  gclid: '',
+};
+const UNKNOWN_ATTR = {
+  source: '有點擊識別碼、來源待核對',
+  utmSource: '',
+  utmMedium: '',
+  utmCampaign: '',
+  utmContent: '',
+  utmTerm: '',
+  utmAdgroup: '',
+  adgroupBucket: '',
+  gclid: 'TESTGCLID9000',
+};
 
 function assertBookingResponse(res, id) {
   assert(res.status === 'success' && res.orderId === id, `${id} 隔離腳本要回同一個編號`);
@@ -298,7 +346,11 @@ assert(!gs.includes('getActive'), '隔離腳本不可讀取目前打開的試算
 assert(!/insertSheet\(\s*MARKER_SHEET/.test(gs), '隔離腳本不可自己建立隔離標記');
 assert(checkPage.includes('payloadIfAttributionEnabled'), '驗收頁要送出旗標打開後的預覽內容');
 assert(checkPage.includes('resolveStorage'), '驗收頁要讀這次分頁已記下的來源');
-assert(checkPage.includes(LIVE_ID), '驗收頁要拒絕正式 web app');
+assert(checkPage.includes('isolated-check-guard.js'), '驗收頁要使用網址與回應判斷');
+assert(checkPage.includes('classifyFetch'), '驗收頁要依回應內容決定成功或失敗');
+assert(!checkPage.includes('沒有送到'), '驗收頁不可把網路失敗說成沒有送到');
+assert(checkGuard.includes(LIVE_ID), '驗收頁要拒絕正式 web app');
+assert(checkGuard.includes('結果未知，先核對試算表、勿重送'), '結果未知時要先核對試算表');
 assert(checkPage.includes('noindex'), '驗收頁不可被索引');
 assert(checkPage.includes('www.sweetmeichicken.com') && checkPage.includes('不要打開'), '驗收頁要寫明不要用正式官網');
 for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式']) {
@@ -394,11 +446,21 @@ assert(isolated.box.mails.length === beforeSent, '同一編號不可再寄信');
 
 const expectedAttr = {
   SMC900001: emptyAttr(),
-  SMC900101: attrOf(brandFields),
-  SMC900102: attrOf(geoFields),
-  SMC900103: attrOf(directFields),
-  SMC900104: attrOf(unknownFields),
-  SMC900105: Object.assign(attrOf(brandFields), { utmCampaign: "'=1+1" }),
+  SMC900101: BRAND_ATTR,
+  SMC900102: GEO_ATTR,
+  SMC900103: DIRECT_ATTR,
+  SMC900104: UNKNOWN_ATTR,
+  SMC900105: {
+    source: 'google',
+    utmSource: 'google',
+    utmMedium: 'cpc',
+    utmCampaign: "'=1+1",
+    utmContent: 'ag_brand',
+    utmTerm: '',
+    utmAdgroup: '',
+    adgroupBucket: '品牌',
+    gclid: '',
+  },
   SMC900106: emptyAttr(),
 };
 
@@ -451,6 +513,11 @@ assert(isolated.box.mails.every((item) => !item.subject.includes('SMC900108')), 
 const guardIso = loadIsolated();
 assert(guardIso.sandbox.formulaGuard_(' 靠窗') === ' 靠窗', '一般備註的開頭空白要保留');
 assert(guardIso.sandbox.attributionText_(' 靠窗') === '靠窗', '來源欄仍去掉兩端空白');
+for (const hidden of ['\u200B', '\u200C', '\u200D', '\uFEFF', '\u0000']) {
+  assert(guardIso.sandbox.formulaGuard_(hidden + '=1+1') === "'=1+1", '公式前的零寬或 NUL 要先拿掉');
+  assert(guardIso.sandbox.attributionText_(hidden + '=1+1') === "'=1+1", '來源欄的零寬或 NUL 要先拿掉');
+}
+assert(guardIso.sandbox.formulaGuard_(' \u200B=1+1') === "'=1+1", '空白加零寬仍要擋下公式');
 const leads = [['空白', ' '], ['Tab', '\t'], ['換行', '\n']];
 const prefixes = ['=', '+', '-', '@'];
 let guardN = 0;
@@ -541,6 +608,32 @@ assert(resultRows.length === 9, '驗收結果要有表頭加 8 列');
 assert(resultRows[8][1] === 'SMC900101' && resultRows[8][2] === 'success' && resultRows[8][3] === '否' && resultRows[8][4] === '否', '第 8 筆不可再寫入或再寄信');
 const runnerFormula = asMap(runnerOrders[0], runnerOrders.find((row) => row[0] === 'SMC900105'));
 assert(runnerFormula['utm活動'] === "'=1+1" && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列也要是純文字，訂位欄不變');
+
+function withoutTestId(fields) {
+  const payload = attr.payloadIfAttributionEnabled(baseOrder(), fields);
+  delete payload._testOrderId;
+  return payload;
+}
+const rowsBeforeAuto = sheetRows(runner, '訂單').length;
+const mailsBeforeAuto = runner.box.mails.length;
+const brandNew = post(runner, withoutTestId(brandFields));
+const geoNew = post(runner, withoutTestId(geoFields));
+assert(brandNew.status === 'success' && brandNew.orderId === 'SMC900002', '8 筆之後的品牌新單要跳過已占用的 SMC900001');
+assert(geoNew.status === 'success' && geoNew.orderId === 'SMC900003', '下一筆非品牌要再用下一個新編號');
+assert(brandNew.orderId !== geoNew.orderId, '兩筆新單編號要不同');
+assert(sheetRows(runner, '訂單').length === rowsBeforeAuto + 2, '8 筆之後要多兩列');
+assert(rowById(runner, 'SMC900001')['來源'] === '' && rowById(runner, 'SMC900001')['utm內容'] === '', '案例 1 不可被新單改成有來源');
+assert(rowById(runner, 'SMC900002')['來源'] === 'google' && rowById(runner, 'SMC900002')['utm媒介'] === 'cpc' && rowById(runner, 'SMC900002')['utm內容'] === 'ag_brand' && rowById(runner, 'SMC900002')['群組分類'] === '品牌', '新品牌列要有自己的來源');
+assert(rowById(runner, 'SMC900003')['utm內容'] === 'ag_geo_dining' && rowById(runner, 'SMC900003')['群組分類'] === '非品牌', '新非品牌列要有自己的來源');
+const autoMails = runner.box.mails.slice(mailsBeforeAuto);
+assert(autoMails.filter((item) => item.subject.includes('SMC900002')).length === 2, '新品牌單要寄出客人信與店內信');
+assert(autoMails.filter((item) => item.subject.includes('SMC900003')).length === 2, '新非品牌單要寄出客人信與店內信');
+assert(sheetRows(runner, '郵件預覽').filter((row) => row[0] === 'SMC900002').length === 1, '新品牌單要有一列郵件預覽');
+assert(sheetRows(runner, '郵件預覽').filter((row) => row[0] === 'SMC900003').length === 1, '新非品牌單要有一列郵件預覽');
+const replayAfterAuto = post(runner, previewPayload(geoFields, 'SMC900101'));
+assert(replayAfterAuto.status === 'success' && replayAfterAuto.orderId === 'SMC900101', '明示的舊編號仍回原編號');
+assert(sheetRows(runner, '訂單').filter((row) => row[0] === 'SMC900101').length === 1, '明示的舊編號不可再寫一列');
+assert(runner.box.mails.filter((item) => item.subject.includes('SMC900101')).length === 2, '明示的舊編號不可再寄信');
 
 const lines = [
   'case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected',
