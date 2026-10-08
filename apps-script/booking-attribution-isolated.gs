@@ -30,8 +30,12 @@ var MARKER_SHEET = '隔離標記';
 var MARKER_VALUE = 'SMC-ISOLATED-TEST';
 var BLOCKED_MESSAGE = '這支腳本只供隔離測試。未設定 SMC_ATTRIBUTION_ISOLATED=yes，沒有寫入試算表，也沒有寄信。';
 
+function stripInvisible_(text) {
+  return String(text).replace(/[\u0000\u200B-\u200D\uFEFF]/g, '');
+}
+
 function formulaGuard_(value) {
-  var raw = value == null ? '' : String(value);
+  var raw = stripInvisible_(value == null ? '' : String(value));
   var normalized = raw.replace(/^\s+/, '');
   if (!normalized) return '';
   if (/^[=+\-@]/.test(normalized)) return "'" + normalized;
@@ -40,7 +44,7 @@ function formulaGuard_(value) {
 
 function attributionText_(value) {
   if (typeof value !== 'string') return '';
-  var text = value.trim();
+  var text = stripInvisible_(value).trim();
   if (!text) return '';
   if (/^[=+\-@]/.test(text)) text = "'" + text;
   if (text.length > 200) text = text.slice(0, 200);
@@ -208,7 +212,7 @@ function nowIso_() {
   return new Date().toISOString();
 }
 
-function orderIdFor_(payload) {
+function orderIdFor_(payload, existingIds) {
   var requested = '';
   try {
     requested = payload && typeof payload._testOrderId === 'string' ? payload._testOrderId.trim() : '';
@@ -216,14 +220,25 @@ function orderIdFor_(payload) {
     requested = '';
   }
   if (/^SMC[0-9]{6}$/.test(requested)) return requested;
+  var taken = {};
+  var list = existingIds || [];
+  for (var i = 0; i < list.length; i += 1) taken[String(list[i])] = true;
   var props = PropertiesService.getScriptProperties();
   var current = Number(props.getProperty('SMC_TEST_SEQ') || '900000');
   if (!isFinite(current) || current < 0) current = 900000;
-  var next = Math.floor(current) + 1;
+  var next = Math.floor(current);
+  var candidate = '';
+  var spins = 0;
+  do {
+    next += 1;
+    spins += 1;
+    if (next > 999999) next = 0;
+    var digits = String(next);
+    while (digits.length < 6) digits = '0' + digits;
+    candidate = 'SMC' + digits;
+  } while (taken[candidate] && spins < 1000000);
   props.setProperty('SMC_TEST_SEQ', String(next));
-  var digits = String(next);
-  while (digits.length < 6) digits = '0' + digits;
-  return 'SMC' + digits;
+  return candidate;
 }
 
 function openIsolatedSpreadsheet_() {
@@ -334,7 +349,9 @@ function acceptBooking_(payload) {
   if (!opened.ok) {
     return { response: { status: 'error', message: opened.message }, wrote: false, mailed: false };
   }
-  var orderId = orderIdFor_(payload);
+  var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
+  var ids = readColumn_(sheet, 1).slice(1);
+  var orderId = orderIdFor_(payload, ids);
   var props = PropertiesService.getScriptProperties();
   var result = buildBookingResult_(
     payload,
@@ -343,8 +360,6 @@ function acceptBooking_(payload) {
     guestAddress_(payload.email),
     guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
   );
-  var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
-  var ids = readColumn_(sheet, 1).slice(1);
   if (ids.indexOf(orderId) !== -1) {
     return { response: result.response, wrote: false, mailed: false };
   }
