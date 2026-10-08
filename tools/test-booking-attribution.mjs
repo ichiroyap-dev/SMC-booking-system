@@ -54,6 +54,26 @@ const replacedClick = attr.bookingFields(store, t0 + 3 * 60 * 1000);
 assert(replacedClick.source === attr.GCLID_ONLY_SOURCE, '只有新 gclid 時不可沿用舊 utm');
 assert(replacedClick.utmSource === '' && replacedClick.utmAdgroup === '' && replacedClick.gclid === 'TESTGCLID9001', '新 gclid 進站要清掉舊 utm');
 
+const finalBrandUrl = '?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_brand';
+const finalGeoUrl = '?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_geo_dining';
+function fieldsFor(search) {
+    const bucketStore = attr.memoryStorage();
+    attr.capture(search, bucketStore, t0, 'navigate');
+    return attr.bookingFields(bucketStore, t0);
+}
+const finalBrand = fieldsFor(finalBrandUrl);
+assert(finalBrand.source === 'google' && finalBrand.utmMedium === 'cpc' && finalBrand.utmCampaign === 'launch_202610', '品牌最終網址要記成 google／cpc／活動代碼');
+assert(finalBrand.utmContent === 'ag_brand' && finalBrand.utmAdgroup === '' && finalBrand.adgroupBucket === '品牌' && finalBrand.gclid === '', `ag_brand 要分成品牌且不補 gclid，實際 ${finalBrand.utmContent}/${finalBrand.adgroupBucket}/${finalBrand.gclid}`);
+const finalGeo = fieldsFor(finalGeoUrl);
+assert(finalGeo.utmContent === 'ag_geo_dining' && finalGeo.adgroupBucket === '非品牌' && finalGeo.utmAdgroup === '', `ag_geo_dining 要分成非品牌，實際 ${finalGeo.utmContent}/${finalGeo.adgroupBucket}`);
+assert(finalBrand.adgroupBucket !== finalGeo.adgroupBucket, '兩條最終網址的群組分類必須不同');
+assert(attr.contentGroupBucket('ag_takeout') === '' && attr.contentGroupBucket('ag_group') === '' && attr.contentGroupBucket('ag_chongyang') === '', '尚未投放的 ag_* 不猜分類');
+assert(attr.contentGroupBucket('rsa_family') === '' && attr.contentGroupBucket('AG_BRAND') === '', '素材代碼與大小寫不同的代碼不分類');
+const adgroupWins = fieldsFor(finalBrandUrl + '&utm_adgroup=br!and');
+assert(adgroupWins.utmAdgroup === 'br!and' && adgroupWins.adgroupBucket === '' && adgroupWins.utmContent === 'ag_brand', '有 utm_adgroup 時不用 utm_content 蓋過');
+const explicitWins = fieldsFor('?utm_source=google&utm_content=ag_geo_dining&utm_adgroup=brand');
+assert(explicitWins.adgroupBucket === '品牌' && explicitWins.utmContent === 'ag_geo_dining', '白名單 utm_adgroup 優先於 utm_content');
+
 const fresh = attr.memoryStorage();
 attr.capture('?utm_source=google&utm_adgroup=brand&gclid=TESTGCLID9000', fresh, t0, 'navigate');
 assert(attr.bookingFields(fresh, t0 + attr.VISIT_TTL_MS - 1000).source === 'google', '未滿 30 分鐘的返回仍要保留來源');
@@ -370,6 +390,33 @@ assert(attr.recordSubmission(once, 'SMC900011').reason === 'duplicate', '同一�
 assert(attr.recordSubmission(once, 'SMC900012').counted === true, '另一個編號仍要計');
 assert(attr.recordSubmission(once, '').counted === false, '沒有編號不計');
 
+const ledger = attr.memoryStorage();
+const brandSnap = Object.assign({}, finalBrand);
+assert(attr.bindOrderAttribution(ledger, 'SMC900201', brandSnap).reason === 'first', '第一筆要把快照綁上編號');
+brandSnap.source = 'hacked';
+brandSnap.utmContent = 'ag_geo_dining';
+brandSnap.adgroupBucket = '非品牌';
+assert(attr.readOrderAttribution(ledger, 'SMC900201').utmContent === 'ag_brand' && attr.readOrderAttribution(ledger, 'SMC900201').source === 'google', '綁定後改快照物件不可污染該訂單');
+attr.capture(finalGeoUrl, ledger, t0 + 1000, 'navigate');
+assert(attr.bindOrderAttribution(ledger, 'SMC900202', attr.bookingFields(ledger, t0 + 1000)).bound === true, '第二筆要綁當下的快照');
+const overwrite = attr.bindOrderAttribution(ledger, 'SMC900201', finalGeo);
+assert(overwrite.bound === false && overwrite.reason === 'duplicate', '同一編號不可覆寫');
+assert(attr.readOrderAttribution(ledger, 'SMC900201').adgroupBucket === '品牌', '重複綁定後品牌訂單仍是品牌');
+assert(attr.readOrderAttribution(ledger, 'SMC900202').utmContent === 'ag_geo_dining' && attr.readOrderAttribution(ledger, 'SMC900202').adgroupBucket === '非品牌', '第二筆保持非品牌');
+assert(attr.recordSubmission(ledger, 'SMC900201').counted === true, '編號第一次出現才計轉換');
+assert(attr.recordSubmission(ledger, 'SMC900201').reason === 'duplicate', '同一編號不可再計一次轉換');
+assert(attr.readOrderAttribution(ledger, 'SMC900201').utmContent === 'ag_brand', '重複計次不可改來源');
+assert(attr.bindOrderAttribution(ledger, '', finalBrand).reason === 'missing', '沒有編號不綁');
+assert(attr.readOrderAttribution(ledger, 'SMC900299') == null, '沒綁過的編號不可借到別筆');
+const preview = attr.payloadIfAttributionEnabled({
+    action: 'book', type: 'dining', name: '測試同學', phone: '0900000000', email: '', people: '2', tables: '1', date: '2026-10-22', time: '12:00', note: '散客 大人2位；靠窗', orderItems: '',
+}, finalBrand);
+const live = attr.payloadForBooking({
+    action: 'book', type: 'dining', name: '測試同學', phone: '0900000000', email: '', people: '2', tables: '1', date: '2026-10-22', time: '12:00', note: '散客 大人2位；靠窗', orderItems: '',
+}, finalBrand);
+assert(preview.utmContent === 'ag_brand' && preview.adgroupBucket === '品牌' && preview.note === '散客 大人2位；靠窗', '預覽 POST 才帶最終網址的分類');
+assert(!('source' in live) && !('utmContent' in live) && live.note === preview.note, '旗標關閉時正式 POST 仍不帶來源');
+
 const receiptFn = extractFn(html, 'showReceipt');
 assert(receiptFn && !/utm|gclid|attribution|direct\/unknown|adgroup/i.test(receiptFn), '收件畫面不可帶來源');
 assert(html.includes('src="js/booking-attribution.js"'), '首頁要載入來源腳本');
@@ -379,7 +426,10 @@ assert(html.includes('payloadForBooking(data, attribution)'), '送出要經過�
 assert(!html.includes('source: attribution.source'), '預設的送出物件不可直接帶來源欄');
 assert(readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '旗標預設必須關閉');
 assert(!html.slice(html.indexOf("action: 'cancel'"), html.indexOf("action: 'cancel'") + 500).includes('utm'), '取消申請不附來源欄');
-assert(html.includes('recordBookingSubmission(orderId)'), '轉換以訂單編號記一次');
+assert(html.includes('recordBookingSubmission(orderId, attribution)'), '成功後要把送出當下的來源綁到這個訂單編號');
+assert(!html.includes('payloadIfAttributionEnabled'), '官網不可走預覽送出');
+assert(!html.includes('booking-attribution-isolated'), '官網不可載入隔離腳本');
+assert(!html.includes('ag_brand') && !html.includes('ag_geo_dining') && !html.includes('launch_202610'), '頁面不可寫出最終網址的活動或群組代碼');
 assert(!receiptFn.includes('recordBookingSubmission'), '不可在每次顯示收件時重計');
 const submitAt = html.indexOf("form.addEventListener('submit'");
 const successAt = html.indexOf("if (res && res.status === 'success')", submitAt);
@@ -387,7 +437,7 @@ const uncertainAt = html.indexOf("showUncertainResult(btn, '預約申請'", succ
 const successBlock = html.slice(successAt, uncertainAt);
 const showAt = successBlock.indexOf('showReceipt(data, orderId)');
 const buttonAt = successBlock.indexOf("btn.innerText = '送出預約申請'");
-const trackAt = successBlock.lastIndexOf('recordBookingSubmission(orderId)');
+const trackAt = successBlock.lastIndexOf('recordBookingSubmission(orderId, attribution)');
 assert(showAt > 0 && buttonAt > showAt && trackAt > buttonAt, '收件與按鈕復原要先於追蹤');
 assert(successBlock.includes('訂單編號：'), '收件失敗時成功提示要含訂單編號');
 assert(!/showReceipt\(data, orderId\);\s*\}\s*catch\s*\(err\)\s*\{\s*\}/.test(successBlock), '不可空 catch 吞掉收件錯誤');
@@ -516,7 +566,18 @@ async function evalExpr(wsUrl, expression) {
 function navigateAndWait(wsUrl, url) {
     return new Promise((resolve, reject) => {
         const ws = new WebSocket(wsUrl);
+        let navigated = false;
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            ws.close();
+            resolve();
+        };
         const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
             ws.close();
             reject(new Error('navigate timeout'));
         }, 10000);
@@ -526,22 +587,26 @@ function navigateAndWait(wsUrl, url) {
         ws.addEventListener('message', (event) => {
             const msg = JSON.parse(event.data);
             if (msg.id === 1) {
+                navigated = true;
                 ws.send(JSON.stringify({ id: 2, method: 'Page.navigate', params: { url } }));
                 return;
             }
+            if (!navigated) return;
             if (msg.id === 2 && msg.error) {
+                if (settled) return;
+                settled = true;
                 clearTimeout(timer);
                 ws.close();
                 reject(new Error(JSON.stringify(msg.error)));
                 return;
             }
-            if (msg.method === 'Page.loadEventFired') {
-                clearTimeout(timer);
-                ws.close();
-                resolve();
-            }
+            if (msg.method === 'Page.loadEventFired') finish();
+            // Same-document or fragment navigations can stop without loadEventFired.
+            if (msg.method === 'Page.frameStoppedLoading') setTimeout(finish, 30);
         });
         ws.addEventListener('error', () => {
+            if (settled) return;
+            settled = true;
             clearTimeout(timer);
             reject(new Error('navigate failed'));
         });
@@ -1021,6 +1086,20 @@ try {
         })()`);
         assert(resetRetry.fetches === 0, `內用自動清空失敗後再送出必須是 0 次，實際 ${resetRetry.fetches}`);
         assert(resetRetry.name === '測試同學' && resetRetry.message.includes('訂單編號：SMC900061'), '再送出失敗後仍要留下原編號與已填姓名');
+        const resetLedger = await evalExpr(wsUrl, `(() => {
+            const store = SmcAttribution.resolveStorage(window);
+            const first = SmcAttribution.readOrderAttribution(store, 'SMC900061');
+            const again = SmcAttribution.bindOrderAttribution(store, 'SMC900061', SmcAttribution.emptyBookingFields());
+            const still = SmcAttribution.readOrderAttribution(store, 'SMC900061');
+            return {
+                has: !!(first && typeof first.source === 'string'),
+                blocked: SmcAttribution.readOrderAttribution(store, 'SMC900071'),
+                reason: again && again.reason,
+                same: JSON.stringify(first) === JSON.stringify(still),
+            };
+        })()`);
+        assert(resetLedger.has === true && resetLedger.blocked == null, '清空失敗只綁已成立的那筆，沒送出的編號不可綁');
+        assert(resetLedger.reason === 'duplicate' && resetLedger.same === true, '清空失敗後不可用空白來源蓋掉原訂單');
 
         await navigateAndWait(wsUrl, `${url}?mode=dining&probe=receipt#booking-section`);
         const receiptFailed = await evalExpr(wsUrl, `(async () => {
@@ -1379,6 +1458,180 @@ try {
         assert(takeoutResetOk.type === 'takeout' && String(takeoutResetOk.orderItems).includes('桶仔雞 x 2') && takeoutResetOk.note === '客製包裝再一筆', '第二筆外帶要送出新的品項與備註');
         assert(takeoutResetOk.receipt.includes('SMC900084'), '第二筆外帶要顯示新編號');
         assert(JSON.stringify(takeoutResetOk.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '外帶再送出的正式請求仍是原 11 欄');
+
+        async function assertFinalLanding(content, bucket) {
+            await navigateAndWait(wsUrl, `${url}?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=${content}#booking-section`);
+            await evalExpr(wsUrl, `(() => { try { applyBookingHash({ scroll: true }); updateTimeConstraint(); } catch (err) {} return true; })()`);
+            await evalExpr(wsUrl, `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve('frame'))))`);
+            const landed = await evalExpr(wsUrl, `(() => {
+                const section = document.getElementById('booking-section');
+                const title = document.getElementById('formTitle');
+                return {
+                    title: document.getElementById('formTitleText').textContent,
+                    hash: location.hash,
+                    search: location.search,
+                    diningHidden: document.getElementById('diningFields').classList.contains('hidden'),
+                    takeoutHidden: document.getElementById('takeoutFields').classList.contains('hidden'),
+                    diningSelected: document.getElementById('tabDining').getAttribute('aria-selected'),
+                    sectionTop: Math.round(section.getBoundingClientRect().top),
+                    titleTop: Math.round(title.getBoundingClientRect().top),
+                    fields: bookingAttributionFields(),
+                    visible: document.body.innerText,
+                };
+            })()`);
+            assert(landed.title === '內用訂位' && landed.hash === '#booking-section', `${content} 應停在內用訂位，實際 ${landed.title}/${landed.hash}`);
+            assert(landed.search.includes('mode=dining') && landed.search.includes('utm_content=' + content), `${content} 網址要保留 mode 與 utm_content`);
+            assert(landed.diningHidden === false && landed.takeoutHidden === true && landed.diningSelected === 'true', `${content} 要打開內用欄位`);
+            assert(landed.sectionTop >= 0 && landed.sectionTop <= 24, `${content} 訂位區應貼齊錨點，top=${landed.sectionTop}`);
+            assert(landed.titleTop >= 0 && landed.titleTop < 180, `${content} 訂位標題應在上半部，top=${landed.titleTop}`);
+            assert(landed.fields.source === 'google' && landed.fields.utmContent === content && landed.fields.adgroupBucket === bucket && landed.fields.utmAdgroup === '' && landed.fields.gclid === '', `${content} 分類應為 ${bucket}，實際 ${landed.fields.utmContent}/${landed.fields.adgroupBucket}`);
+            assert(!landed.visible.includes('launch_202610') && !landed.visible.includes('ag_brand') && !landed.visible.includes('ag_geo_dining'), `${content} 客人看得到的文字不可出現活動或群組代碼`);
+        }
+        await assertFinalLanding('ag_brand', '品牌');
+        await assertFinalLanding('ag_geo_dining', '非品牌');
+
+        await navigateAndWait(wsUrl, `${url}?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_brand#booking-section`);
+        const orderMap = await evalExpr(wsUrl, `(async () => {
+            window.alert = () => {};
+            try { applyBookingHash({ scroll: true }); updateTimeConstraint(); } catch (err) {}
+            window.__events = [];
+            document.addEventListener('smc:booking-submitted', (event) => { window.__events.push(event.detail.orderId); });
+            const originalKeys = ['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems'];
+            const day = new Date();
+            day.setDate(day.getDate() + 2);
+            while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+            const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+            function fill(note) {
+                const date = document.getElementById('date');
+                date.value = iso;
+                date.dispatchEvent(new Event('change', { bubbles: true }));
+                document.querySelector('input[name="partyType"][value="casual"]').checked = true;
+                document.getElementById('adults').value = '2';
+                document.getElementById('name').value = '測試同學';
+                document.getElementById('phone').value = '0900000000';
+                document.getElementById('note').value = note;
+                document.getElementById('privacyConsent').checked = true;
+                document.getElementById('time').value = '12:00';
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').innerText = '送出預約申請';
+            }
+            const posts = [];
+            window.fetch = (resource, opts) => {
+                const body = JSON.parse(opts.body);
+                posts.push(body);
+                if (posts.length === 1) {
+                    SmcAttribution.capture('?utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_geo_dining', SmcAttribution.resolveStorage(window), undefined, 'navigate');
+                }
+                const orderId = posts.length === 1 ? 'SMC900201' : 'SMC900202';
+                return Promise.resolve({ json: async () => ({ status: 'success', orderId: orderId, message: '已保留座位' }) });
+            };
+            fill('靠窗品牌');
+            document.getElementById('bookingForm').requestSubmit();
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            const store = SmcAttribution.resolveStorage(window);
+            const afterFirst = {
+                count: posts.length,
+                keys: posts[0] ? Object.keys(posts[0]) : [],
+                note: posts[0] ? posts[0].note : '',
+                hasSource: !!(posts[0] && Object.prototype.hasOwnProperty.call(posts[0], 'source')),
+                bound: SmcAttribution.readOrderAttribution(store, 'SMC900201'),
+                current: SmcAttribution.bookingFields(store),
+                receipt: document.getElementById('receiptContent').textContent,
+                visible: document.body.innerText,
+            };
+            fill('靠窗地區');
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            return {
+                afterFirst,
+                second: {
+                    count: posts.length,
+                    note: posts[1] ? posts[1].note : '',
+                    keys: posts[1] ? Object.keys(posts[1]) : [],
+                    boundFirst: SmcAttribution.readOrderAttribution(store, 'SMC900201'),
+                    boundSecond: SmcAttribution.readOrderAttribution(store, 'SMC900202'),
+                    receipt: document.getElementById('receiptContent').textContent,
+                },
+                events: window.__events.slice(),
+            };
+        })()`);
+        assert(orderMap.afterFirst.count === 1, `連按兩次只能送出第一筆一次，實際 ${orderMap.afterFirst.count}`);
+        assert(JSON.stringify(orderMap.afterFirst.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '第一筆正式請求仍是 11 欄');
+        assert(orderMap.afterFirst.hasSource === false && orderMap.afterFirst.note.includes('靠窗品牌') && !orderMap.afterFirst.note.includes('ag_brand'), '第一筆備註不可混入群組代碼');
+        assert(orderMap.afterFirst.bound && orderMap.afterFirst.bound.utmContent === 'ag_brand' && orderMap.afterFirst.bound.adgroupBucket === '品牌', '請求途中改掉造訪後，第一筆仍要綁按下時的品牌');
+        assert(orderMap.afterFirst.current && orderMap.afterFirst.current.utmContent === 'ag_geo_dining', '造訪紀錄確實已換成非品牌，用來證明沒有回頭讀');
+        assert(!orderMap.afterFirst.receipt.includes('ag_brand') && !orderMap.afterFirst.receipt.includes('launch_202610') && !orderMap.afterFirst.visible.includes('ag_geo_dining'), '收件與頁面不可出現群組代碼');
+        assert(orderMap.second.count === 2 && orderMap.second.note.includes('靠窗地區'), '清空成功後的第二筆要送出新備註');
+        assert(JSON.stringify(orderMap.second.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '第二筆正式請求仍是 11 欄');
+        assert(orderMap.second.boundFirst && orderMap.second.boundFirst.utmContent === 'ag_brand' && orderMap.second.boundFirst.adgroupBucket === '品牌', '第二筆不可改寫第一筆的品牌快照');
+        assert(orderMap.second.boundSecond && orderMap.second.boundSecond.utmContent === 'ag_geo_dining' && orderMap.second.boundSecond.adgroupBucket === '非品牌', '第二筆要綁自己的非品牌快照');
+        assert(orderMap.second.receipt.includes('SMC900202') && !orderMap.second.receipt.includes('ag_geo_dining'), '第二筆收件只顯示新編號');
+        assert(orderMap.events.filter((id) => id === 'SMC900201').length === 1 && orderMap.events.filter((id) => id === 'SMC900202').length === 1, '兩個編號各計一次轉換');
+
+        await navigateAndWait(wsUrl, `${url}?mode=dining&probe=another&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_brand#booking-section`);
+        const anotherMap = await evalExpr(wsUrl, `(async () => {
+            window.alert = () => {};
+            try { applyBookingHash({ scroll: true }); updateTimeConstraint(); } catch (err) {}
+            showReceipt = function () { throw new Error('receipt render failed'); };
+            const day = new Date();
+            day.setDate(day.getDate() + 2);
+            while (day.getDay() === 3) day.setDate(day.getDate() + 1);
+            const iso = day.getFullYear() + '-' + String(day.getMonth() + 1).padStart(2, '0') + '-' + String(day.getDate()).padStart(2, '0');
+            function fill(note) {
+                const date = document.getElementById('date');
+                date.value = iso;
+                date.dispatchEvent(new Event('change', { bubbles: true }));
+                document.querySelector('input[name="partyType"][value="casual"]').checked = true;
+                document.getElementById('adults').value = '2';
+                document.getElementById('name').value = '測試同學';
+                document.getElementById('phone').value = '0900000000';
+                document.getElementById('note').value = note;
+                document.getElementById('privacyConsent').checked = true;
+                document.getElementById('time').value = '12:00';
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').innerText = '送出預約申請';
+            }
+            const posts = [];
+            window.fetch = (resource, opts) => {
+                posts.push(JSON.parse(opts.body));
+                const orderId = posts.length === 1 ? 'SMC900211' : 'SMC900212';
+                return Promise.resolve({ json: async () => ({ status: 'success', orderId: orderId, message: '已保留座位' }) });
+            };
+            fill('靠窗品牌');
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            const store = SmcAttribution.resolveStorage(window);
+            const locked = {
+                bound: SmcAttribution.readOrderAttribution(store, 'SMC900211'),
+                button: document.getElementById('submitBtn').innerText,
+                disabled: document.getElementById('submitBtn').disabled,
+            };
+            SmcAttribution.capture('?utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_geo_dining', store, undefined, 'navigate');
+            document.getElementById('anotherBookingBtn').click();
+            fill('靠窗再一筆');
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            document.getElementById('bookingForm').requestSubmit();
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            return {
+                locked,
+                count: posts.length,
+                secondNote: posts[1] ? posts[1].note : '',
+                first: SmcAttribution.readOrderAttribution(store, 'SMC900211'),
+                second: SmcAttribution.readOrderAttribution(store, 'SMC900212'),
+                third: SmcAttribution.readOrderAttribution(store, 'SMC900213'),
+                message: document.getElementById('messageBox').textContent,
+            };
+        })()`);
+        assert(anotherMap.locked.disabled === true && anotherMap.locked.button === '申請已收到', '再預約前收件失敗要維持鎖定');
+        assert(anotherMap.locked.bound && anotherMap.locked.bound.utmContent === 'ag_brand' && anotherMap.locked.bound.adgroupBucket === '品牌', '再預約前的訂單要先綁品牌');
+        assert(anotherMap.count === 2, `再預約一筆成功後只再送一筆，實際 ${anotherMap.count}`);
+        assert(anotherMap.secondNote.includes('靠窗再一筆') && !anotherMap.secondNote.includes('ag_geo_dining'), '再預約的新備註不可混入群組代碼');
+        assert(anotherMap.first && anotherMap.first.utmContent === 'ag_brand' && anotherMap.first.adgroupBucket === '品牌', '再預約不可改掉第一筆');
+        assert(anotherMap.second && anotherMap.second.utmContent === 'ag_geo_dining' && anotherMap.second.adgroupBucket === '非品牌', '再預約的新訂單要用按下時的非品牌');
+        assert(anotherMap.third == null, '鎖住後的第三次不可產生新編號');
+        assert(!anotherMap.message.includes('ag_brand') && !anotherMap.message.includes('launch_202610'), '畫面上的提示不可出現活動代碼');
     });
 } finally {
     server.close();
