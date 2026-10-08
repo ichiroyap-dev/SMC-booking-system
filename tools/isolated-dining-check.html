@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>隔離驗收｜內用最終網址</title>
+  <style>
+    body { font-family: sans-serif; line-height: 1.5; margin: 24px auto; max-width: 720px; padding: 0 16px; color: #1a1a1a; }
+    h1 { font-size: 1.4rem; }
+    .warn { background: #fff4e5; border: 1px solid #e0b15a; padding: 12px; }
+    .bad { background: #fde8e8; border: 1px solid #d26a6a; padding: 12px; }
+    .ok { background: #eef6ee; border: 1px solid #7aab7a; padding: 12px; }
+    label { display: block; margin: 12px 0 4px; }
+    input, textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; }
+    button { font: inherit; margin: 8px 8px 0 0; padding: 8px 12px; }
+    dl { display: grid; grid-template-columns: 8em 1fr; gap: 4px 12px; }
+    dt { color: #555; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #f6f6f6; padding: 12px; }
+  </style>
+</head>
+<body>
+  <h1>隔離驗收：從最終廣告網址送一筆內用</h1>
+  <p class="warn">這不是正式官網。不要打開 www.sweetmeichicken.com，也不要貼正式 web app。正式官網的來源旗標維持關閉。這頁只會送到你貼上的隔離網址。</p>
+
+  <p>
+    <button type="button" id="use-brand">帶入品牌最終網址</button>
+    <button type="button" id="use-geo">帶入非品牌最終網址</button>
+  </p>
+
+  <section id="booking-section">
+    <h2>內用訂位</h2>
+    <dl>
+      <dt>內用</dt><dd id="mode-value">尚未帶入</dd>
+      <dt>來源</dt><dd id="source-value">—</dd>
+      <dt>utm內容</dt><dd id="content-value">—</dd>
+      <dt>群組分類</dt><dd id="bucket-value">—</dd>
+    </dl>
+
+    <form id="booking-form">
+      <label for="endpoint">隔離 web app 網址</label>
+      <input id="endpoint" name="endpoint" type="url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off">
+      <p id="block-reason" class="bad" hidden></p>
+
+      <label for="name">姓名</label>
+      <input id="name" name="name" value="測試同學" required>
+      <label for="phone">電話</label>
+      <input id="phone" name="phone" value="0900000000" required>
+      <label for="email">信箱（收客人信）</label>
+      <input id="email" name="email" type="email" value="你的測試信箱@example.com" required>
+      <label for="people">人數</label>
+      <input id="people" name="people" value="2">
+      <label for="tables">桌數</label>
+      <input id="tables" name="tables" value="1">
+      <label for="date">日期</label>
+      <input id="date" name="date" value="2026-10-22">
+      <label for="time">時間</label>
+      <input id="time" name="time" value="12:00">
+      <label for="note">備註</label>
+      <textarea id="note" name="note" rows="2">散客 大人2位；靠窗</textarea>
+
+      <button type="submit" id="submit">送到隔離後端</button>
+    </form>
+  </section>
+
+  <h2>即將送出的內容</h2>
+  <pre id="payload-preview"></pre>
+  <div id="result"></div>
+
+  <script src="../js/booking-attribution.js"></script>
+  <script>
+    var LIVE_ID = 'AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q';
+    var BRAND = '?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_brand#booking-section';
+    var GEO = '?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_geo_dining#booking-section';
+
+    function text(id, value) {
+      document.getElementById(id).textContent = value;
+    }
+
+    function currentFields() {
+      var params = new URLSearchParams(window.location.search);
+      var mode = params.get('mode') === 'dining' ? '是，內用' : '不是內用（請先按上面的按鈕）';
+      var fields = window.SmcAttribution.bookingFields(window.SmcAttribution.resolveStorage(window));
+      text('mode-value', mode);
+      text('source-value', fields.source || '—');
+      text('content-value', fields.utmContent || '—');
+      text('bucket-value', fields.adgroupBucket || '（空白）');
+      return fields;
+    }
+
+    function formBase() {
+      return {
+        action: 'book',
+        type: 'dining',
+        name: document.getElementById('name').value,
+        phone: document.getElementById('phone').value,
+        email: document.getElementById('email').value,
+        people: document.getElementById('people').value,
+        tables: document.getElementById('tables').value,
+        date: document.getElementById('date').value,
+        time: document.getElementById('time').value,
+        note: document.getElementById('note').value,
+        orderItems: ''
+      };
+    }
+
+    function endpointProblem(url) {
+      var value = (url || '').trim();
+      if (!value) return '請貼上隔離 web app 網址。';
+      if (value.indexOf(LIVE_ID) !== -1) return '這是正式 web app，已停住，沒有送出。請貼隔離部署的網址。';
+      if (value.indexOf('sweetmeichicken.com') !== -1) return '這是正式官網，已停住，沒有送出。';
+      if (value.indexOf('script.google.com/macros/') === -1) return '網址要是 script.google.com 的網路應用程式。';
+      return '';
+    }
+
+    function refresh() {
+      var fields = currentFields();
+      var payload = window.SmcAttribution.payloadIfAttributionEnabled(formBase(), fields);
+      document.getElementById('payload-preview').textContent = JSON.stringify(payload, null, 2);
+      var problem = endpointProblem(document.getElementById('endpoint').value);
+      var box = document.getElementById('block-reason');
+      box.hidden = !problem || !document.getElementById('endpoint').value.trim();
+      box.textContent = problem;
+      document.getElementById('submit').disabled = !!problem;
+    }
+
+    document.getElementById('use-brand').addEventListener('click', function () {
+      window.location.assign(BRAND);
+    });
+    document.getElementById('use-geo').addEventListener('click', function () {
+      window.location.assign(GEO);
+    });
+    document.getElementById('endpoint').addEventListener('input', refresh);
+    ['name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', refresh);
+    });
+
+    document.getElementById('booking-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      var url = document.getElementById('endpoint').value.trim();
+      var problem = endpointProblem(url);
+      var result = document.getElementById('result');
+      if (problem) {
+        result.className = 'bad';
+        result.textContent = problem;
+        return;
+      }
+      var fields = window.SmcAttribution.bookingFields(window.SmcAttribution.resolveStorage(window));
+      var payload = window.SmcAttribution.payloadIfAttributionEnabled(formBase(), fields);
+      result.className = '';
+      result.textContent = '送出中…';
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      }).then(function (response) {
+        return response.text();
+      }).then(function (body) {
+        result.className = 'ok';
+        result.textContent = '隔離後端回應：\n' + body + '\n\n請用回應裡的 orderId，到隔離試算表與兩封信核對。回應沒有備註；備註對照上面送出的 note、試算表與兩封信。';
+      }).catch(function () {
+        result.className = 'bad';
+        result.textContent = '沒有送到。若你是直接打開檔案，請改用本機預覽網址再開一次。不要改去正式官網。';
+      });
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

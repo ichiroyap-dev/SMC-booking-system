@@ -5,15 +5,18 @@
  * （action、type、name、phone、email、people、tables、date、time、note、orderItems）
  * 另寫的測試實作，不是正式腳本的補丁。
  *
- * 來源 9 欄可有可無。缺欄、多欄、型別不對，都仍收單：備註原樣寫入，壞掉的來源改空白。
+ * 來源 9 欄可有可無。缺欄、多欄、型別不對，都仍收單：備註原樣保留意思，壞掉的來源改空白。
  * 客人信不放活動代碼。店內信才放來源對帳。
  * 旗標 SEND_ATTRIBUTION_TO_BACKEND 仍由官網控制；這支腳本不會把它打開。
  *
- * 使用前在指令碼屬性設定：
+ * 使用前在指令碼屬性設定（試算表 ID 不可省略，腳本也不會改寫「目前打開的那張表」）：
  *   SMC_ATTRIBUTION_ISOLATED = yes
  *   SMC_SHOP_EMAIL = 你的測試信箱
- *   SMC_TEST_SHEET_ID = 測試試算表 ID（若腳本是綁在那張試算表上，可省略）
+ *   SMC_TEST_SHEET_ID = 測試試算表 ID
+ * 測試試算表要自己先建分頁「隔離標記」，A1 打上 SMC-ISOLATED-TEST。
+ * 對不上就不會寫入任何訂單、也不會寄信。腳本不會自動幫你做出這個標記。
  *
+ * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
  * 步驟見 docs/booking-attribution-isolated-runbook.md。
  */
 var ORDER_HEADERS = [
@@ -21,18 +24,25 @@ var ORDER_HEADERS = [
   '來源', 'utm來源', 'utm媒介', 'utm活動', 'utm內容', 'utm關鍵字', 'utm廣告群組', '群組分類', '點擊識別碼'
 ];
 var MAIL_HEADERS = ['訂單編號', '客人信箱', '客人主旨', '客人正文', '店內信箱', '店內主旨', '店內正文'];
+var RESULT_HEADERS = ['案例', '訂單編號', '結果', '寫入', '寄信'];
 var ATTRIBUTION_FIELDS = ['source', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm', 'utmAdgroup', 'adgroupBucket', 'gclid'];
+var MARKER_SHEET = '隔離標記';
+var MARKER_VALUE = 'SMC-ISOLATED-TEST';
+var BLOCKED_MESSAGE = '這支腳本只供隔離測試。未設定 SMC_ATTRIBUTION_ISOLATED=yes，沒有寫入試算表，也沒有寄信。';
 
-function plainSheetText_(value) {
-  var text = value == null ? '' : String(value);
-  if (!text) return '';
-  if (/^[=+\-@]/.test(text)) return "'" + text;
-  return text;
+function formulaGuard_(value) {
+  var raw = value == null ? '' : String(value);
+  var normalized = raw.replace(/^\s+/, '');
+  if (!normalized) return '';
+  if (/^[=+\-@]/.test(normalized)) return "'" + normalized;
+  return raw;
 }
 
 function attributionText_(value) {
   if (typeof value !== 'string') return '';
-  var text = plainSheetText_(value).trim();
+  var text = value.trim();
+  if (!text) return '';
+  if (/^[=+\-@]/.test(text)) text = "'" + text;
   if (text.length > 200) text = text.slice(0, 200);
   return text;
 }
@@ -43,8 +53,8 @@ function bucketText_(value) {
 }
 
 function bookingText_(value) {
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' && isFinite(value)) return String(value);
+  if (typeof value === 'string') return formulaGuard_(value);
+  if (typeof value === 'number' && isFinite(value)) return formulaGuard_(String(value));
   return '';
 }
 
@@ -216,12 +226,36 @@ function orderIdFor_(payload) {
   return 'SMC' + digits;
 }
 
-function openSpreadsheet_() {
-  var id = PropertiesService.getScriptProperties().getProperty('SMC_TEST_SHEET_ID');
-  if (id) return SpreadsheetApp.openById(id);
-  var active = SpreadsheetApp.getActive();
-  if (!active) throw new Error('no spreadsheet');
-  return active;
+function openIsolatedSpreadsheet_() {
+  var rawId = PropertiesService.getScriptProperties().getProperty('SMC_TEST_SHEET_ID');
+  var id = rawId == null ? '' : String(rawId).trim();
+  if (!id) {
+    return { ok: false, message: '未設定 SMC_TEST_SHEET_ID。沒有寫入試算表，也沒有寄信。' };
+  }
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(id);
+  } catch (err) {
+    return { ok: false, message: '打不開指定的測試試算表。沒有寫入試算表，也沒有寄信。' };
+  }
+  if (!ss) {
+    return { ok: false, message: '打不開指定的測試試算表。沒有寫入試算表，也沒有寄信。' };
+  }
+  var markerSheet = ss.getSheetByName(MARKER_SHEET);
+  if (!markerSheet) {
+    return { ok: false, message: '找不到分頁「隔離標記」。沒有寫入試算表，也沒有寄信。' };
+  }
+  var marker = '';
+  try {
+    var cell = markerSheet.getRange(1, 1).getValue();
+    marker = cell == null ? '' : String(cell).trim();
+  } catch (err) {
+    return { ok: false, message: '讀不到隔離標記。沒有寫入試算表，也沒有寄信。' };
+  }
+  if (marker !== MARKER_VALUE) {
+    return { ok: false, message: '隔離標記不符。沒有寫入試算表，也沒有寄信。' };
+  }
+  return { ok: true, ss: ss, id: id };
 }
 
 function ensureSheet_(ss, name, headers) {
@@ -243,9 +277,11 @@ function readColumn_(sheet, col) {
 }
 
 function writeRow_(sheet, row) {
+  var safe = [];
+  for (var i = 0; i < row.length; i += 1) safe.push(formulaGuard_(row[i]));
   var at = sheet.getLastRow() + 1;
-  sheet.getRange(at, 1, 1, row.length).setNumberFormat('@');
-  sheet.getRange(at, 1, 1, row.length).setValues([row]);
+  sheet.getRange(at, 1, 1, safe.length).setNumberFormat('@');
+  sheet.getRange(at, 1, 1, safe.length).setValues([safe]);
 }
 
 function mailPreviewRow_(result) {
@@ -287,33 +323,202 @@ function handleCancel_(payload) {
   return json_({ status: 'success', message: '已收到取消申請（隔離測試，未改訂單列）。' });
 }
 
+function acceptBooking_(payload) {
+  if (!isIsolated_()) {
+    return { response: { status: 'error', message: BLOCKED_MESSAGE }, wrote: false, mailed: false };
+  }
+  if (missingBooking_(payload)) {
+    return { response: { status: 'error', message: '缺少預約必要欄位。' }, wrote: false, mailed: false };
+  }
+  var opened = openIsolatedSpreadsheet_();
+  if (!opened.ok) {
+    return { response: { status: 'error', message: opened.message }, wrote: false, mailed: false };
+  }
+  var orderId = orderIdFor_(payload);
+  var props = PropertiesService.getScriptProperties();
+  var result = buildBookingResult_(
+    payload,
+    orderId,
+    nowIso_(),
+    guestAddress_(payload.email),
+    guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
+  );
+  var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
+  var ids = readColumn_(sheet, 1).slice(1);
+  if (ids.indexOf(orderId) !== -1) {
+    return { response: result.response, wrote: false, mailed: false };
+  }
+  writeRow_(sheet, result.row);
+  var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
+  writeRow_(mailSheet, mailPreviewRow_(result));
+  var mailed = false;
+  try {
+    sendEmails_(result);
+    mailed = true;
+  } catch (mailErr) {
+    mailed = false;
+  }
+  return { response: result.response, wrote: true, mailed: mailed };
+}
+
 function doPost(e) {
   try {
-    if (!isIsolated_()) {
-      return json_({ status: 'error', message: '這支腳本只供隔離測試。未設定 SMC_ATTRIBUTION_ISOLATED=yes，沒有寫入試算表，也沒有寄信。' });
-    }
+    if (!isIsolated_()) return json_({ status: 'error', message: BLOCKED_MESSAGE });
     var payload = parsePayload_(e);
     if (payload.action === 'cancel') return handleCancel_(payload);
-    if (missingBooking_(payload)) return json_({ status: 'error', message: '缺少預約必要欄位。' });
-    var orderId = orderIdFor_(payload);
-    var props = PropertiesService.getScriptProperties();
-    var result = buildBookingResult_(
-      payload,
-      orderId,
-      nowIso_(),
-      guestAddress_(payload.email),
-      guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
-    );
-    var ss = openSpreadsheet_();
-    var sheet = ensureSheet_(ss, '訂單', ORDER_HEADERS);
-    var ids = readColumn_(sheet, 1).slice(1);
-    if (ids.indexOf(orderId) !== -1) return json_(result.response);
-    writeRow_(sheet, result.row);
-    var mailSheet = ensureSheet_(ss, '郵件預覽', MAIL_HEADERS);
-    writeRow_(mailSheet, mailPreviewRow_(result));
-    try { sendEmails_(result); } catch (mailErr) {}
-    return json_(result.response);
+    return json_(acceptBooking_(payload).response);
   } catch (err) {
     return json_({ status: 'error', message: '隔離腳本無法完成寫入。' });
   }
+}
+
+function copyFields_(extra) {
+  var out = {};
+  if (!extra) return out;
+  for (var key in extra) {
+    if (Object.prototype.hasOwnProperty.call(extra, key)) out[key] = extra[key];
+  }
+  return out;
+}
+
+function isolatedBasePayload_(email, orderId) {
+  return {
+    action: 'book',
+    type: 'dining',
+    name: '測試同學',
+    phone: '0900000000',
+    email: email || '',
+    people: '2',
+    tables: '1',
+    date: '2026-10-22',
+    time: '12:00',
+    note: '散客 大人2位；靠窗',
+    orderItems: '',
+    _testOrderId: orderId
+  };
+}
+
+function isolatedWithAttr_(email, orderId, extra) {
+  var payload = isolatedBasePayload_(email, orderId);
+  var fields = copyFields_(extra);
+  for (var key in fields) {
+    if (Object.prototype.hasOwnProperty.call(fields, key)) payload[key] = fields[key];
+  }
+  return payload;
+}
+
+function isolatedEightPayloads_(email) {
+  var brand = {
+    source: 'google',
+    utmSource: 'google',
+    utmMedium: 'cpc',
+    utmCampaign: 'launch_202610',
+    utmContent: 'ag_brand',
+    utmTerm: '',
+    utmAdgroup: '',
+    adgroupBucket: '品牌',
+    gclid: ''
+  };
+  var geo = copyFields_(brand);
+  geo.utmContent = 'ag_geo_dining';
+  geo.adgroupBucket = '非品牌';
+  var direct = {
+    source: 'direct/unknown',
+    utmSource: '',
+    utmMedium: '',
+    utmCampaign: '',
+    utmContent: '',
+    utmTerm: '',
+    utmAdgroup: '',
+    adgroupBucket: '',
+    gclid: ''
+  };
+  var unknown = {
+    source: '有點擊識別碼、來源待核對',
+    utmSource: '',
+    utmMedium: '',
+    utmCampaign: '',
+    utmContent: '',
+    utmTerm: '',
+    utmAdgroup: '',
+    adgroupBucket: '',
+    gclid: 'TESTGCLID9000'
+  };
+  var formula = copyFields_(brand);
+  formula.utmCampaign = '=1+1';
+  var malformed = {
+    source: { bad: true },
+    utmContent: ['ag_brand'],
+    adgroupBucket: '品牌<script>',
+    gclid: 12345
+  };
+  return [
+    { label: '1 只有原來的 11 欄', payload: isolatedBasePayload_(email, 'SMC900001') },
+    { label: '2 廣告品牌', payload: isolatedWithAttr_(email, 'SMC900101', brand) },
+    { label: '3 廣告非品牌', payload: isolatedWithAttr_(email, 'SMC900102', geo) },
+    { label: '4 非廣告', payload: isolatedWithAttr_(email, 'SMC900103', direct) },
+    { label: '5 來源不明', payload: isolatedWithAttr_(email, 'SMC900104', unknown) },
+    { label: '6 公式開頭', payload: isolatedWithAttr_(email, 'SMC900105', formula) },
+    { label: '7 格式壞掉', payload: isolatedWithAttr_(email, 'SMC900106', malformed) },
+    { label: '8 同一編號再送', payload: isolatedWithAttr_(email, 'SMC900101', brand) }
+  ];
+}
+
+function notify_(message) {
+  try {
+    SpreadsheetApp.getUi().alert(message);
+  } catch (err) {}
+}
+
+function writeResultSheet_(ss, lines) {
+  var sheet = ensureSheet_(ss, '驗收結果', RESULT_HEADERS);
+  sheet.clear();
+  if (!lines.length) return;
+  var width = lines[0].length;
+  var safe = [];
+  for (var r = 0; r < lines.length; r += 1) {
+    var line = [];
+    for (var c = 0; c < width; c += 1) line.push(formulaGuard_(lines[r][c]));
+    safe.push(line);
+  }
+  sheet.getRange(1, 1, safe.length, width).setNumberFormat('@');
+  sheet.getRange(1, 1, safe.length, width).setValues(safe);
+}
+
+function runIsolatedEightCases() {
+  if (!isIsolated_()) {
+    notify_(BLOCKED_MESSAGE);
+    return BLOCKED_MESSAGE;
+  }
+  var opened = openIsolatedSpreadsheet_();
+  if (!opened.ok) {
+    notify_(opened.message);
+    return opened.message;
+  }
+  var shop = guestAddress_(PropertiesService.getScriptProperties().getProperty('SMC_SHOP_EMAIL') || '');
+  var cases = isolatedEightPayloads_(shop);
+  var lines = [RESULT_HEADERS];
+  for (var i = 0; i < cases.length; i += 1) {
+    var outcome = acceptBooking_(cases[i].payload);
+    lines.push([
+      cases[i].label,
+      outcome.response.orderId || '',
+      outcome.response.status || '',
+      outcome.wrote ? '是' : '否',
+      outcome.mailed ? '是' : '否'
+    ]);
+  }
+  writeResultSheet_(opened.ss, lines);
+  var summary = '已送出 8 筆。請到「訂單」「郵件預覽」「驗收結果」分頁核對，並查看信箱。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
+  notify_(summary);
+  return summary;
+}
+
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('隔離測試')
+      .addItem('送出 8 筆驗收案例', 'runIsolatedEightCases')
+      .addToUi();
+  } catch (err) {}
 }
