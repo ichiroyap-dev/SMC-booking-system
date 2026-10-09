@@ -154,6 +154,7 @@ function loadIsolated(options = {}) {
     lockHeld: false,
     lockDenied: 0,
     lockAcquires: 0,
+    lockLog: [],
   };
   const marked = memorySpreadsheet();
   if (options.marker !== 'missing') {
@@ -178,6 +179,9 @@ function loadIsolated(options = {}) {
       box.opened.push(id);
       if (!box.byId[id]) box.byId[id] = memorySpreadsheet();
       return box.byId[id];
+    },
+    flush() {
+      box.lockLog.push(box.lockHeld ? 'flush-held' : 'flush-free');
     },
     getUi() {
       return {
@@ -208,9 +212,13 @@ function loadIsolated(options = {}) {
           }
           box.lockHeld = true;
           box.lockAcquires += 1;
+          box.lockLog.push('lock');
           return true;
         },
-        releaseLock() { box.lockHeld = false; },
+        releaseLock() {
+          box.lockLog.push('release');
+          box.lockHeld = false;
+        },
       };
     },
   };
@@ -223,6 +231,22 @@ function loadIsolated(options = {}) {
 function post(isolated, payload) {
   const response = isolated.sandbox.doPost({ postData: { contents: JSON.stringify(payload) } });
   return JSON.parse(response.getContent());
+}
+
+function assertFlushBeforeRelease(box, label) {
+  assert(!box.lockLog.includes('flush-free'), `${label}：flush 時鎖還在`);
+  let open = false;
+  let sawFlush = false;
+  for (const event of box.lockLog) {
+    if (event === 'lock') open = true;
+    if (event === 'flush-held') {
+      assert(open, `${label}：flush 要在 releaseLock 之前，而且鎖還握著`);
+      sawFlush = true;
+    }
+    if (event === 'release') open = false;
+  }
+  assert(sawFlush, `${label}：寫入訂單列後要呼叫 SpreadsheetApp.flush`);
+  assert(open === false, `${label}：結束時鎖要放開`);
 }
 
 function sheetRows(isolated, name) {
@@ -669,6 +693,7 @@ assert(raceSecond && raceSecond.status === 'error' && !raceSecond.orderId, '交�
 assert(race.box.lockDenied === 1 && race.box.lockHeld === false, '交錯取號：第二筆被拒，鎖有放開');
 assert(sheetRows(race, '訂單').filter((row) => row[0] === 'SMC900001').length === 1, '交錯取號：SMC900001 只有一列');
 assert(race.box.mails.length === 2, '交錯取號：只模擬寄出先進入那一筆的兩封信');
+assertFlushBeforeRelease(race.box, '交錯取號');
 console.log('test 交錯取號: pass');
 
 const exhausted = loadIsolated();
@@ -693,7 +718,10 @@ assert(previewRes.status === 'unknown' && previewRes.orderId === 'SMC900401' && 
 assert(String(previewRes.message).includes('結果未知，先核對試算表、勿重送'), '未知回應要提醒勿重送');
 assert(rowById(previewBoom, 'SMC900401') && rowById(previewBoom, 'SMC900401')['utm內容'] === 'ag_brand', '未知時訂單列已經寫入');
 assert(sheetRows(previewBoom, '郵件預覽').length === 0 && previewBoom.box.mails.length === 0, '郵件預覽失敗時沒有預覽列也沒有寄信');
+assertFlushBeforeRelease(previewBoom.box, '寫入後郵件預覽失敗');
 console.log('test 寫入後郵件預覽失敗: pass');
+
+assertFlushBeforeRelease(isolated.box, '八筆與後續新單');
 
 const lines = [
   'case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected',

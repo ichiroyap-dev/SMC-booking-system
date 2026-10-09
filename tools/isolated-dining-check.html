@@ -150,8 +150,31 @@
       document.getElementById(id).addEventListener('input', refresh);
     });
 
+    function remember(state, orderId) {
+      window.SmcIsolatedCheck.writeLock(window.sessionStorage, window.localStorage, state, orderId || '');
+    }
+
+    function holdPage() {
+      submitState = 'hold';
+      document.getElementById('submit').disabled = true;
+      document.getElementById('ack-sheet').hidden = false;
+    }
+
+    function showStored(stored) {
+      var result = document.getElementById('result');
+      var id = stored.orderId || '';
+      if (stored.state === 'done') {
+        result.className = 'ok';
+        result.textContent = '這次送出已結束。訂單編號：' + (id || '（沒有編號）') + '\n請核對試算表後按「我已核對試算表」，才可以再送。重新整理或另開分頁都不會解開。';
+        return;
+      }
+      result.className = 'warn';
+      result.textContent = window.SmcIsolatedCheck.unknownVerdict(id).message + '\n重新整理或另開分頁都不會解開。這筆可能已經送到，請先核對試算表。';
+    }
+
     document.getElementById('ack-sheet').addEventListener('click', function () {
       if (submitState !== 'hold') return;
+      window.SmcIsolatedCheck.clearLock(window.sessionStorage, window.localStorage);
       submitState = 'idle';
       document.getElementById('ack-sheet').hidden = true;
       refresh();
@@ -171,39 +194,71 @@
       submitState = 'sending';
       document.getElementById('submit').disabled = true;
       document.getElementById('ack-sheet').hidden = true;
+      remember('submitting', '');
       var fields = window.SmcAttribution.bookingFields(window.SmcAttribution.resolveStorage(window));
       var payload = window.SmcAttribution.payloadIfAttributionEnabled(formBase(), fields);
       result.className = '';
       result.textContent = '送出中…';
-      fetch(url, {
+      var timeoutMs = window.SmcIsolatedCheck.SUBMIT_TIMEOUT_MS || 30000;
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var settled = false;
+      function finishUnknown(orderId) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        showVerdict(result, window.SmcIsolatedCheck.unknownVerdict(orderId || ''));
+        remember('unknown', orderId || '');
+        holdPage();
+      }
+      var timer = setTimeout(function () {
+        if (settled) return;
+        if (controller) {
+          try { controller.abort(); } catch (abortErr) {}
+        }
+        finishUnknown('');
+      }, timeoutMs);
+      var fetchOpts = {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(payload)
-      }).then(function (response) {
+      };
+      if (controller) fetchOpts.signal = controller.signal;
+      fetch(url, fetchOpts).then(function (response) {
         return response.text().then(function (body) {
           return window.SmcIsolatedCheck.classifyFetch(response, body);
         }, function () {
           return window.SmcIsolatedCheck.unknownVerdict();
         });
       }).then(function (verdict) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         showVerdict(result, verdict);
         if (verdict && verdict.kind === 'unknown') {
-          submitState = 'hold';
-          document.getElementById('submit').disabled = true;
-          document.getElementById('ack-sheet').hidden = false;
+          remember('unknown', verdict.orderId || '');
+          holdPage();
           return;
         }
+        if (verdict && verdict.kind === 'success') {
+          remember('done', verdict.orderId || '');
+          holdPage();
+          return;
+        }
+        window.SmcIsolatedCheck.clearLock(window.sessionStorage, window.localStorage);
         submitState = 'idle';
         document.getElementById('ack-sheet').hidden = true;
         refresh();
       }).catch(function () {
-        showVerdict(result, window.SmcIsolatedCheck.unknownVerdict());
-        submitState = 'hold';
-        document.getElementById('submit').disabled = true;
-        document.getElementById('ack-sheet').hidden = false;
+        finishUnknown('');
       });
     });
 
+    var storedLock = window.SmcIsolatedCheck.readLock(window.sessionStorage, window.localStorage);
+    if (storedLock) {
+      remember(storedLock.state, storedLock.orderId);
+      holdPage();
+      showStored(storedLock);
+    }
     refresh();
   </script>
 </body>

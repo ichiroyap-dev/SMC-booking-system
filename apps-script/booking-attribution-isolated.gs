@@ -409,6 +409,9 @@ function acceptBooking_(payload) {
     }
     return { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
   } finally {
+    if (attemptedWrite) {
+      try { SpreadsheetApp.flush(); } catch (flushErr) {}
+    }
     try { lock.releaseLock(); } catch (releaseErr) {}
   }
 }
