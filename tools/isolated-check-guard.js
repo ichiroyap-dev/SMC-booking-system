@@ -9,6 +9,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   var LIVE_ID = 'AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q';
   var UNKNOWN_MESSAGE = '結果未知，先核對試算表、勿重送';
+  var LOCK_KEY = 'smc_isolated_check_lock_v1';
+  var SUBMIT_TIMEOUT_MS = 30000;
 
   function unknownVerdict(orderId) {
     var id = typeof orderId === 'string' ? orderId.trim() : '';
@@ -92,6 +94,47 @@
     return unknownVerdict(orderId);
   }
 
+  function memoryStore() {
+    var data = {};
+    return {
+      getItem: function (key) { return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null; },
+      setItem: function (key, value) { data[key] = String(value); },
+      removeItem: function (key) { delete data[key]; }
+    };
+  }
+
+  function parseLock(raw) {
+    if (!raw) return null;
+    try {
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+      if (parsed.state !== 'submitting' && parsed.state !== 'unknown' && parsed.state !== 'done') return null;
+      return { state: parsed.state, orderId: typeof parsed.orderId === 'string' ? parsed.orderId : '' };
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function writeLock(sessionStore, localStore, state, orderId) {
+    var body = JSON.stringify({ state: state, orderId: orderId || '' });
+    try { if (sessionStore) sessionStore.setItem(LOCK_KEY, body); } catch (err) {}
+    try { if (localStore) localStore.setItem(LOCK_KEY, body); } catch (err) {}
+    return body;
+  }
+
+  function readLock(sessionStore, localStore) {
+    var localRaw = '';
+    var sessionRaw = '';
+    try { localRaw = localStore && localStore.getItem(LOCK_KEY) || ''; } catch (err) { localRaw = ''; }
+    try { sessionRaw = sessionStore && sessionStore.getItem(LOCK_KEY) || ''; } catch (err) { sessionRaw = ''; }
+    return parseLock(localRaw) || parseLock(sessionRaw);
+  }
+
+  function clearLock(sessionStore, localStore) {
+    try { if (sessionStore) sessionStore.removeItem(LOCK_KEY); } catch (err) {}
+    try { if (localStore) localStore.removeItem(LOCK_KEY); } catch (err) {}
+  }
+
   function classifyFetch(response, body) {
     if (!response || response.type === 'opaque' || response.status === 0) return unknownVerdict();
     return classifyResponse(body);
@@ -100,6 +143,12 @@
   return {
     LIVE_ID: LIVE_ID,
     UNKNOWN_MESSAGE: UNKNOWN_MESSAGE,
+    LOCK_KEY: LOCK_KEY,
+    SUBMIT_TIMEOUT_MS: SUBMIT_TIMEOUT_MS,
+    writeLock: writeLock,
+    readLock: readLock,
+    clearLock: clearLock,
+    memoryStore: memoryStore,
     endpointProblem: endpointProblem,
     classifyResponse: classifyResponse,
     classifyFetch: classifyFetch,

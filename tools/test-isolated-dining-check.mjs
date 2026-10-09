@@ -61,7 +61,28 @@ const mailedOk = guard.classifyResponse('{"status":"success","orderId":"SMC90022
 const mailedNo = guard.classifyResponse('{"status":"success","orderId":"SMC900222","mailed":false}');
 assert(mailedOk.kind === 'success' && mailedOk.mailed === true, '收單成功且寄信成功要分開標示');
 assert(mailedNo.kind === 'success' && mailedNo.mailed === false, '收單成功但寄信失敗仍是成功，並標明沒寄出');
+const sessionStore = guard.memoryStore();
+const localStore = guard.memoryStore();
+assert(guard.readLock(sessionStore, localStore) === null, '還沒送出時沒有鎖');
+guard.writeLock(sessionStore, localStore, 'submitting', '');
+assert(JSON.parse(sessionStore.getItem(guard.LOCK_KEY)).state === 'submitting', '送出中寫進 sessionStorage');
+assert(JSON.parse(localStore.getItem(guard.LOCK_KEY)).state === 'submitting', '送出中寫進 localStorage');
+guard.writeLock(sessionStore, localStore, 'unknown', 'SMC900401');
+const freshSession = guard.memoryStore();
+const fromLocal = guard.readLock(freshSession, localStore);
+assert(fromLocal && fromLocal.state === 'unknown' && fromLocal.orderId === 'SMC900401', '新分頁只看 localStorage 也讀得到鎖與訂單編號');
+const sessionOnly = guard.memoryStore();
+sessionOnly.setItem(guard.LOCK_KEY, JSON.stringify({ state: 'done', orderId: 'SMC900222' }));
+const fromSession = guard.readLock(sessionOnly, guard.memoryStore());
+assert(fromSession && fromSession.state === 'done' && fromSession.orderId === 'SMC900222', '重新整理只看 sessionStorage 也讀得到鎖與訂單編號');
+guard.clearLock(sessionStore, localStore);
+assert(sessionStore.getItem(guard.LOCK_KEY) === null && localStore.getItem(guard.LOCK_KEY) === null, '核對後兩種儲存的鎖都清掉');
+assert(guard.readLock(sessionStore, localStore) === null, '清掉之後讀不到鎖');
+sessionStore.setItem(guard.LOCK_KEY, '{"state":"idle"}');
+assert(guard.readLock(sessionStore, guard.memoryStore()) === null, '不認得的狀態不當成鎖');
+assert(guard.SUBMIT_TIMEOUT_MS === 30000, '送出逾時預設 30 秒');
 assert(page.includes('classifyFetch') && page.includes('isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
+assert(page.includes('writeLock') && page.includes('readLock') && page.includes('sessionStorage') && page.includes('localStorage') && page.includes('AbortController'), '驗收頁要把鎖寫進兩種儲存，並用 AbortController 逾時');
 assert(!page.includes('沒有送到'), '驗收頁不可寫沒有送到');
 assert(!page.includes("className = 'ok'") || page.includes("verdict.kind === 'success'"), '綠色成功只能在判定成功之後');
 
@@ -118,14 +139,32 @@ async function withPage(fn) {
     await cdp(ws, 'Page.enable');
     await cdp(ws, 'Page.navigate', { url: 'file://' + join(root, 'tools/isolated-dining-check.html') });
     await evalExpr(`new Promise((resolve) => { if (document.readyState === 'complete') setTimeout(resolve, 30); else window.addEventListener('load', () => resolve()); })`);
-    await fn(evalExpr);
+    async function reload() {
+      const loaded = new Promise((resolve) => {
+        const timer = setTimeout(() => resolve('timeout'), 5000);
+        const onMsg = (event) => {
+          let msg;
+          try { msg = JSON.parse(event.data); } catch (err) { return; }
+          if (msg.method === 'Page.loadEventFired' || msg.method === 'Page.frameStoppedLoading') {
+            clearTimeout(timer);
+            ws.removeEventListener('message', onMsg);
+            resolve(msg.method);
+          }
+        };
+        ws.addEventListener('message', onMsg);
+      });
+      await evalExpr('location.reload()');
+      await loaded;
+      await evalExpr('new Promise((resolve) => setTimeout(resolve, 40))');
+    }
+    await fn(evalExpr, reload);
   } finally {
     ws.close();
     chrome.kill('SIGKILL');
   }
 }
 
-await withPage(async (evalExpr) => {
+await withPage(async (evalExpr, reload) => {
   const blocked = await evalExpr(`(() => {
     window.__fetches = 0;
     window.fetch = () => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC1"}') }); };
@@ -172,6 +211,8 @@ await withPage(async (evalExpr) => {
   assert(successUi.className === 'ok' && successUi.text.includes('SMC900222') && successUi.text.includes('寄信：已寄出'), '有訂單編號的成功才顯示綠色，並寫出寄信結果');
 
   const holdUi = await evalExpr(`new Promise((resolve) => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
     window.__fetches = 0;
     let release;
     window.fetch = () => {
@@ -218,6 +259,50 @@ await withPage(async (evalExpr) => {
   assert(holdUi.afterRefresh.fetches === 1 && holdUi.afterRefresh.disabled === true && holdUi.afterRefresh.ackHidden === false, 'UNKNOWN 後再按與 refresh 都不會送出或解鎖');
   console.log('test 送出鎖: pass');
 
+  const lockKey = JSON.stringify(guard.LOCK_KEY);
+  const storedDuringHold = await evalExpr(`(() => ({
+    session: sessionStorage.getItem(${lockKey}),
+    local: localStorage.getItem(${lockKey})
+  }))()`);
+  assert(storedDuringHold.session && storedDuringHold.session.includes('"state":"unknown"') && storedDuringHold.session.includes('SMC900401'), 'UNKNOWN 要寫進 sessionStorage');
+  assert(storedDuringHold.local && storedDuringHold.local.includes('"state":"unknown"') && storedDuringHold.local.includes('SMC900401'), 'UNKNOWN 要寫進 localStorage');
+
+  await reload();
+  const restored = await evalExpr(`new Promise((resolve) => {
+    window.__fetches = 0;
+    window.fetch = () => { window.__fetches += 1; return new Promise(() => {}); };
+    document.getElementById('note').value = '重新整理後改備註';
+    document.getElementById('note').dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('booking-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    setTimeout(() => resolve({
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      ackHidden: document.getElementById('ack-sheet').hidden,
+      text: document.getElementById('result').textContent
+    }), 40);
+  })`);
+  assert(restored.fetches === 0 && restored.disabled === true && restored.ackHidden === false && restored.text.includes('SMC900401') && restored.text.includes('勿重送'), '重新整理後仍鎖住並保留訂單編號');
+  console.log('test 重新整理還原鎖: pass');
+
+  await evalExpr(`sessionStorage.removeItem(${lockKey})`);
+  const localBeforeNewTab = await evalExpr(`localStorage.getItem(${lockKey})`);
+  assert(localBeforeNewTab && localBeforeNewTab.includes('SMC900401'), '清掉這個分頁的 session 後，localStorage 仍留著鎖');
+  await reload();
+  const newTab = await evalExpr(`new Promise((resolve) => {
+    window.__fetches = 0;
+    window.fetch = () => { window.__fetches += 1; return new Promise(() => {}); };
+    document.getElementById('booking-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    setTimeout(() => resolve({
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      ackHidden: document.getElementById('ack-sheet').hidden,
+      text: document.getElementById('result').textContent,
+      session: sessionStorage.getItem(${lockKey})
+    }), 40);
+  })`);
+  assert(newTab.fetches === 0 && newTab.disabled === true && newTab.ackHidden === false && newTab.text.includes('SMC900401') && newTab.session && newTab.session.includes('"state":"unknown"'), '新分頁只靠 localStorage 也會鎖住並保留訂單編號');
+  console.log('test 新分頁還原鎖: pass');
+
   const unknownUi = await submitWith(`() => { window.__fetches += 1; return Promise.reject(new Error('network')); }`);
   assert(unknownUi.className !== 'ok' && unknownUi.text.includes('結果未知，先核對試算表、勿重送'), '網路失敗要顯示結果未知');
 
@@ -226,6 +311,42 @@ await withPage(async (evalExpr) => {
 
   const junkUi = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('<html>oops</html>') }); }`);
   assert(junkUi.className !== 'ok' && junkUi.text.includes('結果未知，先核對試算表、勿重送'), '無法解析的回應要顯示結果未知');
+
+  const timeoutUi = await evalExpr(`new Promise((resolve) => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
+    window.SmcIsolatedCheck.SUBMIT_TIMEOUT_MS = 40;
+    window.__fetches = 0;
+    window.fetch = (url, opts) => {
+      window.__fetches += 1;
+      return new Promise((resolveFetch, rejectFetch) => {
+        const signal = opts && opts.signal;
+        if (signal) signal.addEventListener('abort', () => rejectFetch(new DOMException('Aborted', 'AbortError')));
+      });
+    };
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('submit').click();
+    setTimeout(() => {
+      const mid = window.__fetches;
+      document.getElementById('booking-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      resolve({
+        mid: mid,
+        fetches: window.__fetches,
+        className: document.getElementById('result').className,
+        text: document.getElementById('result').textContent,
+        disabled: document.getElementById('submit').disabled,
+        ackHidden: document.getElementById('ack-sheet').hidden,
+        lock: localStorage.getItem(${lockKey})
+      });
+    }, 160);
+  })`);
+  assert(timeoutUi.mid === 1 && timeoutUi.fetches === 1, '逾時後再按不會重送');
+  assert(timeoutUi.className !== 'ok' && timeoutUi.text.includes('結果未知，先核對試算表、勿重送'), '逾時要當結果未知，不是成功');
+  assert(timeoutUi.disabled === true && timeoutUi.ackHidden === false, '逾時後頁面仍鎖住');
+  assert(timeoutUi.lock && timeoutUi.lock.includes('"state":"unknown"'), '逾時的鎖要寫進 localStorage');
+  console.log('test 送出逾時: pass');
 });
 
 if (failures.length) {
