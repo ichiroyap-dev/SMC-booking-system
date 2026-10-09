@@ -60,6 +60,7 @@
       <textarea id="note" name="note" rows="2">散客 大人2位；靠窗</textarea>
 
       <button type="submit" id="submit">送到隔離後端</button>
+      <button type="button" id="ack-sheet" hidden>我已核對試算表</button>
     </form>
   </section>
 
@@ -108,10 +109,15 @@
       return window.SmcIsolatedCheck.endpointProblem(url);
     }
 
+    var submitState = 'idle';
+
     function showVerdict(result, verdict) {
       if (verdict && verdict.kind === 'success') {
+        var mailLine = verdict.mailed === true
+          ? '寄信：已寄出。'
+          : (verdict.mailed === false ? '寄信：沒有寄出。請看試算表的郵件預覽與信箱。' : '寄信：回應沒有附寄信結果，請看信箱。');
         result.className = 'ok';
-        result.textContent = '已送到隔離後端。訂單編號：' + verdict.orderId + '\n請到隔離試算表、客人信、店內信核對這個編號。回應沒有備註；備註對照上面送出的 note、試算表與兩封信。';
+        result.textContent = '已送到隔離後端。訂單編號：' + verdict.orderId + '\n' + mailLine + '\n請到隔離試算表、客人信、店內信核對這個編號。回應沒有備註；備註對照上面送出的 note、試算表與兩封信。';
         return;
       }
       result.className = verdict && verdict.kind === 'unknown' ? 'warn' : 'bad';
@@ -126,6 +132,10 @@
       var box = document.getElementById('block-reason');
       box.hidden = !problem || !document.getElementById('endpoint').value.trim();
       box.textContent = problem;
+      if (submitState !== 'idle') {
+        document.getElementById('submit').disabled = true;
+        return;
+      }
       document.getElementById('submit').disabled = !!problem;
     }
 
@@ -140,8 +150,16 @@
       document.getElementById(id).addEventListener('input', refresh);
     });
 
+    document.getElementById('ack-sheet').addEventListener('click', function () {
+      if (submitState !== 'hold') return;
+      submitState = 'idle';
+      document.getElementById('ack-sheet').hidden = true;
+      refresh();
+    });
+
     document.getElementById('booking-form').addEventListener('submit', function (event) {
       event.preventDefault();
+      if (submitState !== 'idle') return;
       var url = document.getElementById('endpoint').value.trim();
       var problem = endpointProblem(url);
       var result = document.getElementById('result');
@@ -150,6 +168,9 @@
         result.textContent = problem;
         return;
       }
+      submitState = 'sending';
+      document.getElementById('submit').disabled = true;
+      document.getElementById('ack-sheet').hidden = true;
       var fields = window.SmcAttribution.bookingFields(window.SmcAttribution.resolveStorage(window));
       var payload = window.SmcAttribution.payloadIfAttributionEnabled(formBase(), fields);
       result.className = '';
@@ -166,8 +187,20 @@
         });
       }).then(function (verdict) {
         showVerdict(result, verdict);
+        if (verdict && verdict.kind === 'unknown') {
+          submitState = 'hold';
+          document.getElementById('submit').disabled = true;
+          document.getElementById('ack-sheet').hidden = false;
+          return;
+        }
+        submitState = 'idle';
+        document.getElementById('ack-sheet').hidden = true;
+        refresh();
       }).catch(function () {
         showVerdict(result, window.SmcIsolatedCheck.unknownVerdict());
+        submitState = 'hold';
+        document.getElementById('submit').disabled = true;
+        document.getElementById('ack-sheet').hidden = false;
       });
     });
 

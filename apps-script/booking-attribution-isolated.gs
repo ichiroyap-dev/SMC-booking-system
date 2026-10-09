@@ -237,6 +237,7 @@ function orderIdFor_(payload, existingIds) {
     while (digits.length < 6) digits = '0' + digits;
     candidate = 'SMC' + digits;
   } while (taken[candidate] && spins < 1000000);
+  if (taken[candidate]) return '';
   props.setProperty('SMC_TEST_SEQ', String(next));
   return candidate;
 }
@@ -349,31 +350,67 @@ function acceptBooking_(payload) {
   if (!opened.ok) {
     return { response: { status: 'error', message: opened.message }, wrote: false, mailed: false };
   }
-  var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
-  var ids = readColumn_(sheet, 1).slice(1);
-  var orderId = orderIdFor_(payload, ids);
-  var props = PropertiesService.getScriptProperties();
-  var result = buildBookingResult_(
-    payload,
-    orderId,
-    nowIso_(),
-    guestAddress_(payload.email),
-    guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
-  );
-  if (ids.indexOf(orderId) !== -1) {
-    return { response: result.response, wrote: false, mailed: false };
-  }
-  writeRow_(sheet, result.row);
-  var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
-  writeRow_(mailSheet, mailPreviewRow_(result));
-  var mailed = false;
+  var lock = LockService.getScriptLock();
+  var locked = false;
   try {
-    sendEmails_(result);
-    mailed = true;
-  } catch (mailErr) {
-    mailed = false;
+    locked = lock.tryLock(10000) === true;
+  } catch (lockErr) {
+    locked = false;
   }
-  return { response: result.response, wrote: true, mailed: mailed };
+  if (!locked) {
+    return { response: { status: 'error', message: '隔離腳本忙碌，這次沒有收單。請稍後再試。' }, wrote: false, mailed: false };
+  }
+  var orderId = '';
+  var attemptedWrite = false;
+  try {
+    var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
+    var ids = readColumn_(sheet, 1).slice(1);
+    orderId = orderIdFor_(payload, ids);
+    if (!orderId) {
+      return { response: { status: 'error', message: '測試編號已用完，沒有收單。' }, wrote: false, mailed: false };
+    }
+    var props = PropertiesService.getScriptProperties();
+    var result = buildBookingResult_(
+      payload,
+      orderId,
+      nowIso_(),
+      guestAddress_(payload.email),
+      guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
+    );
+    if (ids.indexOf(orderId) !== -1) {
+      result.response.mailed = false;
+      return { response: result.response, wrote: false, mailed: false };
+    }
+    attemptedWrite = true;
+    writeRow_(sheet, result.row);
+    var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
+    writeRow_(mailSheet, mailPreviewRow_(result));
+    var mailed = false;
+    try {
+      sendEmails_(result);
+      mailed = true;
+    } catch (mailErr) {
+      mailed = false;
+    }
+    result.response.mailed = mailed;
+    return { response: result.response, wrote: true, mailed: mailed };
+  } catch (err) {
+    if (attemptedWrite) {
+      return {
+        response: {
+          status: 'unknown',
+          orderId: orderId,
+          message: '結果未知，先核對試算表、勿重送',
+          mailed: false
+        },
+        wrote: true,
+        mailed: false
+      };
+    }
+    return { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
+  } finally {
+    try { lock.releaseLock(); } catch (releaseErr) {}
+  }
 }
 
 function doPost(e) {

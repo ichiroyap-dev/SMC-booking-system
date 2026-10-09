@@ -55,6 +55,12 @@ assert(guard.classifyResponse('not-json').kind === 'unknown' && guard.classifyRe
 assert(guard.classifyResponse('[]').kind === 'unknown', '陣列回應要當結果未知');
 assert(guard.classifyFetch({ type: 'opaque', status: 0 }, '').kind === 'unknown', '不透明回應要當結果未知');
 assert(guard.classifyFetch({ type: 'basic', status: 200 }, '{"status":"error"}').kind === 'error', '有內文的錯誤仍是錯誤');
+const unknownBody = guard.classifyResponse('{"status":"unknown","orderId":"SMC900401","mailed":false,"message":"結果未知，先核對試算表、勿重送"}');
+assert(unknownBody.kind === 'unknown' && unknownBody.orderId === 'SMC900401' && unknownBody.message.includes('SMC900401') && unknownBody.message.includes('勿重送'), 'unknown 回應要帶訂單編號與勿重送');
+const mailedOk = guard.classifyResponse('{"status":"success","orderId":"SMC900222","mailed":true}');
+const mailedNo = guard.classifyResponse('{"status":"success","orderId":"SMC900222","mailed":false}');
+assert(mailedOk.kind === 'success' && mailedOk.mailed === true, '收單成功且寄信成功要分開標示');
+assert(mailedNo.kind === 'success' && mailedNo.mailed === false, '收單成功但寄信失敗仍是成功，並標明沒寄出');
 assert(page.includes('classifyFetch') && page.includes('isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
 assert(!page.includes('沒有送到'), '驗收頁不可寫沒有送到');
 assert(!page.includes("className = 'ok'") || page.includes("verdict.kind === 'success'"), '綠色成功只能在判定成功之後');
@@ -143,6 +149,8 @@ await withPage(async (evalExpr) => {
   async function submitWith(fetchSource) {
     return evalExpr(`new Promise((resolve) => {
       window.__fetches = 0;
+      const ack = document.getElementById('ack-sheet');
+      if (ack && !ack.hidden) ack.click();
       window.fetch = ${fetchSource};
       const input = document.getElementById('endpoint');
       input.value = ${JSON.stringify(OK)};
@@ -160,8 +168,55 @@ await withPage(async (evalExpr) => {
   const errorUi = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"error"}') }); }`);
   assert(errorUi.fetches === 1 && errorUi.className === 'bad' && !errorUi.text.includes('已送到'), '錯誤 JSON 不可顯示綠色成功');
 
-  const successUi = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC900222"}') }); }`);
-  assert(successUi.className === 'ok' && successUi.text.includes('SMC900222'), '有訂單編號的成功才顯示綠色');
+  const successUi = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC900222","mailed":true}') }); }`);
+  assert(successUi.className === 'ok' && successUi.text.includes('SMC900222') && successUi.text.includes('寄信：已寄出'), '有訂單編號的成功才顯示綠色，並寫出寄信結果');
+
+  const holdUi = await evalExpr(`new Promise((resolve) => {
+    window.__fetches = 0;
+    let release;
+    window.fetch = () => {
+      window.__fetches += 1;
+      return new Promise((done) => { release = done; });
+    };
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const form = document.getElementById('booking-form');
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    const during = {
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      text: document.getElementById('result').textContent
+    };
+    release({
+      status: 200,
+      type: 'basic',
+      text: () => Promise.resolve('{"status":"unknown","orderId":"SMC900401","mailed":false,"message":"結果未知，先核對試算表、勿重送"}')
+    });
+    setTimeout(() => {
+      const after = {
+        fetches: window.__fetches,
+        disabled: document.getElementById('submit').disabled,
+        ackHidden: document.getElementById('ack-sheet').hidden,
+        className: document.getElementById('result').className,
+        text: document.getElementById('result').textContent
+      };
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      document.getElementById('note').value = '改備註';
+      document.getElementById('note').dispatchEvent(new Event('input', { bubbles: true }));
+      const afterRefresh = {
+        fetches: window.__fetches,
+        disabled: document.getElementById('submit').disabled,
+        ackHidden: document.getElementById('ack-sheet').hidden
+      };
+      resolve({ during: during, after: after, afterRefresh: afterRefresh });
+    }, 40);
+  })`);
+  assert(holdUi.during.fetches === 1 && holdUi.during.disabled === true && holdUi.during.text.includes('送出中'), '送出中連按只送一次');
+  assert(holdUi.after.fetches === 1 && holdUi.after.className === 'warn' && holdUi.after.disabled === true && holdUi.after.ackHidden === false && holdUi.after.text.includes('SMC900401') && holdUi.after.text.includes('勿重送'), '寫入後未知要顯示訂單編號並鎖住');
+  assert(holdUi.afterRefresh.fetches === 1 && holdUi.afterRefresh.disabled === true && holdUi.afterRefresh.ackHidden === false, 'UNKNOWN 後再按與 refresh 都不會送出或解鎖');
+  console.log('test 送出鎖: pass');
 
   const unknownUi = await submitWith(`() => { window.__fetches += 1; return Promise.reject(new Error('network')); }`);
   assert(unknownUi.className !== 'ok' && unknownUi.text.includes('結果未知，先核對試算表、勿重送'), '網路失敗要顯示結果未知');
