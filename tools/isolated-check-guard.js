@@ -10,8 +10,11 @@
   var LIVE_ID = 'AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q';
   var UNKNOWN_MESSAGE = '結果未知，先核對試算表、勿重送';
 
-  function unknownVerdict() {
-    return { ok: false, kind: 'unknown', message: UNKNOWN_MESSAGE };
+  function unknownVerdict(orderId) {
+    var id = typeof orderId === 'string' ? orderId.trim() : '';
+    var message = UNKNOWN_MESSAGE;
+    if (id) message += '。訂單編號：' + id;
+    return { ok: false, kind: 'unknown', orderId: id, message: message, mailed: false };
   }
 
   function decodeDeploymentId(segment) {
@@ -68,16 +71,25 @@
     var orderId = '';
     if (typeof parsed.orderId === 'string') orderId = parsed.orderId.trim();
     else if (typeof parsed.orderId === 'number' && isFinite(parsed.orderId)) orderId = String(parsed.orderId);
+    var mailed = parsed.mailed === true ? true : (parsed.mailed === false ? false : null);
     if (parsed.status === 'success' && orderId) {
-      return { ok: true, kind: 'success', orderId: orderId, message: '' };
+      return { ok: true, kind: 'success', orderId: orderId, message: '', mailed: mailed };
     }
     if (parsed.status === 'error') {
       var detail = typeof parsed.message === 'string' && parsed.message.trim()
         ? parsed.message.trim()
         : '隔離後端沒有收下這筆。';
-      return { ok: false, kind: 'error', message: detail };
+      return { ok: false, kind: 'error', message: detail, mailed: false };
     }
-    return unknownVerdict();
+    if (parsed.status === 'unknown') {
+      var unknown = unknownVerdict(orderId);
+      if (typeof parsed.message === 'string' && parsed.message.indexOf('結果未知') !== -1) {
+        unknown.message = parsed.message.trim();
+        if (orderId && unknown.message.indexOf(orderId) === -1) unknown.message += '。訂單編號：' + orderId;
+      }
+      return unknown;
+    }
+    return unknownVerdict(orderId);
   }
 
   function classifyFetch(response, body) {

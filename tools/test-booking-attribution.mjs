@@ -659,6 +659,24 @@ try {
             };
         })()`);
         assert(mobile.innerWidth === 390, `手機寬度應為 390，實際 ${mobile.innerWidth}`);
+        const viewportEvidence = await evalExpr(wsUrl, `(() => {
+            const view = window.visualViewport;
+            const sheets = Array.from(document.styleSheets || []).map((sheet) => {
+                let rules = 0;
+                try { rules = sheet.cssRules ? sheet.cssRules.length : 0; } catch (err) { rules = -1; }
+                return { href: sheet.href || '', rules: rules };
+            });
+            return {
+                innerWidth: window.innerWidth,
+                innerHeight: window.innerHeight,
+                clientWidth: document.documentElement.clientWidth,
+                devicePixelRatio: window.devicePixelRatio,
+                scale: view ? view.scale : null,
+                viewportWidth: view ? view.width : null,
+                sheets: sheets,
+            };
+        })()`);
+        console.log('mobile viewport evidence ' + JSON.stringify(viewportEvidence));
         assert(mobile.title === '內用訂位', `mode=dining 應顯示內用訂位，實際 ${mobile.title}`);
         assert(mobile.diningHidden === false && mobile.takeoutHidden === true, '內用欄位要顯示、外帶欄位要收起');
         assert(mobile.diningSelected === 'true', '內用頁籤要選取');

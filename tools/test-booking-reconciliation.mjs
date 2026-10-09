@@ -151,6 +151,9 @@ function loadIsolated(options = {}) {
     menus: [],
     menuItems: [],
     alerts: [],
+    lockHeld: false,
+    lockDenied: 0,
+    lockAcquires: 0,
   };
   const marked = memorySpreadsheet();
   if (options.marker !== 'missing') {
@@ -194,6 +197,22 @@ function loadIsolated(options = {}) {
   };
   sandbox.MailApp = {
     sendEmail(to, subject, body) { box.mails.push({ to, subject, body }); },
+  };
+  sandbox.LockService = {
+    getScriptLock() {
+      return {
+        tryLock() {
+          if (box.lockHeld) {
+            box.lockDenied += 1;
+            return false;
+          }
+          box.lockHeld = true;
+          box.lockAcquires += 1;
+          return true;
+        },
+        releaseLock() { box.lockHeld = false; },
+      };
+    },
   };
   vm.createContext(sandbox);
   vm.runInContext(gs, sandbox);
@@ -405,6 +424,7 @@ assertPostKeys(livePayload(brandFields), '缺來源');
 assert(omitted.note === NOTE && omitted.date === '2026-10-22' && omitted.time === '12:00' && omitted.people === '2' && omitted.tables === '1', '旗標關閉的訂位欄維持原樣');
 const omittedRes = post(isolated, omitted);
 assertBookingResponse(omittedRes, 'SMC900001');
+assert(omittedRes.mailed === true, '收單成功時要另外標明寄信成功');
 
 for (const item of cases) {
   const live = livePayload(item.fields);
@@ -497,7 +517,7 @@ assert(rowById(isolated, 'SMC900105')['utm活動'] === "'=1+1" && rowById(isolat
 
 isolated.sandbox.MailApp.sendEmail = () => { throw new Error('mail down'); };
 const mailed = post(isolated, previewPayload(brandFields, 'SMC900107'));
-assert(mailed.status === 'success' && mailed.orderId === 'SMC900107', '寄信失敗仍要收單');
+assert(mailed.status === 'success' && mailed.orderId === 'SMC900107' && mailed.mailed === false, '寄信失敗仍要收單，並標明沒有寄出');
 assert(rowById(isolated, 'SMC900107'), '寄信失敗仍要寫進表');
 assert(rowById(isolated, 'SMC900107')['日期'] === '2026-10-22' && rowById(isolated, 'SMC900107')['人數'] === '2', '寄信失敗的列仍要是固定訂位欄');
 
@@ -634,6 +654,46 @@ const replayAfterAuto = post(runner, previewPayload(geoFields, 'SMC900101'));
 assert(replayAfterAuto.status === 'success' && replayAfterAuto.orderId === 'SMC900101', '明示的舊編號仍回原編號');
 assert(sheetRows(runner, '訂單').filter((row) => row[0] === 'SMC900101').length === 1, '明示的舊編號不可再寫一列');
 assert(runner.box.mails.filter((item) => item.subject.includes('SMC900101')).length === 2, '明示的舊編號不可再寄信');
+
+const race = loadIsolated();
+let raceSecond = null;
+const realRead = race.sandbox.readColumn_;
+race.sandbox.readColumn_ = function (sheet, col) {
+  const values = realRead(sheet, col);
+  if (!raceSecond && col === 1) raceSecond = post(race, withoutTestId(brandFields));
+  return values;
+};
+const raceFirst = post(race, withoutTestId(geoFields));
+assert(raceFirst.status === 'success' && raceFirst.orderId === 'SMC900001' && raceFirst.mailed === true, '交錯取號：先進入的一筆收單');
+assert(raceSecond && raceSecond.status === 'error' && !raceSecond.orderId, '交錯取號：拿不到鎖的一筆是一般錯誤，沒有訂單編號');
+assert(race.box.lockDenied === 1 && race.box.lockHeld === false, '交錯取號：第二筆被拒，鎖有放開');
+assert(sheetRows(race, '訂單').filter((row) => row[0] === 'SMC900001').length === 1, '交錯取號：SMC900001 只有一列');
+assert(race.box.mails.length === 2, '交錯取號：只模擬寄出先進入那一筆的兩封信');
+console.log('test 交錯取號: pass');
+
+const exhausted = loadIsolated();
+const everyId = [];
+for (let n = 0; n <= 999999; n += 1) everyId.push('SMC' + String(n).padStart(6, '0'));
+assert(exhausted.sandbox.orderIdFor_({ action: 'book' }, everyId) === '', '編號耗盡時不回傳已被占用的編號');
+const realOrderId = exhausted.sandbox.orderIdFor_;
+exhausted.sandbox.orderIdFor_ = function () { return realOrderId({ action: 'book' }, everyId); };
+const exhaustedRes = post(exhausted, withoutTestId(brandFields));
+assert(exhaustedRes.status === 'error' && !exhaustedRes.orderId && String(exhaustedRes.message).includes('沒有收單'), '編號耗盡時明確拒絕');
+assert(sheetRows(exhausted, '訂單').slice(1).length === 0 && exhausted.box.mails.length === 0, '編號耗盡時沒有訂單列也沒有寄信');
+console.log('test 編號耗盡: pass');
+
+const previewBoom = loadIsolated();
+const realEnsure = previewBoom.sandbox.ensureSheet_;
+previewBoom.sandbox.ensureSheet_ = function (ss, name, headers) {
+  if (name === '郵件預覽') throw new Error('preview failed');
+  return realEnsure(ss, name, headers);
+};
+const previewRes = post(previewBoom, previewPayload(brandFields, 'SMC900401'));
+assert(previewRes.status === 'unknown' && previewRes.orderId === 'SMC900401' && previewRes.mailed === false, '訂單列寫入後郵件預覽失敗要回 unknown 與訂單編號');
+assert(String(previewRes.message).includes('結果未知，先核對試算表、勿重送'), '未知回應要提醒勿重送');
+assert(rowById(previewBoom, 'SMC900401') && rowById(previewBoom, 'SMC900401')['utm內容'] === 'ag_brand', '未知時訂單列已經寫入');
+assert(sheetRows(previewBoom, '郵件預覽').length === 0 && previewBoom.box.mails.length === 0, '郵件預覽失敗時沒有預覽列也沒有寄信');
+console.log('test 寫入後郵件預覽失敗: pass');
 
 const lines = [
   'case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected',
