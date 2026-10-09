@@ -2174,10 +2174,15 @@
             return emptyAttributionFields();
         }
 
-        function recordBookingSubmission(orderId) {
+        function recordBookingSubmission(orderId, fields) {
             try {
                 if (!window.SmcAttribution || typeof window.SmcAttribution.recordSubmission !== 'function') return;
-                const rec = window.SmcAttribution.recordSubmission(attributionStore(), orderId);
+                const store = attributionStore();
+                const rec = window.SmcAttribution.recordSubmission(store, orderId);
+                // 綁的是送出前的快照，不是回應回來當下的造訪。同一編號不覆寫、不重複計。
+                if (typeof window.SmcAttribution.bindOrderAttribution === 'function') {
+                    window.SmcAttribution.bindOrderAttribution(store, orderId, fields);
+                }
                 if (rec && rec.counted) {
                     document.dispatchEvent(new CustomEvent('smc:booking-submitted', { detail: { orderId: String(orderId) } }));
                 }
@@ -2459,7 +2464,7 @@
                             try { msg.scrollIntoView({ behavior: 'smooth' }); } catch (err) {}
                         }
                     }
-                    recordBookingSubmission(orderId);
+                    recordBookingSubmission(orderId, attribution);
                 } else {
                     showUncertainResult(btn, '預約申請', res && res.message);
                 }

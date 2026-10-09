@@ -5,7 +5,9 @@
  * 沒有 utm_*、也沒有 gclid：source = direct/unknown。
  * 只有 gclid：source = 有點擊識別碼、來源待核對（不當成廣告，也不算 direct/unknown）。
  * 電話／LINE 人工建檔、來源不明：manualSource() 記「未知」。
- * 品牌／非品牌只認白名單與核准別名；原值另外保留。br!and 不會洗成 brand。
+ * 品牌／非品牌：有 utm_adgroup 時只認白名單與核准別名。沒有 utm_adgroup 時，
+ * 第一輪最終網址的 utm_content 只認 ag_brand→品牌、ag_geo_dining→非品牌。
+ * 其他 utm_content（含 rsa_family、尚未投放的 ag_*）不當群組。br!and 不會洗成 brand。
  *
  * 儲存讀寫失敗時改用同一個記憶體備援，且不可拋出。追蹤失敗不能擋住送單。
  * 探測成功之後若寫入失敗，改把最新來源固定寫進共用記憶體，不再讀舊的原生紀錄。
@@ -21,6 +23,7 @@
  * 九個來源欄位一律是字串。群組分類只允許「品牌」「非品牌」或空白。
  * 送出的來源字串會做試算表公式防護（= + - @ 開頭加單引號）。cleanToken 只去掉控制字元。
  * SEND_ATTRIBUTION_TO_BACKEND 預設 false：來源只留在這次分頁，正式 POST 不加新欄位。
+ * 送出當下的 9 欄快照綁到回傳的訂單編號；同一編號不覆寫、不重複計。快照不進正式 POST。
  * 正式 Apps Script 不在本 repo。本機契約測試不能證明後端相容。見 docs/booking-attribution.md。
  */
 (function (root, factory) {
@@ -31,6 +34,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     var STORAGE_KEY = 'smc_visit_attribution_v1';
     var SUBMISSION_KEY = 'smc_submitted_order_ids_v1';
+    var ORDER_ATTR_KEY = 'smc_order_attribution_v1';
     var VISIT_TTL_MS = 30 * 60 * 1000;
     var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id', 'utm_adgroup'];
     var ATTRIBUTION_KEYS = ['source', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm', 'utmAdgroup', 'adgroupBucket', 'gclid'];
@@ -51,6 +55,10 @@
     ADGROUP_BUCKETS.non_brand = '非品牌';
     ADGROUP_BUCKETS['non-brand'] = '非品牌';
     ADGROUP_BUCKETS['非品牌'] = '非品牌';
+    // 第一輪最終到達網址把廣告群組放在 utm_content，沒有 utm_adgroup。只認這兩個原值。
+    var CONTENT_GROUP_BUCKETS = Object.create(null);
+    CONTENT_GROUP_BUCKETS.ag_brand = '品牌';
+    CONTENT_GROUP_BUCKETS.ag_geo_dining = '非品牌';
     var storageFallbacks = typeof WeakMap === 'function' ? new WeakMap() : null;
     // 預設關閉。隔離環境確認寫表與寄信之後，才把這行改成 true，並另案部署靜態官網。
     // 本機契約測試不能證明後端相容，也不能當作打開這行的理由。
@@ -398,12 +406,31 @@
         return classifyAdgroup(raw).bucket;
     }
 
+    function contentGroupBucket(raw) {
+        var token = cleanToken(raw, 120);
+        if (!token || !Object.prototype.hasOwnProperty.call(CONTENT_GROUP_BUCKETS, token)) return '';
+        var value = CONTENT_GROUP_BUCKETS[token];
+        return value === '品牌' || value === '非品牌' ? value : '';
+    }
+
+    // 有 utm_adgroup 就只看它（認不得就留白，不用 utm_content 蓋過）。
+    // 沒有 utm_adgroup 才看第一輪最終網址的 utm_content。
+    function resolveGroup(utm) {
+        var source = utm || {};
+        var group = classifyAdgroup(source.utm_adgroup || '');
+        if (group.raw) {
+            var fromAdgroup = group.bucket === '品牌' || group.bucket === '非品牌' ? group.bucket : '';
+            return { raw: group.raw, bucket: fromAdgroup };
+        }
+        return { raw: '', bucket: contentGroupBucket(source.utm_content || '') };
+    }
+
     function bookingFields(storage, now) {
         try {
             var visit = readVisit(storage, now);
             var utm = visit.utm || {};
             var tagged = hasUtm(utm);
-            var group = classifyAdgroup(utm.utm_adgroup || '');
+            var group = resolveGroup(utm);
             var source = 'direct/unknown';
             if (tagged) source = utm.utm_source || 'utm_missing_source';
             else if (visit.gclid) source = GCLID_ONLY_SOURCE;
@@ -508,18 +535,96 @@
         return SEND_ATTRIBUTION_TO_BACKEND === true;
     }
 
-    function payloadForBooking(base, fields) {
+    function copyOriginalPayload(base) {
         var payload = {};
         var source = base && typeof base === 'object' ? base : {};
         ORIGINAL_PAYLOAD_KEYS.forEach(function (key) {
             if (Object.prototype.hasOwnProperty.call(source, key)) payload[key] = source[key];
         });
-        if (!attributionSendingEnabled()) return payload;
-        var extra = fields && typeof fields === 'object' ? fields : emptyBookingFields();
+        return payload;
+    }
+
+    function snapshotAttribution(fields) {
+        var snap = {};
+        var extra = fields && typeof fields === 'object' ? fields : null;
         ATTRIBUTION_KEYS.forEach(function (key) {
-            payload[key] = typeof extra[key] === 'string' ? extra[key] : '';
+            snap[key] = extra && typeof extra[key] === 'string' ? extra[key] : '';
+        });
+        return snap;
+    }
+
+    // 預覽「旗標打開之後」的 POST。官網送出不呼叫這支；旗標維持關閉。
+    function payloadIfAttributionEnabled(base, fields) {
+        var payload = copyOriginalPayload(base);
+        var extra = snapshotAttribution(fields);
+        ATTRIBUTION_KEYS.forEach(function (key) {
+            payload[key] = extra[key];
         });
         return payload;
+    }
+
+    function payloadForBooking(base, fields) {
+        if (!attributionSendingEnabled()) return copyOriginalPayload(base);
+        return payloadIfAttributionEnabled(base, fields);
+    }
+
+    function readOrderMap(storage) {
+        var safe = Object.create(null);
+        try {
+            var parsed = JSON.parse(readItem(activeStorage(storage), ORDER_ATTR_KEY) || '{}');
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return safe;
+            Object.keys(parsed).forEach(function (key) {
+                if (key === '__proto__' || key === 'constructor' || key === 'prototype') return;
+                var id = cleanToken(key, 40);
+                if (!id || id !== key) return;
+                safe[id] = snapshotAttribution(parsed[key]);
+            });
+        } catch (err) {}
+        return safe;
+    }
+
+    // 送出當下的快照綁到這個訂單編號。同一編號再綁不覆寫，避免後一筆造訪蓋掉前一筆。
+    function bindOrderAttribution(storage, orderId, fields) {
+        try {
+            storage = activeStorage(storage);
+            var id = cleanToken(orderId, 40);
+            if (!id) return { bound: false, reason: 'missing' };
+            var map = readOrderMap(storage);
+            if (map[id]) return { bound: false, reason: 'duplicate', fields: snapshotAttribution(map[id]) };
+            map[id] = snapshotAttribution(fields);
+            var ids = Object.keys(map);
+            if (ids.length > 100) {
+                ids.slice(0, ids.length - 100).forEach(function (oldId) { delete map[oldId]; });
+            }
+            if (!writeItem(storage, ORDER_ATTR_KEY, JSON.stringify(map))) {
+                return { bound: false, reason: 'unstored' };
+            }
+            return { bound: true, reason: 'first', fields: snapshotAttribution(map[id]) };
+        } catch (err) {
+            return { bound: false, reason: 'error' };
+        }
+    }
+
+    function readOrderAttribution(storage, orderId) {
+        try {
+            var id = cleanToken(orderId, 40);
+            if (!id) return null;
+            var map = readOrderMap(storage);
+            return map[id] ? snapshotAttribution(map[id]) : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function listOrderAttributions(storage) {
+        try {
+            var map = readOrderMap(storage);
+            return Object.keys(map).map(function (id) {
+                return { orderId: id, fields: snapshotAttribution(map[id]) };
+            });
+        } catch (err) {
+            return [];
+        }
     }
 
     function install(win) {
@@ -549,6 +654,7 @@
 
     return {
         STORAGE_KEY: STORAGE_KEY,
+        ORDER_ATTR_KEY: ORDER_ATTR_KEY,
         VISIT_TTL_MS: VISIT_TTL_MS,
         ATTRIBUTION_KEYS: ATTRIBUTION_KEYS,
         GCLID_ONLY_SOURCE: GCLID_ONLY_SOURCE,
@@ -559,15 +665,21 @@
         handlePageShow: handlePageShow,
         attributionSendingEnabled: attributionSendingEnabled,
         payloadForBooking: payloadForBooking,
+        payloadIfAttributionEnabled: payloadIfAttributionEnabled,
         bookingFields: bookingFields,
         emptyBookingFields: emptyBookingFields,
         classifyAdgroup: classifyAdgroup,
+        contentGroupBucket: contentGroupBucket,
+        resolveGroup: resolveGroup,
         normalizeAdgroup: normalizeAdgroup,
         adgroupBucket: adgroupBucket,
         plainSheetText: plainSheetText,
         manualSource: manualSource,
         bookingOutcomeCounts: bookingOutcomeCounts,
         recordSubmission: recordSubmission,
+        bindOrderAttribution: bindOrderAttribution,
+        readOrderAttribution: readOrderAttribution,
+        listOrderAttributions: listOrderAttributions,
         resolveStorage: resolveStorage,
         install: install,
         memoryStorage: memoryStorage
