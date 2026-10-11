@@ -647,8 +647,6 @@
         }
         #submitBtn { letter-spacing: 0.08em; }
         #booking-notice {
-            background: linear-gradient(135deg, #faf1e5 0%, #f3e3d1 100%);
-            border-color: rgba(181, 102, 43, 0.14);
             min-width: 0;
         }
         #booking-notice > * { min-width: 0; }
@@ -742,17 +740,13 @@
         }
         .arrival-item { padding: 1.35rem; background: #fffdf9; }
         .arrival-number { color: #b4511b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; }
-        .visit-section {
-            background: linear-gradient(135deg, #f7f1e7 0%, #eee4d7 100%);
-            border-color: rgba(119, 87, 57, 0.13);
+        /* 既有淺色票彼此太近。這層暖沙只加一次，用來和白卡、淺麻色交通卡分開。 */
+        .band-sand {
+            background: #e4c9a8;
+            border-color: rgba(122, 78, 42, 0.22);
         }
-        /* 暖底上原橘色小標／連結對比不足，改用表單裡已有的深橘棕。 */
-        .visit-section .section-kicker,
-        .visit-section .contact-link { color: #9a3412; }
-        #location-section {
-            background: linear-gradient(135deg, #faf8f3 0%, #f1eae0 100%);
-            border-color: rgba(106, 85, 62, 0.12);
-        }
+        .band-sand .section-kicker,
+        .band-sand .contact-link { color: #9a3412; }
         .map-frame { height: clamp(320px, 34vw, 420px); }
         .map-frame iframe { width: 100%; height: 100%; display: block; }
         
@@ -999,7 +993,7 @@
         </section>
 
         <!-- 預約須知 -->
-        <section id="booking-notice" class="glass-card p-6 md:p-8 mb-8 grid grid-cols-1 lg:grid-cols-3 gap-6 items-center" aria-labelledby="booking-notice-title">
+        <section id="booking-notice" class="band-sand glass-card p-6 md:p-8 mb-8 grid grid-cols-1 lg:grid-cols-3 gap-6 items-center" aria-labelledby="booking-notice-title">
             <div class="lg:col-span-2 min-w-0">
                 <p class="section-kicker mb-2">CONTACT</p>
                 <h2 id="booking-notice-title" class="brand-font text-2xl mb-3 flex items-center text-stone-800">
@@ -1106,7 +1100,7 @@
         </section>
 
         <!-- 團體聚餐：桌數、場合與預約方式（價位見上方菜單，不在此重列） -->
-        <section id="group-dining" class="visit-section glass-card p-8 mb-8" aria-labelledby="group-dining-title">
+        <section id="group-dining" class="band-sand glass-card p-8 mb-8" aria-labelledby="group-dining-title">
             <p class="section-kicker mb-2">GROUP DINING</p>
             <h2 id="group-dining-title" class="brand-font text-2xl text-stone-800 mb-2">團體聚餐・家庭聚會</h2>
             <p class="text-sm text-stone-600 leading-7 mb-6">適合家庭聚餐、同學會、公司聚餐與親友聚會。本店採預約制，請先訂位再出發。最多可容納 9 桌；每桌建議最多坐12位。</p>
