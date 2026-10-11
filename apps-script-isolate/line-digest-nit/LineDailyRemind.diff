@@ -1,5 +1,5 @@
 --- apps-script-isolate/line-digest-nit/original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
-+++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 16:40:39.389045424 +0000
++++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 16:58:45.296243218 +0000
 @@ -1,3 +1,18 @@
 +/**
 + * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
@@ -9,7 +9,7 @@
 + * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
 + * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
 + * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
-+ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。同一條、／和／或列舉裡，每個食材都帶頭的極性（tanpa、jangan pakai、tidak bisa makan、tidak makan、alergi；可以吃不加 tidak），非食材夾在中間仍用自己的完整詞。有一項對不上，就只把該「；」項目留中文，同一備註的其他「；」項目照翻。逗號仍把同一個「；」項目綁在一起。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
++ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。同一條、／和／或列舉裡，每個食材跟最近的頭（不能吃、不吃、不要、不要放、可以吃、X過敏，以及不要辣這類完整否定詞）。可以吃不能跨過否定、過敏或非食材，否則該「；」項目留中文。否定與過敏仍可跨過非食材。有一項對不上，就只把該「；」項目留中文，同一備註的其他「；」項目照翻。逗號仍把同一個「；」項目綁在一起。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
 + * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。蔥花、蛋奶、蒜、海鮮是完整詞。
 + * 店務維護提醒整句翻一次，不按逗號切開。整句路徑不套用「換」和句首「不要」的留中文規則。失敗就整句留原文。
 + * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
@@ -84,7 +84,7 @@
    }
    return translatedLines.join("\n");
  }
-@@ -328,17 +335,1106 @@
+@@ -328,17 +335,1188 @@
  function translateSessionHeadingLine_(line, idName) {
    var pendingTail = "jumlah meja menunggu konfirmasi";
    // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
@@ -550,12 +550,13 @@
 +  if (end === index) return null;
 +  var food = readFoodItem_(text, index);
 +  // 「對…過敏」的過敏是句尾，不是「花生過敏」這個詞。否定列舉裡的花生過敏仍整顆當非食材。
++  var zh = text.slice(index, end);
 +  if (food && index + food.len === end && (stopAtAllergy || !allergyTail_(text, index + food.len))) {
-+    return { len: food.len, id: food.id, food: true };
++    return { len: food.len, id: food.id, food: true, zh: zh };
 +  }
-+  var gloss = glossExact_(text.slice(index, end));
++  var gloss = glossExact_(zh);
 +  if (!gloss) return null;
-+  return { len: end - index, id: gloss, food: false };
++  return { len: end - index, id: gloss, food: false, zh: zh };
 +}
 +
 +function readMixedItems_(text, index, stopAtAllergy) {
@@ -594,32 +595,106 @@
 +  return joinTanpa_(ids, seps);
 +}
 +
-+function renderMixed_(kind, gloss, items, seps, leading, leadSep) {
++function classifyScopeItem_(item) {
++  if (item.food) return { type: "food", id: item.id };
++  var zh = item.zh || "";
++  var phrase = longestPhraseAt_(zh, 0);
++  if (phrase && phrase.id && phrase.len === zh.length && phrase.id.indexOf("alergi ") === 0) {
++    return {
++      type: "head",
++      leading: "",
++      foods: [phrase.id.slice("alergi ".length)],
++      scope: { kind: "dan", gloss: "alergi ", positive: false }
++    };
++  }
++  var head = longestListHead_(zh);
++  var fixedWhole = phrase && phrase.id && phrase.len === zh.length && isFixedNegationPhrase_(zh.slice(0, phrase.len));
++  if (fixedWhole && (!head || phrase.len > head.zh.length)) {
++    return {
++      type: "head",
++      leading: phrase.id,
++      foods: [],
++      scope: { kind: "tanpa", gloss: "tanpa ", positive: false }
++    };
++  }
++  if (head && zh.indexOf(head.zh) === 0) {
++    var rest = zh.slice(head.zh.length);
++    var food = rest ? readFoodItem_(rest, 0) : null;
++    if (food && food.len === rest.length && !allergyTail_(rest, food.len)) {
++      return {
++        type: "head",
++        leading: "",
++        foods: [food.id],
++        scope: { kind: head.kind, gloss: head.gloss, positive: head.zh === "可以吃" }
++      };
++    }
++  }
++  return { type: "other", id: item.id };
++}
++
++function renderScoped_(scope, items, seps, leadSep) {
 +  var bits = [];
-+  if (leading) bits.push(leading);
-+  var i = 0;
-+  while (i < items.length) {
++  var current = { kind: scope.kind, gloss: scope.gloss, positive: !!scope.positive };
++  if (scope.leading) bits.push(scope.leading);
++  var pending = null;
++  var blocked = false;
++  function flush() {
++    if (!pending) return;
++    var restart = bits.length > 0 && !pending.newHead;
++    if (pending.sepBefore) pushSep_(bits, pending.sepBefore);
++    bits.push(renderFoodRun_(pending.kind, pending.gloss, pending.ids, pending.foodSeps, restart));
++    pending = null;
++  }
++  var i;
++  for (i = 0; i < items.length; i++) {
 +    var sepBefore = i === 0 ? (leadSep || "") : seps[i - 1];
-+    if (!items[i].food) {
-+      if (sepBefore) pushSep_(bits, sepBefore);
-+      bits.push(items[i].id);
-+      i += 1;
++    var cls = classifyScopeItem_(items[i]);
++    if (cls.type === "head") {
++      flush();
++      current = cls.scope;
++      blocked = false;
++      if (cls.leading) {
++        if (sepBefore) pushSep_(bits, sepBefore);
++        bits.push(cls.leading);
++        sepBefore = "";
++      }
++      if (cls.foods.length) {
++        pending = {
++          kind: current.kind,
++          gloss: current.gloss,
++          ids: cls.foods.slice(),
++          foodSeps: [],
++          sepBefore: sepBefore,
++          newHead: true
++        };
++      }
 +      continue;
 +    }
-+    var ids = [items[i].id];
-+    var foodSeps = [];
-+    var firstSep = sepBefore;
-+    i += 1;
-+    while (i < items.length && items[i].food) {
-+      foodSeps.push(seps[i - 1]);
-+      ids.push(items[i].id);
-+      i += 1;
++    if (cls.type === "food") {
++      if (current.positive && blocked) return { reject: true };
++      if (pending && pending.kind === current.kind && pending.gloss === current.gloss) {
++        pending.foodSeps.push(sepBefore);
++        pending.ids.push(cls.id);
++      } else {
++        flush();
++        pending = {
++          kind: current.kind,
++          gloss: current.gloss,
++          ids: [cls.id],
++          foodSeps: [],
++          sepBefore: sepBefore,
++          newHead: false
++        };
++      }
++      continue;
 +    }
-+    var restart = bits.length > 0;
-+    if (firstSep) pushSep_(bits, firstSep);
-+    bits.push(renderFoodRun_(kind, gloss, ids, foodSeps, restart));
++    flush();
++    if (sepBefore) pushSep_(bits, sepBefore);
++    bits.push(cls.id);
++    if (current.positive) blocked = true;
 +  }
-+  return joinListBits_(bits);
++  flush();
++  return { id: joinListBits_(bits) };
 +}
 +
 +function matchFixedPhraseList_(rest) {
@@ -632,7 +707,9 @@
 +  var mixed = readMixedItems_(rest, phrase.len + 1);
 +  if (!mixed) return { reject: true };
 +  if (mixed.reject) return mixed;
-+  return { len: phrase.len + 1 + mixed.len, id: renderMixed_("tanpa", "tanpa ", mixed.items, mixed.seps, phrase.id, sep) };
++  var rendered = renderScoped_({ kind: "tanpa", gloss: "tanpa ", positive: false, leading: phrase.id }, mixed.items, mixed.seps, sep);
++  if (!rendered || rendered.reject) return rendered;
++  return { len: phrase.len + 1 + mixed.len, id: rendered.id };
 +}
 +
 +function matchOpenList_(rest, head) {
@@ -647,7 +724,9 @@
 +  var hasFood = false;
 +  for (n = 0; n < mixed.items.length; n++) if (mixed.items[n].food) hasFood = true;
 +  if (!hasFood) return null;
-+  return { len: head.zh.length + mixed.len, id: renderMixed_(head.kind, head.gloss, mixed.items, mixed.seps, "", "") };
++  var rendered = renderScoped_({ kind: head.kind, gloss: head.gloss, positive: head.zh === "可以吃", leading: "" }, mixed.items, mixed.seps, "");
++  if (!rendered || rendered.reject) return rendered;
++  return { len: head.zh.length + mixed.len, id: rendered.id };
 +}
 +
 +function matchListGrammar_(rest) {
@@ -673,7 +752,9 @@
 +  var n;
 +  for (n = 0; n < mixed.items.length; n++) if (mixed.items[n].food) hasFood = true;
 +  if (!hasFood) return null;
-+  return { len: at + 2, id: renderMixed_("dan", "alergi ", mixed.items, mixed.seps, "", "") };
++  var rendered = renderScoped_({ kind: "dan", gloss: "alergi ", positive: false, leading: "" }, mixed.items, mixed.seps, "");
++  if (!rendered || rendered.reject) return rendered;
++  return { len: at + 2, id: rendered.id };
 +}
 +
 +function matchBareAllergy_(rest) {
@@ -1040,7 +1121,8 @@
 +        continue;
 +      }
 +      if (!next) continue;
-+      if (prevPhrase && part.phrase) body += ", ";
++      var statusTail = part.text === "sudah dibayar" || part.text === "belum dibayar";
++      if (prevPhrase && part.phrase && !statusTail) body += ", ";
 +      else if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
 +      body += next;
 +      prevPhrase = part.type === "id" && !!part.phrase;
@@ -1194,7 +1276,7 @@
  }
  
  function translateTotalLine_(line) {
-@@ -373,31 +1469,53 @@
+@@ -373,31 +1551,53 @@
    return "(Total " + (tables ? tables[0] : "0") + " meja)";
  }
  

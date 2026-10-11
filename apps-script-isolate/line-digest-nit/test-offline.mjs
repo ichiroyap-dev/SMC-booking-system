@@ -1053,6 +1053,15 @@ function foodHasPolarity(head, clause, id) {
   return verbs.some((verb) => clause.indexOf(verb) === 0) && clause.indexOf(id) !== -1;
 }
 
+function foodFollowsNonfood(zhItems) {
+  let crossed = false;
+  for (const zh of zhItems) {
+    if (!polarityFoodGloss[zh]) crossed = true;
+    else if (crossed) return true;
+  }
+  return false;
+}
+
 const polarityLayouts = [
   { name: "3", foods: ["花生", "蝦子"], positions: [0, 1, 2] },
   { name: "4", foods: ["花生", "蝦子", "香菜"], positions: [0, 1, 2, 3] },
@@ -1061,30 +1070,164 @@ for (const head of generativeHeads) {
   for (const layout of polarityLayouts) {
     for (const pos of layout.positions) {
       const zhItems = polarityItems(layout.foods, pos);
-      const spec = {
-        src: polaritySource(head, zhItems),
-        id: polarityExpected(head, zhItems),
-        foodIds: zhItems.filter((zh) => polarityFoodGloss[zh]).map((zh) => polarityFoodGloss[zh]),
-        forbid: ["tanpa sedikit", "jangan pakai sedikit", "makan sedikit", "alergi sedikit", "dan sedikit"],
-      };
+      const positiveHeld = head.kind === "dan-ok" && foodFollowsNonfood(zhItems);
+      const spec = positiveHeld
+        ? {
+            src: polaritySource(head, zhItems),
+            chinese: true,
+            keep: [head.name].concat(zhItems),
+            forbid: ["bisa makan", "sedikit garam", "tanpa ", "jangan pakai"],
+            foodIds: [],
+          }
+        : {
+            src: polaritySource(head, zhItems),
+            id: polarityExpected(head, zhItems),
+            foodIds: zhItems.filter((zh) => polarityFoodGloss[zh]).map((zh) => polarityFoodGloss[zh]),
+            forbid: ["tanpa sedikit", "jangan pakai sedikit", "makan sedikit", "alergi sedikit", "dan sedikit"],
+          };
       for (const entry of protectedEntries) {
         generativeCount += 1;
         const label = "generative " + entry + " " + head.name + " " + layout.name + "@" + pos;
         const got = runProtected(entry, "success", spec.src);
         const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
         ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-        ok(sentence === spec.id, label + "\n  got: " + sentence);
-        if (head.kind === "dan-ok") ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
-        const clauses = sentence.split(", ");
-        for (const id of spec.foodIds) {
-          ok(clauses.some((clause) => foodHasPolarity(head, clause, id)), label + " lost polarity on " + id + ": " + sentence);
+        if (spec.chinese) {
+          for (const piece of spec.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
+        } else {
+          ok(sentence === spec.id, label + "\n  got: " + sentence);
+          if (head.kind === "dan-ok") ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
+          const clauses = sentence.split(", ");
+          for (const id of spec.foodIds) {
+            ok(clauses.some((clause) => foodHasPolarity(head, clause, id)), label + " lost polarity on " + id + ": " + sentence);
+          }
         }
         for (const bad of spec.forbid) ok(sentence.indexOf(bad) === -1, label + " applied the head to a non-food: " + sentence);
       }
     }
   }
 }
-ok(generativeCount === generativeHeads.length * (generativeShapes.length + 3 + 4) * protectedEntries.length, "generative list grammar count " + generativeCount);
+
+const subHeadSpecs = [
+  { zh: "不能吃花生", kind: "dan-neg", own: ["kacang"], leading: "" },
+  { zh: "不吃牛", kind: "dan-eat", own: ["daging sapi"], leading: "" },
+  { zh: "不要香菜", kind: "fixed", own: [], leading: "tanpa daun ketumbar" },
+  { zh: "不要放蔥", kind: "repeat", own: ["daun bawang"], leading: "" },
+  { zh: "可以吃雞", kind: "dan-ok", own: ["ayam"], leading: "" },
+  { zh: "花生過敏", kind: "allergy", own: ["kacang"], leading: "" },
+];
+const subHeadSkeleton = ["蝦子", "香菜"];
+const subHeadOuter = generativeHeads.filter((head) => head.kind !== "allergy");
+
+function subHeadItems(sub, pos) {
+  const items = subHeadSkeleton.slice();
+  items.splice(pos, 0, sub.zh);
+  return items;
+}
+
+function subHeadExpected(head, items, sub) {
+  const parts = [];
+  let scope = head.kind === "fixed" ? "fixed" : head.kind;
+  let seen = false;
+  if (head.kind === "fixed") {
+    parts.push(head.gloss);
+    seen = true;
+  }
+  let run = [];
+  let runNew = false;
+  function flush() {
+    if (!run.length) return;
+    parts.push(polarityClause(scope, run, seen && !runNew));
+    seen = true;
+    run = [];
+    runNew = false;
+  }
+  for (const zh of items) {
+    if (zh === sub.zh) {
+      flush();
+      scope = sub.kind;
+      if (sub.leading) {
+        parts.push(sub.leading);
+        seen = true;
+      }
+      if (sub.own.length) {
+        run = sub.own.slice();
+        runNew = true;
+      }
+      continue;
+    }
+    run.push(polarityFoodGloss[zh]);
+  }
+  flush();
+  return parts.join(", ");
+}
+
+function nearestFoodScopes(head, items, sub) {
+  let scope = head.kind === "fixed" ? "fixed" : head.kind;
+  const found = [];
+  for (const zh of items) {
+    if (zh === sub.zh) {
+      scope = sub.kind;
+      for (const id of sub.own) found.push({ id: id, scope: scope });
+      continue;
+    }
+    found.push({ id: polarityFoodGloss[zh], scope: scope });
+  }
+  return found;
+}
+
+for (const head of subHeadOuter) {
+  for (const sub of subHeadSpecs) {
+    for (const pos of [0, 1, 2]) {
+      const zhItems = subHeadItems(sub, pos);
+      const spec = {
+        src: polaritySource(head, zhItems),
+        id: subHeadExpected(head, zhItems, sub),
+        foods: nearestFoodScopes(head, zhItems, sub),
+      };
+      for (const entry of protectedEntries) {
+        generativeCount += 1;
+        const label = "generative subhead " + entry + " " + head.name + " " + sub.zh + "@" + pos;
+        const got = runProtected(entry, "success", spec.src);
+        const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+        ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+        ok(sentence === spec.id, label + "\n  got: " + sentence);
+        const clauses = sentence.split(", ");
+        for (const food of spec.foods) {
+          const scopeHead = { kind: food.scope };
+          ok(clauses.some((clause) => foodHasPolarity(scopeHead, clause, food.id)), label + " nearest head missed " + food.id + ": " + sentence);
+          if (food.scope === "dan-ok") {
+            ok(clauses.some((clause) => (clause.indexOf("tamu bisa makan ") === 0 || clause.indexOf("bisa makan ") === 0) && clause.indexOf(food.id) !== -1 && clause.indexOf("tidak") === -1), label + " positive drifted " + food.id + ": " + sentence);
+          }
+        }
+      }
+    }
+  }
+}
+
+const positiveHoldSources = [
+  "可以吃花生、少鹽、蝦子",
+  "可以吃雞蛋、靠窗、香菜",
+  "可以吃花生、生日、蝦子",
+  "不要辣、可以吃雞、少鹽、花生",
+];
+for (const src of positiveHoldSources) {
+  for (const entry of protectedEntries) {
+    generativeCount += 1;
+    const label = "generative positive-hold " + entry + " " + src;
+    const got = runProtected(entry, "success", src);
+    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+    ok(sentence.indexOf("bisa makan") === -1, label + " carried positive polarity: " + sentence);
+    ok(sentence.indexOf("sedikit garam") === -1 && sentence.indexOf("dekat jendela") === -1 && sentence.indexOf("ulang tahun") === -1, label + " translated across the break: " + sentence);
+    for (const piece of src.split("、")) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
+  }
+}
+ok(
+  generativeCount === generativeHeads.length * (generativeShapes.length + 3 + 4) * protectedEntries.length
+    + subHeadOuter.length * subHeadSpecs.length * 3 * protectedEntries.length
+    + positiveHoldSources.length * protectedEntries.length,
+  "generative list grammar count " + generativeCount,
+);
 
 const namedListBugs = [
   ["不要放蔥、少鹽", "jangan pakai daun bawang, sedikit garam", ["jangan pakai sedikit"]],
@@ -1109,6 +1252,13 @@ const namedListBugs = [
   ["不要放花生、少鹽、香菜", "jangan pakai kacang, sedikit garam, jangan pakai daun ketumbar", ["jangan pakai sedikit", ", daun ketumbar"]],
   ["不吃辣、少鹽、花生", "tamu tidak makan pedas, sedikit garam, tanpa kacang", [", kacang", "makan sedikit"]],
   ["不要辣不要香菜", "tidak pedas, tanpa daun ketumbar", ["tidak pedas tanpa", "tidak pedastanpa"]],
+  ["可以吃雞、不能吃花生、蝦子", "tamu bisa makan ayam, tamu tidak bisa makan kacang dan udang", ["tamu bisa makan kacang", "tamu bisa makan udang", ", bisa makan"]],
+  ["可以吃雞、不吃牛、雞蛋", "tamu bisa makan ayam, tamu tidak makan daging sapi dan telur", ["bisa makan telur", "bisa makan daging"]],
+  ["可以吃雞、不要香菜、花生", "tamu bisa makan ayam, tanpa daun ketumbar, tanpa kacang", ["bisa makan kacang", "bisa makan daun"]],
+  ["可以吃雞、不要放蔥、香菜", "tamu bisa makan ayam, jangan pakai daun bawang, jangan pakai daun ketumbar", ["bisa makan daun", "bisa makan bawang"]],
+  ["可以吃雞、花生過敏、蝦子", "tamu bisa makan ayam, alergi kacang dan udang", ["bisa makan udang", "bisa makan kacang"]],
+  ["不要辣、可以吃雞、花生", "tidak pedas, tamu bisa makan ayam dan kacang", ["tanpa kacang", "tanpa ayam"]],
+  ["不要雞蛋、可以吃雞、雞蛋", "tanpa telur, tamu bisa makan ayam dan telur", ["tanpa telur, tamu bisa makan ayam, tanpa"]],
 ];
 for (const entry of protectedEntries) {
   for (const row of namedListBugs) {
@@ -1299,6 +1449,8 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkDict("plan code phrase 不要A改成B", "不要5k1a改成6k1a", "ganti 5k1a menjadi 6k1a");
   checkDict("plan code phrase 加點A一份", "加點5k1a一份", "tambah 5k1a 1 porsi");
   checkDict("amount phrase 訂金X已付", "訂金$1,000已付", "uang muka $1,000 sudah dibayar");
+  checkDict("paid without amount has no stray comma", "訂金已付", "uang muka sudah dibayar");
+  checkDict("unpaid balance without amount has no stray comma", "尾款未付", "sisa pembayaran belum dibayar");
   checkDict("amount phrase 訂金X未付", "訂金$1,000未付", "uang muka $1,000 belum dibayar");
   checkDict("amount phrase 尾款X", "尾款$2,000", "sisa pembayaran $2,000");
   checkDict("amount phrase 找零X已付", "找零$1,000.50已付", "kembalian $1,000.50 sudah dibayar");
