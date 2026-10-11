@@ -945,6 +945,21 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkSend("N大 not at segment end 3大靠窗", "3大靠窗");
   checkSend("mid-sentence dictionary does not fragment", "今晚不要辣的菜要先標記");
   checkDict("allergy joins 對花生和蝦子過敏", "對花生和蝦子過敏", "alergi kacang dan udang");
+  checkDict("enumeration allergy 對花生、蝦子過敏", "對花生、蝦子過敏", "alergi kacang dan udang");
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("對花生、蝦子過敏"))).indexOf("udang alergi") === -1, "對花生、蝦子過敏 reversed the allergy");
+  checkDict("enumeration negation 不要香菜、蔥", "不要香菜、蔥", "tanpa daun ketumbar, daun bawang");
+  checkDict("enumeration remark stays one segment 不要香菜、少鹽", "不要香菜、少鹽", "tanpa daun ketumbar, sedikit garam");
+  checkDict("quantity list stays covered 桶仔雞2隻、雞湯1份", "桶仔雞2隻、雞湯1份", "ayam tong 2 ekor, sup ayam 1 porsi");
+  checkDict("bare allergy 蝦子過敏", "蝦子過敏", "alergi udang");
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("蝦子過敏"))).indexOf("udang alergi") === -1, "蝦子過敏 reversed the allergy");
+  checkDict("trailing particle stripped 不要辣的", "不要辣的", "tidak pedas");
+  checkDict("bare 元 stays original", "元", "元");
+  checkDict("time word covers amount phrase", "今晚訂金$1,000已付", "malam ini uang muka $1,000 sudah dibayar");
+  wholeCalls.length = 0;
+  const garlic = wholeApp.translateTaskCnToId(remarkLine("不要香菜、蔥、蒜"));
+  ok(JSON.stringify(wholeCalls) === JSON.stringify(["不要香菜、蔥、蒜"]), "uncovered enumeration sends the whole segment: " + JSON.stringify(wholeCalls));
+  ok(remarkOf(garlic).indexOf("蒜") !== -1, "uncovered enumeration dropped 蒜: " + garlic);
+  ok(remarkOf(garlic).indexOf("daun bawang") === -1, "uncovered enumeration translated a fragment: " + garlic);
   checkDict("plan code phrase 不要A改成B", "不要5k1a改成6k1a", "ganti 5k1a menjadi 6k1a");
   checkDict("plan code phrase 加點A一份", "加點5k1a一份", "tambah 5k1a 1 porsi");
   checkDict("amount phrase 訂金X已付", "訂金$1,000已付", "uang muka $1,000 sudah dibayar");
@@ -1007,7 +1022,7 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
 
 resetCalls();
 const particle = fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：訂金$1,000的");
-ok(remarkOf(particle) === "Catatan: uang muka $1,000的", "particle piece is not translated: " + particle);
+ok(remarkOf(particle) === "Catatan: uang muka $1,000", "trailing particle is stripped: " + particle);
 ok(newCalls.length === 0, "particle piece called Google: " + JSON.stringify(newCalls));
 
 {

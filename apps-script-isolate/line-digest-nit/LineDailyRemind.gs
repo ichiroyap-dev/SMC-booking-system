@@ -6,6 +6,7 @@
  * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
  * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
  * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
+ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏）。尾端的的了吧呢啊嗎呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
  * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。
  * 店務維護提醒整句翻一次，不按逗號切開。同一套對照也用在整行。失敗就整句留原文。
  * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
@@ -317,7 +318,7 @@ function translateTaskCnToId(taskCn) {
       translatedBack = translatedBack.replace(/備註：/g, "Catatan: ");
       translatedBack = translatedBack.replace(/預估金額/g, "Perkiraan biaya");
       translatedBack = translatedBack.replace(/人數待確認/g, "Jumlah orang menunggu konfirmasi");
-      // 只在 ；;、，,（）()、| 與換行切開。金額裡的千分位逗號不切開。不加 / 或空白。
+      // 只在 ；;，,（）()| 與換行切開。「、」留在段內。金額裡的千分位逗號不切開。不加 / 或空白。
       translatedBack = translateRemarkBodyToId_(translatedBack, translateCache);
 
       if (!hadPipe) translatedLines.push(translatedFront);
@@ -537,6 +538,11 @@ var REMARK_PHRASES_ = [
   ["幼兒", "balita", true],
   ["大人", "dewasa", true],
   ["生日", "ulang tahun", false],
+  ["今晚", "malam ini", true],
+  ["今天", "hari ini", true],
+  ["明天", "besok", true],
+  ["中午", "siang", true],
+  ["晚上", "malam", true],
   ["靠窗", "dekat jendela", false],
   ["要VIP桌", "minta meja VIP", false],
   ["訂金", "uang muka", true],
@@ -591,27 +597,43 @@ function singleCharXId_(ch) {
   return "";
 }
 
+function isListBoundary_(text, index) {
+  var next = text.charAt(index);
+  if (!next) return true;
+  if (next === "、" || next === "和" || next === "與" || next === "及" || next === "或") return true;
+  return text.slice(index, index + 2) === "過敏";
+}
+
+function readGlossItem_(text, index) {
+  if (text.slice(index, index + 2) === "過敏") return null;
+  var phrase = longestPhraseAt_(text, index);
+  if (phrase && phrase.len > 1 && phrase.id) return { len: phrase.len, id: phrase.id };
+  var id = singleCharXId_(text.charAt(index));
+  if (!id || !isListBoundary_(text, index + 1)) return null;
+  return { len: 1, id: id };
+}
+
 function glossRunAt_(text, index) {
-  // 只串多字詞。過敏與單字 X 不在這裡吃掉。
+  // 多字詞，或列舉裡邊界清楚的單字 X。過敏不在這裡吃掉。
   var parts = [];
   var i = index;
   while (i < text.length) {
     if (text.slice(i, i + 2) === "過敏") break;
-    var phrase = longestPhraseAt_(text, i);
-    if (phrase && phrase.len > 1) {
-      if (phrase.id) parts.push(phrase.id);
-      i += phrase.len;
+    var item = readGlossItem_(text, i);
+    if (item) {
+      parts.push(item.id);
+      i += item.len;
       continue;
     }
     var ch = text.charAt(i);
     var conj = ch === "和" || ch === "與" || ch === "及" || ch === "或" || ch === "、";
     if (!conj) break;
-    var nxt = longestPhraseAt_(text, i + 1);
-    if (!nxt || nxt.len < 2 || text.slice(i + 1, i + 1 + nxt.len) === "過敏") break;
+    var nxt = readGlossItem_(text, i + 1);
+    if (!nxt) break;
     if (ch === "或") parts.push("atau");
     else if (ch === "、") parts.push(",");
     else parts.push("dan");
-    if (nxt.id) parts.push(nxt.id);
+    parts.push(nxt.id);
     i += 1 + nxt.len;
   }
   return { len: i - index, id: parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() };
@@ -634,29 +656,29 @@ function matchAllergy_(rest) {
   if (rest.charAt(0) !== "對") return null;
   var parts = [];
   var i = 1;
-  var first = longestPhraseAt_(rest, i);
-  if (first && first.len > 1 && rest.slice(i, i + first.len) !== "過敏") {
-    if (first.id) parts.push(first.id);
-    i += first.len;
-    while (i < rest.length && rest.slice(i, i + 2) !== "過敏") {
-      var ch = rest.charAt(i);
-      if (ch !== "和" && ch !== "與" && ch !== "及") break;
-      var nxt = longestPhraseAt_(rest, i + 1);
-      if (!nxt || nxt.len < 2 || rest.slice(i + 1, i + 1 + nxt.len) === "過敏") break;
-      parts.push("dan");
-      if (nxt.id) parts.push(nxt.id);
-      i += 1 + nxt.len;
-    }
-  } else if (rest.slice(i + 1, i + 3) === "過敏") {
-    var one = singleCharXId_(rest.charAt(i));
-    if (!one) return null;
-    parts.push(one);
-    i += 1;
-  } else {
-    return null;
+  var first = readGlossItem_(rest, i);
+  if (!first) return null;
+  parts.push(first.id);
+  i += first.len;
+  while (i < rest.length && rest.slice(i, i + 2) !== "過敏") {
+    var ch = rest.charAt(i);
+    if (ch !== "和" && ch !== "與" && ch !== "及" && ch !== "、") break;
+    var nxt = readGlossItem_(rest, i + 1);
+    if (!nxt) break;
+    parts.push("dan");
+    parts.push(nxt.id);
+    i += 1 + nxt.len;
   }
-  if (!parts.length || rest.slice(i, i + 2) !== "過敏") return null;
+  if (rest.slice(i, i + 2) !== "過敏") return null;
   return { len: i + 2, id: "alergi " + parts.join(" ").replace(/\s{2,}/g, " ").trim() };
+}
+
+function matchBareAllergy_(rest) {
+  if (rest.charAt(0) === "對") return null;
+  var item = readGlossItem_(rest, 0);
+  if (!item) return null;
+  if (rest.slice(item.len, item.len + 2) !== "過敏") return null;
+  return { len: item.len + 2, id: "alergi " + item.id };
 }
 
 function longestPatternAt_(text, index) {
@@ -696,6 +718,8 @@ function longestPatternAt_(text, index) {
   if (closed) consider(closed.len, closed.id);
   var allergy = matchAllergy_(rest);
   if (allergy) consider(allergy.len, allergy.id);
+  var bare = matchBareAllergy_(rest);
+  if (bare) consider(bare.len, bare.id);
   return best;
 }
 
@@ -884,6 +908,8 @@ function translateOneSegment_(part, cache) {
       if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
       body += next;
     }
+    body = body.replace(/[的了吧呢啊嗎呀嘛哦喔]+$/, "");
+    if (!body) return lead + peeled.prefix + peeled.rest + trail;
     return lead + peeled.prefix + body + trail;
   }
   // 金額或方案代碼旁邊吃不滿：整段留原文，不把碎片送出去。
@@ -902,7 +928,7 @@ function splitRemarkSegments_(text) {
   var i;
   for (i = 0; i < src.length; i++) {
     var ch = src.charAt(i);
-    var isSep = ch === "," || /^[；;、，（）()|\n]$/.test(ch);
+    var isSep = ch === "," || /^[；;，（）()|\n]$/.test(ch);
     if (isSep && isInsideAmount_(src, i)) isSep = false;
     if (!isSep) {
       buf += ch;
@@ -931,7 +957,7 @@ function translateRemarkBodyToId_(text, cache, wholeSentence) {
   for (i = 0; i < parts.length; i++) {
     var part = parts[i];
     if (!part) continue;
-    if (/^[；;、，,（）()|\n]$/.test(part)) {
+    if (/^[；;，,（）()|\n]$/.test(part)) {
       out.push(part);
       continue;
     }

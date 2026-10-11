@@ -64,7 +64,7 @@ Google 常在短譯文後面加 `.`。每個片段在接回去之前，若來源
 
 `REMARK_PHRASES_` 第三欄 `true` 表示印尼文還要店裡員工確認。改表只改那一個陣列。比對是整詞，長的先吃；同一長度時，表內整詞優先於開放句型。
 
-對照和句型必須吃完這一段（金額、方案代碼、標點、的了吧呢啊嗎呀嘛哦喔可以夾在中間）。吃不滿就整段送 LanguageApp。這一段裡有金額或方案代碼、卻吃不滿，整段留中文，不送碎片。整行維護提醒用同一套。
+對照和句型必須吃完這一段（金額、方案代碼、標點可以夾在中間）。「、」留在段內，不當分段符。吃不滿就整段送 LanguageApp。這一段裡有金額或方案代碼、卻吃不滿，整段留中文，不送碎片。對照結果尾端的的了吧呢啊嗎呀嘛哦喔拿掉。整段只有「元」時留原文。整行維護提醒用同一套。
 
 ### 表內整詞
 
@@ -88,6 +88,11 @@ Google 常在短譯文後面加 `.`。每個片段在接回去之前，若來源
 | 幼兒 | balita | 是 |
 | 大人 | dewasa | 是 |
 | 生日 | ulang tahun | 否 |
+| 今晚 | malam ini | 是 |
+| 今天 | hari ini | 是 |
+| 明天 | besok | 是 |
+| 中午 | siang | 是 |
+| 晚上 | malam | 是 |
 | 靠窗 | dekat jendela | 否 |
 | 要VIP桌 | minta meja VIP | 否 |
 | 訂金 | uang muka | 是 |
@@ -102,7 +107,7 @@ Google 常在短譯文後面加 `.`。每個片段在接回去之前，若來源
 | 雞蛋 | telur | 是 |
 | 牛肉 | daging sapi | 是 |
 | 過敏 | alergi | 否 |
-| 元 | （刪掉，不譯成 yuan） | 是 |
+| 元 | （刪掉，不譯成 yuan；整段只有「元」時留原文） | 是 |
 
 ### 單字只當 X，不作自由配對
 
@@ -131,7 +136,9 @@ Google 常在短譯文後面加 `.`。每個片段在接回去之前，若來源
 | 可以吃X | tamu bisa makan X | 不可加 tidak。X 收在段尾 |
 | 不要放X | jangan pakai X | X 收在段尾 |
 | 不要X | tanpa X | 不要譯成 Tidak ada X。X 收在段尾 |
-| 對X過敏 / 對X和Y過敏 | alergi X / alergi X dan Y | 整詞優先。`過敏` 不能先被吃掉 |
+| 對X過敏 / 對X和Y過敏 / 對X、Y過敏 | alergi X / alergi X dan Y | 「、」與「和」都接 dan。整詞優先。`過敏` 不能先被吃掉 |
+| X過敏 | alergi X | `蝦子過敏` 是 alergi udang，不是 udang alergi。花生過敏等整詞優先 |
+| 不要X、Y、Z | tanpa X, Y, Z | 「、」不是分段符。吃不滿（例如後面有蒜）就整段送翻 |
 | 不要A改成B | ganti A menjadi B | A、B 是方案代碼或金額，照原文接回 |
 | 加點A一份 | tambah A 1 porsi | A 是方案代碼或金額 |
 | 訂金X / 訂金X已付 / 訂金X未付 | uang muka X / … sudah dibayar / … belum dibayar | 整行維護提醒也用 |
