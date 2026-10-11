@@ -1,0 +1,270 @@
+#!/usr/bin/env node
+// Offline checks for the 2026-09-27 LINE digest Indonesian NITs.
+// Stubs LanguageApp. Does not read sheets, send LINE, or touch a live script.
+// Usage: node apps-script-isolate/line-digest-nit/test-offline.mjs
+
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import vm from "node:vm";
+import { HEADING_CASES, MIXED_DAY, PHRASEBOOK } from "./fixtures.mjs";
+
+const root = dirname(fileURLToPath(import.meta.url));
+const originalRemind = join(root, "original", "LineDailyRemind.gs");
+const originalSync = join(root, "original", "DailyBookingSync.gs");
+const modifiedRemind = join(root, "LineDailyRemind.gs");
+
+const CJK = /[\u4e00-\u9fff]/;
+const failures = [];
+const ok = (cond, message) => {
+  if (!cond) failures.push(message);
+};
+
+function makeLanguageApp(calls) {
+  return {
+    translate(text, from, to) {
+      calls.push({ text: String(text), from, to });
+      if (Object.prototype.hasOwnProperty.call(PHRASEBOOK, text)) return PHRASEBOOK[text];
+      return "ID:" + text;
+    },
+  };
+}
+
+function loadGs(file, languageApp) {
+  const context = vm.createContext({
+    LanguageApp: languageApp,
+    console,
+  });
+  vm.runInContext(readFileSync(file, "utf8"), context, { filename: file });
+  return context;
+}
+
+const newCalls = [];
+const oldCalls = [];
+const fixed = loadGs(modifiedRemind, makeLanguageApp(newCalls));
+const previous = loadGs(originalRemind, makeLanguageApp(oldCalls));
+const sync = loadGs(originalSync, makeLanguageApp([]));
+
+function resetCalls() {
+  newCalls.length = 0;
+  oldCalls.length = 0;
+}
+
+function assertNoCjk(label, text) {
+  ok(!CJK.test(text), label + " still has Chinese: " + text);
+  ok(text.indexOf("共") === -1, label + " still has 共: " + text);
+}
+
+// --- NIT1: headings and count lines ---
+resetCalls();
+for (const [input, expected] of HEADING_CASES) {
+  const got = fixed.translateTaskCnToId(input);
+  ok(got === expected, "heading\n  in:  " + input + "\n  got: " + got + "\n  want:" + expected);
+  assertNoCjk("heading " + input, got);
+}
+ok(newCalls.length === 0, "headings must not call LanguageApp, calls=" + newCalls.length);
+
+// Snapshot still has the leftover character, so this isolate is the fix.
+const originalSrc = readFileSync(originalRemind, "utf8");
+ok(originalSrc.indexOf('Bawa pulang (共 "') !== -1, "original snapshot missing leftover 共 in takeout heading");
+const modifiedSrc = readFileSync(modifiedRemind, "utf8");
+ok(modifiedSrc.indexOf('Bawa pulang (共 "') === -1, "modified takeout heading still contains 共");
+ok(modifiedSrc.indexOf(' (共 "') === -1, "modified heading builder still contains 共");
+
+// --- NIT2: multi-segment remark ---
+resetCalls();
+const multiIn = "11:30 測試甲先生 (6) | 備註：花生過敏；不要辣 (小孩椅)";
+const multiWant = "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang；tidak pedas (kursi anak)";
+const multiGot = fixed.translateTaskCnToId(multiIn);
+ok(multiGot === multiWant, "multi-segment\n  got:  " + multiGot + "\n  want: " + multiWant);
+ok(
+  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["花生過敏", "不要辣", "小孩椅"]),
+  "multi-segment calls: " + JSON.stringify(newCalls),
+);
+ok(newCalls.every((c) => c.from === "zh-TW" && c.to === "id"), "LanguageApp locale drifted");
+ok(multiGot.indexOf("；") !== -1 && multiGot.indexOf(" (") !== -1, "separators dropped: " + multiGot);
+const multiTail = multiGot.split("Catatan: ")[1] || "";
+assertNoCjk("multi-segment tail", multiTail);
+
+resetCalls();
+const listIn = "18:00 測試丁先生 (10) | 備註：不要香菜、少鹽";
+const listGot = fixed.translateTaskCnToId(listIn);
+ok(
+  listGot === "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar、sedikit garam",
+  "enumeration remark: " + listGot,
+);
+ok(
+  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["不要香菜", "少鹽"]),
+  "enumeration calls: " + JSON.stringify(newCalls),
+);
+
+resetCalls();
+const amountIn = "12:10 測試甲先生 (8) | 備註：預估金額 $2,000 (生日；不要葱)";
+const amountGot = fixed.translateTaskCnToId(amountIn);
+ok(
+  amountGot === "12:10 Bapak 測試甲 (8) | Catatan: Perkiraan biaya $2.000 (ulang tahun；tanpa daun bawang)",
+  "amount + segments: " + amountGot,
+);
+ok(
+  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["生日", "不要葱"]),
+  "amount calls should skip the already-replaced label: " + JSON.stringify(newCalls),
+);
+
+// One segment failing must not drop the others or the separators.
+resetCalls();
+const flaky = loadGs(modifiedRemind, {
+  translate(text) {
+    if (text === "不要辣") throw new Error("stub failure");
+    return PHRASEBOOK[text] || ("ID:" + text);
+  },
+});
+const flakyGot = flaky.translateTaskCnToId(multiIn);
+ok(
+  flakyGot === "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang；不要辣 (kursi anak)",
+  "partial failure: " + flakyGot,
+);
+
+resetCalls();
+const singleGot = fixed.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
+ok(singleGot === "11:40 Bapak 測試甲 (6) | Catatan: alergi kacang", "single segment: " + singleGot);
+ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["花生過敏"]), "single segment calls: " + JSON.stringify(newCalls));
+
+// --- empty remark: no LanguageApp ---
+resetCalls();
+const emptyGot = fixed.translateTaskCnToId("12:00 測試乙小姐 (4)");
+ok(emptyGot === "12:00 Ibu 測試乙 (4)", "empty remark: " + emptyGot);
+ok(newCalls.length === 0, "empty remark called LanguageApp: " + JSON.stringify(newCalls));
+const emptyLabelGot = fixed.translateTaskCnToId("12:00 測試乙小姐 (4) | 備註：");
+ok(emptyLabelGot === "12:00 Ibu 測試乙 (4) | Catatan: ", "empty catatan label: " + JSON.stringify(emptyLabelGot));
+ok(newCalls.length === 0, "empty catatan label called LanguageApp");
+
+// --- plan code / numbers only ---
+resetCalls();
+const codeGot = fixed.translateTaskCnToId("11:00 測試丙 (5k1a) | 備註：5k1a");
+ok(codeGot === "11:00 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a", "plan code: " + codeGot);
+ok(newCalls.length === 0, "plan code was sent to LanguageApp: " + JSON.stringify(newCalls));
+const digitsGot = fixed.translateTaskCnToId("11:05 測試丙 | 備註：12");
+ok(digitsGot === "11:05 Bapak/Ibu 測試丙 | Catatan: 12", "digits only: " + digitsGot);
+ok(newCalls.length === 0, "digits-only remark called LanguageApp");
+
+resetCalls();
+const mixedCodeGot = fixed.translateTaskCnToId("11:10 測試丙 (5k1a) | 備註：5k1a；花生過敏");
+ok(
+  mixedCodeGot === "11:10 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a；alergi kacang",
+  "code beside Chinese: " + mixedCodeGot,
+);
+ok(
+  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["花生過敏"]),
+  "code must not be part of the LanguageApp text: " + JSON.stringify(newCalls),
+);
+
+// --- mixed dine-in + takeout day, Chinese composer untouched ---
+const chinese = sync.buildDigestText_(
+  MIXED_DAY.day,
+  MIXED_DAY.date,
+  MIXED_DAY.time,
+  MIXED_DAY.lunch,
+  MIXED_DAY.dinner,
+);
+const chineseWant = [
+  "[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]",
+  "☀️ 午餐",
+  "",
+  "🍽️ 內用 (共 3 桌)",
+  "",
+  "11:30 測試甲先生 (6) | 備註：花生過敏；不要辣 (小孩椅)",
+  "",
+  "12:00 測試乙小姐 (4)",
+  "",
+  "🥡 外帶 (共 1 筆)",
+  "",
+  "11:00 測試丙 (5k1a) | 備註：5k1a",
+  "",
+  "🌙 晚餐",
+  "",
+  "🍽️ 內用 (共 1 桌，另 1 筆桌數待確認)",
+  "",
+  "18:00 測試丁先生 (10) | 備註：不要香菜、少鹽",
+  "",
+  "19:00 測試戊 人數待確認",
+  "",
+  "🥡 外帶 (共 1 筆)",
+  "",
+  "17:30 測試己",
+  "",
+  "(總計 內用 4 桌，另 1 筆桌數待確認＋外帶 2 筆)",
+].join("\n");
+ok(chinese === chineseWant, "Chinese digest drifted:\n" + chinese);
+
+resetCalls();
+const indonesian = fixed.translateTaskCnToId(chinese);
+const indonesianWant = [
+  "[Minggu 11 Oktober 2026 09:05 GMT+8] [Ringkasan Reservasi 11 Oktober 2026]",
+  "☀️ Makan Siang",
+  "",
+  "🍽️ Makan di tempat (total 3 meja)",
+  "",
+  "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang；tidak pedas (kursi anak)",
+  "",
+  "12:00 Ibu 測試乙 (4)",
+  "",
+  "🥡 Bawa pulang (total 1 pesanan)",
+  "",
+  "11:00 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a",
+  "",
+  "🌙 Makan Malam",
+  "",
+  "🍽️ Makan di tempat (total 1 meja, 1 pesanan jumlah meja menunggu konfirmasi)",
+  "",
+  "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar、sedikit garam",
+  "",
+  "19:00 Bapak/Ibu 測試戊 Jumlah orang menunggu konfirmasi",
+  "",
+  "🥡 Bawa pulang (total 1 pesanan)",
+  "",
+  "17:30 Bapak/Ibu 測試己",
+  "",
+  "(Total makan di tempat 4 meja, 1 pesanan jumlah meja menunggu konfirmasi + bawa pulang 2 pesanan)",
+].join("\n");
+ok(indonesian === indonesianWant, "mixed day Indonesian drifted:\n" + indonesian);
+ok(indonesian.indexOf("共") === -1, "mixed day Indonesian still contains 共");
+for (const line of indonesian.split("\n")) {
+  if (/Makan di tempat|Bawa pulang|Makan Siang|Makan Malam|^\(Total /.test(line)) {
+    assertNoCjk("mixed heading", line);
+  }
+  const catatanAt = line.indexOf("Catatan:");
+  if (catatanAt !== -1) assertNoCjk("mixed catatan", line.slice(catatanAt));
+}
+ok(
+  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["花生過敏", "不要辣", "小孩椅", "不要香菜", "少鹽"]),
+  "mixed day LanguageApp calls: " + JSON.stringify(newCalls),
+);
+ok(chinese === sync.buildDigestText_(MIXED_DAY.day, MIXED_DAY.date, MIXED_DAY.time, MIXED_DAY.lunch, MIXED_DAY.dinner), "translator mutated the Chinese digest");
+
+// Before sample comes from the unmodified 09-27 translator plus the same stub.
+resetCalls();
+const beforeMulti = previous.translateTaskCnToId(multiIn);
+const beforeHead = previous.translateTaskCnToId("🍽️ 內用 (共 3 桌)\n🥡 外帶 (共 1 筆)");
+ok(beforeMulti.indexOf("花生過敏") !== -1, "expected the old translator to leave Chinese, got: " + beforeMulti);
+ok(
+  JSON.stringify(oldCalls.map((c) => c.text)) === JSON.stringify(["花生過敏 不要辣 小孩椅"]),
+  "old translator call shape changed: " + JSON.stringify(oldCalls),
+);
+ok(beforeHead.indexOf("共") !== -1, "old headings should still show 共: " + beforeHead);
+
+if (failures.length) {
+  console.error("FAIL " + failures.length);
+  for (const message of failures) console.error("- " + message);
+  process.exit(1);
+}
+
+console.log("PASS line-digest-nit offline (" + HEADING_CASES.length + " headings + remark/day fixtures)");
+console.log("");
+console.log("--- sample before (09-27 translator, stub LanguageApp) ---");
+console.log(beforeHead);
+console.log(beforeMulti);
+console.log("--- sample after ---");
+console.log(fixed.translateTaskCnToId("🍽️ 內用 (共 3 桌)\n🥡 外帶 (共 1 筆)"));
+console.log(multiGot);
+console.log("--- mixed day Indonesian ---");
+console.log(indonesian);

@@ -1,0 +1,86 @@
+--- apps-script-isolate/line-digest-nit/original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
++++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 00:59:18.891037346 +0000
+@@ -1,3 +1,9 @@
++/**
++ * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
++ * 中文總覽、讀表、寫表、LINE 發送都沒改。
++ * 上線前要先把線上腳本拉下來，和 original/LineDailyRemind.gs 對過；線上可能已不同。
++ * 備註分段（NIT2）還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
++ */
+ function checkAndSendDailyReminders() {
+   // ======= 1. 系統安全性憑證設定 =======
+   var LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN");
+@@ -248,7 +254,7 @@
+     }
+     if (line.indexOf("🥡 外帶") === 0) {
+       var takeoutN = line.match(/\d+/);
+-      translatedLines.push("🥡 Bawa pulang (共 " + (takeoutN ? takeoutN[0] : "0") + " pesanan)");
++      translatedLines.push("🥡 Bawa pulang (total " + (takeoutN ? takeoutN[0] : "0") + " pesanan)");
+       continue;
+     }
+ 
+@@ -302,14 +308,10 @@
+       translatedBack = translatedBack.replace(/人數待確認/g, "Jumlah orang menunggu konfirmasi");
+       translatedBack = translatedBack.replace(/,(\d{3})/g, '.$1');
+ 
+-      var chineseRegex = /[\u4e00-\u9fa5]+/g;
+-      if (chineseRegex.test(translatedBack)) {
+-        try {
+-          var rawChinese = translatedBack.match(chineseRegex).join(" ");
+-          var transChinese = LanguageApp.translate(rawChinese, 'zh-TW', 'id');
+-          translatedBack = translatedBack.replace(rawChinese, transChinese);
+-        } catch (e) {}
+-      }
++      // NIT2：多段備註（； / 、 / 括號）若先把中文抽出、用空白黏成一句，
++      // LanguageApp 看不到分隔，replace 也對不到原文，中文會整段留下。
++      // 改為每一段連續中文各翻一次，分隔符、數字與方案代碼原樣留下。
++      translatedBack = translateChineseSegmentsToId_(translatedBack);
+ 
+       if (!hadPipe) translatedLines.push(translatedFront);
+       else translatedLines.push(translatedFront + " | " + translatedBack);
+@@ -328,17 +330,42 @@
+ function translateSessionHeadingLine_(line, idName) {
+   var pendingTail = "jumlah meja menunggu konfirmasi";
+   // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
++  // NIT1：「共」不可留在印尼文計數。與總計列的 Total 用同一個詞。
+   if (line.indexOf("(") === -1) return idName;
+   if (line.indexOf("另") !== -1 && line.indexOf("桌數待確認") !== -1) {
+     var nums = line.match(/\d+/g) || [];
+-    return idName + " (共 " + (nums[0] || "?") + " meja, " + (nums[1] || "?") + " pesanan " + pendingTail + ")";
++    return idName + " (total " + (nums[0] || "?") + " meja, " + (nums[1] || "?") + " pesanan " + pendingTail + ")";
+   }
+   if (line.indexOf("筆") !== -1 && line.indexOf("桌數待確認") !== -1) {
+     var n = line.match(/\d+/);
+-    return idName + " (共 " + (n ? n[0] : "?") + " pesanan, " + pendingTail + ")";
++    return idName + " (total " + (n ? n[0] : "?") + " pesanan, " + pendingTail + ")";
+   }
+   var tables = line.match(/\d+/);
+-  return idName + " (共 " + (tables ? tables[0] : "0") + " meja)";
++  return idName + " (total " + (tables ? tables[0] : "0") + " meja)";
++}
++
++function translateChineseSegmentsToId_(text) {
++  var src = String(text || "");
++  if (!/[\u4e00-\u9fff]/.test(src)) return src;
++  var re = /[\u4e00-\u9fff]+/g;
++  var out = "";
++  var last = 0;
++  var match;
++  while ((match = re.exec(src)) !== null) {
++    out += src.slice(last, match.index);
++    var segment = match[0];
++    var translated = segment;
++    try {
++      var got = LanguageApp.translate(segment, "zh-TW", "id");
++      if (got) translated = String(got);
++    } catch (e) {
++      translated = segment;
++    }
++    out += translated;
++    last = match.index + segment.length;
++  }
++  out += src.slice(last);
++  return out;
+ }
+ 
+ function translateTotalLine_(line) {
