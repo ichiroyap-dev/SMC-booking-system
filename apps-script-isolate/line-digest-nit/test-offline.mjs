@@ -750,6 +750,170 @@ ok(
   ok(app.__sleeps.length === 0, "C-column quota did not sleep: " + JSON.stringify(app.__sleeps));
 }
 
+function rewriteLeakedAmounts(text) {
+  return String(text)
+    .replace(/NT\s*\$/g, "Rp")
+    .replace(/\$/g, "Rp")
+    .replace(/(\d),(\d{3})/g, "$1.$2");
+}
+
+function applyAmountWords(text) {
+  return String(text)
+    .replace(/訂金/g, "uang muka")
+    .replace(/尾款/g, "sisa pembayaran")
+    .replace(/找零/g, "kembalian")
+    .replace(/已付/g, "sudah dibayar")
+    .replace(/未付/g, "belum dibayar")
+    .replace(/元/g, "yuan");
+}
+
+function protectedApp(mode, calls) {
+  return loadGs(modifiedRemind, {
+    translate(text) {
+      const raw = String(text);
+      calls.push(raw);
+      if (mode === "empty") return "";
+      if (mode === "identity") return raw;
+      if (mode === "generic") throw new Error("down");
+      if (mode === "quota") throw new Error("Service invoked too many times: translate.");
+      if (mode === "lost") return rewriteLeakedAmounts(applyAmountWords(raw).replace(/\uE000\d+\uE001/g, ""));
+      if (mode === "renumbered") return rewriteLeakedAmounts(applyAmountWords(raw).replace(/\uE000(\d+)\uE001/g, "\uE0009\uE001"));
+      if (mode === "duplicated") return rewriteLeakedAmounts(applyAmountWords(raw).replace(/\uE000\d+\uE001/g, (ph) => ph + ph));
+      return rewriteLeakedAmounts(applyAmountWords(raw));
+    },
+  });
+}
+
+function countExactToken(text, token) {
+  let n = 0;
+  let from = 0;
+  while (from <= text.length) {
+    const at = text.indexOf(token, from);
+    if (at === -1) return n;
+    if (token === "$1,000" && text.charAt(at + token.length) === ".") {
+      from = at + token.length;
+      continue;
+    }
+    n += 1;
+    from = at + token.length;
+  }
+  return n;
+}
+
+function assertNoRawAmountSent(label, calls) {
+  ok(
+    calls.every((text) => text.indexOf("$") === -1 && text.indexOf("NT$") === -1),
+    label + " sent raw amount: " + JSON.stringify(calls),
+  );
+}
+
+function assertTokenOnceInOwnSentence(label, body, token) {
+  ok(countExactToken(body, token) === 1, label + " token count: " + body);
+  ok(
+    body.indexOf("$1, 000") === -1 && body.indexOf("NT$12, 000") === -1 && body.indexOf("$1, 000.50") === -1 && body.indexOf("$1.000") === -1,
+    label + " broke the number: " + body,
+  );
+  ok(body.indexOf("Rp") === -1, label + " rewrite stub changed the amount: " + body);
+  if (token.indexOf("NT$") !== 0) ok(body.indexOf("NT$") === -1, label + " added NT$: " + body);
+  const owners = body.split("; ").map((part) => part.trim()).filter((part) => countExactToken(part, token) > 0);
+  ok(owners.length === 1 && countExactToken(owners[0], token) === 1, label + " sentence: " + body);
+}
+
+const protectedShapes = [
+  { name: "$1,000", sentence: "訂金$1,000已付", success: "uang muka $1,000 sudah dibayar", source: "訂金$1,000已付", token: "$1,000" },
+  { name: "NT$12,000", sentence: "尾款NT$12,000元", success: "sisa pembayaran NT$12,000 yuan", source: "尾款NT$12,000元", token: "NT$12,000" },
+  { name: "$1,000.50", sentence: "找零$1,000.50已付", success: "kembalian $1,000.50 sudah dibayar", source: "找零$1,000.50已付", token: "$1,000.50" },
+];
+const protectedModes = ["success", "empty", "identity", "generic", "quota", "lost", "renumbered", "duplicated"];
+const protectedEntries = ["B-column", "whole-line", "C-generic", "C-fixed-tail"];
+
+function runProtected(entry, mode, sentence) {
+  const calls = [];
+  const app = protectedApp(mode, calls);
+  if (entry === "B-column") {
+    return { body: remarkOf(app.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：" + sentence)).replace(/^Catatan:\s*/, ""), calls, app };
+  }
+  if (entry === "whole-line") {
+    const lines = app.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n" + sentence).split("\n");
+    ok(lines[0].indexOf("Ringkasan") !== -1 && lines[0].indexOf("$") === -1, "whole-line header stayed separate: " + lines[0]);
+    return { body: lines.slice(1).join("\n"), calls, app };
+  }
+  if (entry === "C-generic") return { body: app.translateNoteCnToId(sentence), calls, app };
+  return { body: app.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！；" + sentence), calls, app };
+}
+
+function expectedProtectedBody(entry, mode, shape) {
+  const core = mode === "success" ? shape.success : shape.source;
+  if (entry === "C-fixed-tail") return "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!; " + core;
+  return core;
+}
+
+function expectedProtectedCalls(entry, mode, segments) {
+  if (mode === "generic") return { n: segments * 2, sleeps: Array(segments).fill(250) };
+  if (mode === "quota" && (entry === "B-column" || entry === "whole-line")) return { n: 1, sleeps: [] };
+  if (mode === "quota") return { n: segments, sleeps: [] };
+  return { n: segments, sleeps: [] };
+}
+
+for (const entry of protectedEntries) {
+  for (const shape of protectedShapes) {
+    for (const mode of protectedModes) {
+      const label = "protected " + entry + " " + mode + " keeps " + shape.name;
+      const got = runProtected(entry, mode, shape.sentence);
+      ok(got.body === expectedProtectedBody(entry, mode, shape), label + ": " + got.body);
+      assertTokenOnceInOwnSentence(label, got.body, shape.token);
+      assertNoRawAmountSent(label + " never sends raw amount", got.calls);
+      const expectCalls = expectedProtectedCalls(entry, mode, 1);
+      ok(got.calls.length === expectCalls.n, label + " call count: " + got.calls.length);
+      ok(JSON.stringify(got.app.__sleeps) === JSON.stringify(expectCalls.sleeps), label + " pause: " + JSON.stringify(got.app.__sleeps));
+      if (entry === "C-fixed-tail") {
+        ok(got.body.indexOf("12 orang") !== -1 && got.body.indexOf("1000 orang") === -1, label + " used the amount as the group size: " + got.body);
+      }
+    }
+  }
+}
+
+const tripleSentence = "訂金$1,000已付；尾款NT$12,000元；找零$1,000.50已付";
+const tripleSuccess = "uang muka $1,000 sudah dibayar; sisa pembayaran NT$12,000 yuan; kembalian $1,000.50 sudah dibayar";
+const tripleSource = "訂金$1,000已付; 尾款NT$12,000元; 找零$1,000.50已付";
+for (const entry of protectedEntries) {
+  for (const mode of protectedModes) {
+    const label = "protected " + entry + " " + mode + " keeps three amounts in their sentences";
+    const got = runProtected(entry, mode, tripleSentence);
+    const core = mode === "success" ? tripleSuccess : tripleSource;
+    const want = entry === "C-fixed-tail" ? "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!; " + core : core;
+    ok(got.body === want, label + ": " + got.body);
+    const amountSentences = got.body.split("; ").map((part) => part.trim()).filter((part) => part.indexOf("$") !== -1);
+    ok(amountSentences.length === 3, label + " sentence count: " + got.body);
+    ok(countExactToken(amountSentences[0], "$1,000") === 1 && amountSentences[0].indexOf("NT$") === -1 && amountSentences[0].indexOf("$1,000.50") === -1, label + " first: " + amountSentences[0]);
+    ok(countExactToken(amountSentences[1], "NT$12,000") === 1 && amountSentences[1].indexOf("$1,000") === -1, label + " second: " + amountSentences[1]);
+    ok(countExactToken(amountSentences[2], "$1,000.50") === 1 && countExactToken(amountSentences[2], "$1,000") === 0, label + " third: " + amountSentences[2]);
+    ok(got.body.indexOf("Rp") === -1 && got.body.indexOf("$1.000") === -1 && got.body.indexOf("$1, 000") === -1, label + " rewrote an amount: " + got.body);
+    assertNoRawAmountSent(label + " never sends raw amount", got.calls);
+    const expectCalls = expectedProtectedCalls(entry, mode, 3);
+    ok(got.calls.length === expectCalls.n, label + " call count: " + got.calls.length);
+    ok(JSON.stringify(got.app.__sleeps) === JSON.stringify(expectCalls.sleeps), label + " pause: " + JSON.stringify(got.app.__sleeps));
+  }
+}
+
+{
+  const calls = [];
+  const app = protectedApp("success", calls);
+  ok(app.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！") === "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!", "exact group warning drifted");
+  ok(app.translateNoteCnToId("🛵 純外帶日，無內用桌") === "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.", "exact takeout warning drifted");
+  ok(app.translateNoteCnToId("✅ 今日預約正常") === "✅ Reservasi hari ini normal (Total 0 meja)", "exact normal warning drifted");
+  ok(app.translateNoteCnToId("✅ 今日預約正常 (共 5 桌)") === "✅ Reservasi hari ini normal (Total 5 meja)", "exact normal warning with tables drifted");
+  ok(calls.length === 0, "exact warnings called LanguageApp: " + JSON.stringify(calls));
+  const takeout = app.translateNoteCnToId("🛵 純外帶日，無內用桌；訂金$1,000已付");
+  ok(takeout === "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.; uang muka $1,000 sudah dibayar", "fixed takeout plus amount keeps tail: " + takeout);
+  const normal = app.translateNoteCnToId("✅ 今日預約正常 (共 5 桌)；找零$1,000.50已付");
+  ok(normal === "✅ Reservasi hari ini normal (Total 5 meja); kembalian $1,000.50 sudah dibayar", "fixed normal plus amount keeps tail: " + normal);
+  ok(normal.indexOf("1000 meja") === -1 && normal.indexOf("1,000 meja") === -1, "fixed normal used the amount as the table count: " + normal);
+  const before = app.translateNoteCnToId("訂金$1,000已付；⚠️ 注意：包含 12 人大組訂位！");
+  ok(countExactToken(before, "$1,000") === 1 && before.indexOf("Rp") === -1, "amount before fixed warning is not dropped: " + before);
+  assertNoRawAmountSent("rewrite stub never receives raw amount on protected paths", calls);
+}
+
 // --- busy day: 9 dine-in + 3 takeout, cached call bound ---
 const busyCn = sync.buildDigestText_(BUSY_DAY.day, BUSY_DAY.date, BUSY_DAY.time, BUSY_DAY.lunch, BUSY_DAY.dinner);
 const busyCnLines = [
@@ -840,6 +1004,42 @@ ok(
   "old translator call shape changed: " + JSON.stringify(oldCalls),
 );
 ok(beforeHead.indexOf("共") !== -1, "old headings should still show 共: " + beforeHead);
+
+function sliceFunction(src, name) {
+  const key = "function " + name + "(";
+  const start = src.indexOf(key);
+  if (start < 0) return "";
+  const open = src.indexOf("{", start);
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    if (src[i] === "{") depth += 1;
+    else if (src[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return src.slice(start, i + 1);
+    }
+  }
+  return "";
+}
+
+const unchangedFns = [
+  "checkAndSendDailyReminders",
+  "isBookingOverviewTask_",
+  "dailyReminderTitle_",
+  "stripRedundantNormalNoteLines_",
+  "shouldOmitOperationalNote_",
+  "buildDailyReminderMessage_",
+  "replaceUnconfirmedPeopleToken_",
+  "sanitizeDigestLineForPush_",
+  "sanitizeDigestTaskForPush_",
+  "translateTotalLine_",
+  "maskLineUserId_",
+  "sendToLineMessagingAPI",
+  "diagnoseLineApiNoSend",
+  "doPost",
+];
+for (const name of unchangedFns) {
+  ok(sliceFunction(modifiedSrc, name) === sliceFunction(originalSrc, name), "locked function drifted: " + name);
+}
 
 if (failures.length) {
   console.error("FAIL " + failures.length);

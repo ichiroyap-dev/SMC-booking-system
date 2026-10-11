@@ -4,6 +4,7 @@
  * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
  * 備註翻譯還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
  * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
+ * B 欄備註、整行退回、C 欄一般翻譯與固定警示的尾段，都走同一套保護。
  * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。都不是整則固定多等約 3 秒。
  * 「Service invoked too many times」且不是 in a short time：不暫停、不重試。
  * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，仍可能再呼叫一次。
@@ -321,7 +322,8 @@ function translateTaskCnToId(taskCn) {
       continue;
     }
 
-    translatedLines.push(translatePieceCached_(translateCache, line));
+    // 整行退回與備註同一套：保護金額、翻譯、逐段核對、正規化，最後才還原來源。
+    translatedLines.push(translateRemarkBodyToId_(line, translateCache));
   }
   return translatedLines.join("\n");
 }
@@ -470,6 +472,7 @@ function isShortTimeLimitError_(err) {
 function isDailyTranslateQuotaError_(err) {
   // 官方同型：Service invoked too many times: Calendar.
   // 必須先排除 in a short time。不要用單獨的 quota／每日，避免一般句子被當成配額。
+  // 這個比對不是完整清單，沒有涵蓋所有 LanguageApp 或所有語系的寫法。
   if (isShortTimeLimitError_(err)) return false;
   var msg = String(err && (err.message || err) || "");
   return /Service invoked too many times\b/i.test(msg);
@@ -618,31 +621,53 @@ function translateTotalLine_(line) {
   return "(Total " + (tables ? tables[0] : "0") + " meja)";
 }
 
+function operationalNoteParts_(trans) {
+  // 只有整句就是已知警示才用固定對照。後面還有內容時，固定句與尾段分開，尾段走保護翻譯。
+  var src = String(trans || "");
+  var takeout = src.match(/^(🛵 純外帶日，無內用桌)([\s\S]*)$/);
+  if (takeout) {
+    return {
+      fixed: "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.",
+      tail: String(takeout[2] || "").trim() ? takeout[2] : ""
+    };
+  }
+  var group = src.match(/^(⚠️ 注意：包含 (\d+) 人大組訂位！)([\s\S]*)$/);
+  if (group) {
+    return {
+      fixed: "⚠️ Perhatian: Termasuk reservasi grup besar " + group[2] + " orang!",
+      tail: String(group[3] || "").trim() ? group[3] : ""
+    };
+  }
+  // 舊列若仍帶此句，整句相符才翻譯；新組字與推播外殼都不再送出。
+  var normal = src.match(/^(✅\s*今日預約正常(?:\s*\(共\s*(\d+)\s*桌\))?)([\s\S]*)$/);
+  if (normal) {
+    return {
+      fixed: "✅ Reservasi hari ini normal (Total " + (normal[2] || "0") + " meja)",
+      tail: String(normal[3] || "").trim() ? normal[3] : ""
+    };
+  }
+  return null;
+}
+
+function joinOperationalNote_(fixed, tailSrc) {
+  var tailId = translateRemarkBodyToId_(tailSrc, null);
+  if (!tailId) return fixed;
+  if (/^[；;、，,。！？!?|\n]/.test(tailId)) return fixed + tailId;
+  return fixed + "; " + tailId;
+}
+
 /**
  * C欄營運警示專屬精準對照翻譯
  */
 function translateNoteCnToId(noteCn) {
   var trans = String(noteCn || "").trim();
   if (!trans || trans === "無") return "Tidak ada keterangan";
-  
-  if (trans.indexOf("🛵 純外帶日") !== -1) {
-    return "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.";
-  }
-  if (trans.indexOf("⚠️ 注意：包含") !== -1) {
-    var digits = trans.match(/\d+/);
-    return "⚠️ Perhatian: Termasuk reservasi grup besar " + (digits ? digits[0] : "X") + " orang!";
-  }
-  // 舊列若仍帶此句，翻譯保留；新組字與推播外殼都不再送出。
-  if (trans.indexOf("✅ 今日預約正常") !== -1) {
-    var tables = trans.match(/\d+/);
-    return "✅ Reservasi hari ini normal (Total " + (tables ? tables[0] : "0") + " meja)";
-  }
-  
+  var known = operationalNoteParts_(trans);
+  if (known && !known.tail) return known.fixed;
+  if (known) return joinOperationalNote_(known.fixed, known.tail);
   // 翻失敗、空結果或原樣退回時留下中文警示，不可改成「沒有說明」。
   // cache 傳 null：總覽若已因每日配額停止，這裡仍可能再呼叫一次。
-  var translated = translatePieceCached_(null, trans);
-  if (!translated || !String(translated).trim() || translated === trans) return trans;
-  return normalizeIdPunctuation_(translated);
+  return translateRemarkBodyToId_(trans, null);
 }
 
 // LINE Messaging API 底層標準發送技術

@@ -21,6 +21,15 @@ PR #39 的回滾點，是**部署前那一刻**、對**同一個** Apps Script �
    - 線上還有的其他檔，一個都不能漏
 4. 每個檔案算 SHA-256，和檔名一起寫成清單。這份清單才是 PR #39 的回滾點。
 
+## 部署當天必查（push 與回復之前當場記錄，不是事後補記）
+
+- 台北時間戳。
+- `clasp` 版本。
+- 實際 deployment ID 與 version。
+- 觸發器清單。
+- `rootDir`、`.claspignore`，以及實際會推上去的檔案清單。備份要完整，不能把這份候選稿混進去。
+- 推送前、回復前再對一次當時線上。有未預期的漂移就停。
+
 ## 如何回復
 
 1. 只用步驟 2 那個備份目錄的**完整檔案**，放回同一個 `scriptId`。不要只用 `LineDailyRemind.gs`。
@@ -43,4 +52,5 @@ PR #39 的回滾點，是**部署前那一刻**、對**同一個** Apps Script �
 - 一般錯誤：暫停 250ms，再試一次。
 - `in a short time`：暫停 1000ms，再試一次。這是官方 Calendar 範例的等待，不保證 LanguageApp 一定成功。
 - `Service invoked too many times`，而且訊息不是 `in a short time`：不暫停、不重試，該段留中文原文。同一則 `translateTaskCnToId` 後面的片段不再呼叫。
+- 這個錯誤訊息比對不是完整清單，沒有涵蓋所有 LanguageApp 或所有語系的寫法。實際遇到其他樣型再補，不要把現在的比對說成全部。
 - C 欄 `translateNoteCnToId` 的 cache 是 null。總覽停了之後，說明欄仍可能再呼叫一次。不要把整則通知說成零次額外呼叫。
