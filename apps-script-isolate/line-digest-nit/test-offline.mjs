@@ -952,9 +952,33 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkDict("quantity list stays covered 桶仔雞2隻、雞湯1份", "桶仔雞2隻、雞湯1份", "ayam tong 2 ekor, sup ayam 1 porsi");
   checkDict("bare allergy 蝦子過敏", "蝦子過敏", "alergi udang");
   ok(remarkOf(fixed.translateTaskCnToId(remarkLine("蝦子過敏"))).indexOf("udang alergi") === -1, "蝦子過敏 reversed the allergy");
+  checkDict("bare list allergy 花生、蝦子過敏", "花生、蝦子過敏", "alergi kacang dan udang");
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("花生、蝦子過敏"))).indexOf("kacang, alergi") === -1, "花生、蝦子過敏 marked only the last item");
+  checkDict("bare list allergy 花生、蛋過敏", "花生、蛋過敏", "alergi kacang dan telur");
+  checkDict("bare list allergy 香菜、花生過敏", "香菜、花生過敏", "alergi daun ketumbar dan kacang");
+  checkDict("adjacent allergy 花生蝦子過敏", "花生蝦子過敏", "alergi kacang dan udang");
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("花生蝦子過敏"))).indexOf("kacang alergi") === -1, "花生蝦子過敏 left the first food outside alergi");
+  checkDict("bare list allergy 花生和蝦子過敏", "花生和蝦子過敏", "alergi kacang dan udang");
+  checkDict("bare list allergy 蛋、奶過敏", "蛋、奶過敏", "alergi telur dan susu");
   checkDict("trailing particle stripped 不要辣的", "不要辣的", "tidak pedas");
   checkDict("bare 元 stays original", "元", "元");
   checkDict("time word covers amount phrase", "今晚訂金$1,000已付", "malam ini uang muka $1,000 sudah dibayar");
+  function checkSendWhole(label, remark) {
+    wholeCalls.length = 0;
+    const got = wholeApp.translateTaskCnToId(remarkLine(remark));
+    ok(JSON.stringify(wholeCalls) === JSON.stringify([remark]), label + ": " + JSON.stringify(wholeCalls));
+    return got;
+  }
+  const unscoped = checkSendWhole("unscoped allergy sends the whole segment 花生、蒜過敏", "花生、蒜過敏");
+  ok(remarkOf(unscoped).indexOf("蒜") !== -1, "unscoped allergy dropped 蒜: " + unscoped);
+  ok(remarkOf(unscoped).indexOf("alergi") === -1, "unscoped allergy stitched a partial alergi: " + unscoped);
+  const between = checkSendWhole("unscoped allergy sends the whole segment 花生靠窗過敏", "花生靠窗過敏");
+  ok(remarkOf(between).indexOf("alergi") === -1, "unscoped allergy stitched 花生靠窗過敏: " + between);
+  checkSend("question 不要辣嗎 sends the whole segment", "不要辣嗎");
+  checkSend("non-food 不要小孩椅 sends the whole segment", "不要小孩椅");
+  const chairList = checkSendWhole("non-food 不要香菜、小孩椅 sends the whole segment", "不要香菜、小孩椅");
+  ok(remarkOf(chairList).indexOf("小孩椅") !== -1, "non-food negation dropped 小孩椅: " + chairList);
+  ok(remarkOf(chairList).indexOf("kursi anak") === -1 && remarkOf(chairList).indexOf("daun ketumbar") === -1, "non-food negation translated a fragment: " + chairList);
   wholeCalls.length = 0;
   const garlic = wholeApp.translateTaskCnToId(remarkLine("不要香菜、蔥、蒜"));
   ok(JSON.stringify(wholeCalls) === JSON.stringify(["不要香菜、蔥、蒜"]), "uncovered enumeration sends the whole segment: " + JSON.stringify(wholeCalls));

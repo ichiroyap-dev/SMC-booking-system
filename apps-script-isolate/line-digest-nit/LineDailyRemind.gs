@@ -6,7 +6,7 @@
  * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
  * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
  * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
- * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏）。尾端的的了吧呢啊嗎呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
+ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完；吃不完就整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。「嗎」是問句，不拿掉，整段送翻。只有「元」時留原文。
  * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。
  * 店務維護提醒整句翻一次，不按逗號切開。同一套對照也用在整行。失敗就整句留原文。
  * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
@@ -576,6 +576,20 @@ function asciiDigits_(text) {
 // 這些單字會切開牛奶、蛋糕、蔥花。自由配對不用，只當封閉句型的 X。
 var SINGLE_CHAR_X_ = { "雞": true, "牛": true, "蛋": true, "奶": true, "蝦": true, "葱": true, "蔥": true };
 
+// 食材與菜色。過敏列舉和「不要X、Y」只收這些。小孩椅、靠窗、時間詞不在這裡。
+var FOOD_WORD_ = {
+  "香菜": true,
+  "花生": true,
+  "蝦子": true,
+  "雞蛋": true,
+  "牛肉": true,
+  "桶仔雞": true,
+  "筊白筍": true,
+  "雞湯": true,
+  "素食": true,
+  "米血": true
+};
+
 function longestPhraseAt_(text, index) {
   var best = null;
   var i;
@@ -611,6 +625,28 @@ function readGlossItem_(text, index) {
   var id = singleCharXId_(text.charAt(index));
   if (!id || !isListBoundary_(text, index + 1)) return null;
   return { len: 1, id: id };
+}
+
+function readFoodItem_(text, index) {
+  if (text.slice(index, index + 2) === "過敏") return null;
+  var best = null;
+  var i;
+  for (i = 0; i < REMARK_PHRASES_.length; i++) {
+    var zh = REMARK_PHRASES_[i][0];
+    if (!FOOD_WORD_[zh] || SINGLE_CHAR_X_[zh]) continue;
+    if (text.indexOf(zh, index) !== index) continue;
+    if (!best || zh.length > best.len) best = { len: zh.length, id: REMARK_PHRASES_[i][1] };
+  }
+  if (best && best.len > 1 && best.id) return best;
+  var id = singleCharXId_(text.charAt(index));
+  if (!id || !isListBoundary_(text, index + 1)) return null;
+  return { len: 1, id: id };
+}
+
+function readNegationItem_(text, index) {
+  // 少鹽不是菜名，但「不要香菜、少鹽」已是整段對照，要留著。
+  if (text.slice(index, index + 2) === "少鹽") return { len: 2, id: "sedikit garam" };
+  return readFoodItem_(text, index);
 }
 
 function glossRunAt_(text, index) {
@@ -674,11 +710,127 @@ function matchAllergy_(rest) {
 }
 
 function matchBareAllergy_(rest) {
-  if (rest.charAt(0) === "對") return null;
-  var item = readGlossItem_(rest, 0);
-  if (!item) return null;
-  if (rest.slice(item.len, item.len + 2) !== "過敏") return null;
-  return { len: item.len + 2, id: "alergi " + item.id };
+  // 沒有「對」也要把整串食材收到過敏：花生、蝦子過敏、花生蝦子過敏。吃不完就回 null，不可只留最後一項。
+  if (!rest || rest.charAt(0) === "對") return null;
+  var parts = [];
+  var i = 0;
+  var first = readFoodItem_(rest, 0);
+  if (!first) return null;
+  parts.push(first.id);
+  i += first.len;
+  while (rest.slice(i, i + 2) !== "過敏") {
+    if (i >= rest.length) return null;
+    var ch = rest.charAt(i);
+    var conj = ch === "、" || ch === "和" || ch === "與" || ch === "及";
+    var nextAt = conj ? i + 1 : i;
+    var nxt = readFoodItem_(rest, nextAt);
+    if (!nxt) return null;
+    parts.push("dan");
+    parts.push(nxt.id);
+    i = nextAt + nxt.len;
+  }
+  if (rest.slice(i, i + 2) !== "過敏") return null;
+  return { len: i + 2, id: "alergi " + parts.join(" ").replace(/\s{2,}/g, " ").trim() };
+}
+
+function negationRunAt_(text, index) {
+  var parts = [];
+  var i = index;
+  while (i < text.length) {
+    var item = readNegationItem_(text, i);
+    if (item) {
+      parts.push(item.id);
+      i += item.len;
+      continue;
+    }
+    var ch = text.charAt(i);
+    var conj = ch === "和" || ch === "與" || ch === "及" || ch === "或" || ch === "、";
+    if (!conj) break;
+    var nxt = readNegationItem_(text, i + 1);
+    if (!nxt) break;
+    if (ch === "或") parts.push("atau");
+    else if (ch === "、") parts.push(",");
+    else parts.push("dan");
+    parts.push(nxt.id);
+    i += 1 + nxt.len;
+  }
+  return { len: i - index, id: parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() };
+}
+
+function matchNegation_(rest) {
+  if (rest.indexOf("不要放") === 0 || rest.indexOf("不要") !== 0) return null;
+  var run = negationRunAt_(rest, 2);
+  if (run.len > 0 && run.id && 2 + run.len === rest.length) {
+    return { len: rest.length, id: "tanpa " + run.id };
+  }
+  if (rest.length === 3) {
+    var one = singleCharXId_(rest.charAt(2));
+    if (one) return { len: rest.length, id: "tanpa " + one };
+  }
+  return null;
+}
+
+function negationListRejectsSegment_(text) {
+  // 不要後面出現小孩椅這類非食材，就不要用詞條把列舉拼起來。
+  if (text.indexOf("不要") !== 0 || text.indexOf("不要放") === 0) return false;
+  var i = 0;
+  var lead = longestPhraseAt_(text, 0);
+  if (lead && lead.len > 2 && text.slice(0, 2) === "不要") i = lead.len;
+  else i = 2;
+  while (i < text.length) {
+    var item = readNegationItem_(text, i);
+    if (item) {
+      i += item.len;
+      continue;
+    }
+    var ch = text.charAt(i);
+    if (ch === "、" || ch === "和" || ch === "與" || ch === "及" || ch === "或") {
+      i += 1;
+      continue;
+    }
+    var phrase = longestPhraseAt_(text, i);
+    if (phrase && phrase.len > 1 && phrase.id) return true;
+    return false;
+  }
+  return false;
+}
+
+function foodSpansBefore_(text, allergyAt) {
+  var spans = [];
+  var i = 0;
+  while (i < allergyAt) {
+    var item = readFoodItem_(text, i);
+    if (item && i + item.len <= allergyAt) {
+      spans.push(i);
+      i += item.len;
+      continue;
+    }
+    i += 1;
+  }
+  return spans;
+}
+
+function allergyCovers_(text, start, need) {
+  var slice = text.slice(start);
+  var bare = matchBareAllergy_(slice);
+  if (bare && bare.len === need) return true;
+  var dui = matchAllergy_(slice);
+  if (dui && dui.len === need) return true;
+  var phrase = longestPhraseAt_(text, start);
+  if (phrase && phrase.len === need) return true;
+  return false;
+}
+
+function foodPrecedesUnscopedAllergy_(text) {
+  var from = 0;
+  while (from < text.length) {
+    var at = text.indexOf("過敏", from);
+    if (at < 0) return false;
+    var spans = foodSpansBefore_(text, at);
+    if (spans.length && !allergyCovers_(text, spans[0], at + 2 - spans[0])) return true;
+    from = at + 2;
+  }
+  return false;
 }
 
 function longestPatternAt_(text, index) {
@@ -714,8 +866,8 @@ function longestPatternAt_(text, index) {
   if (closed) consider(closed.len, closed.id);
   closed = matchClosedX_(rest, "不要放", "jangan pakai ");
   if (closed) consider(closed.len, closed.id);
-  closed = matchClosedX_(rest, "不要", "tanpa ");
-  if (closed) consider(closed.len, closed.id);
+  var neg = matchNegation_(rest);
+  if (neg) consider(neg.len, neg.id);
   var allergy = matchAllergy_(rest);
   if (allergy) consider(allergy.len, allergy.id);
   var bare = matchBareAllergy_(rest);
@@ -782,7 +934,7 @@ function matchSpanPattern_(text, index) {
 
 function isSkippableChar_(ch) {
   if (!ch) return false;
-  if (/^[的了吧呢啊嗎呀嘛哦喔]$/.test(ch)) return true;
+  if (/^[的了吧呢啊呀嘛哦喔]$/.test(ch)) return true;
   if (/[\u4e00-\u9fff]/.test(ch) || /[A-Za-z0-9]/.test(ch)) return false;
   return true;
 }
@@ -798,6 +950,8 @@ function segmentHasToken_(text) {
 
 function coverSegment_(text) {
   var src = String(text || "");
+  if (foodPrecedesUnscopedAllergy_(src)) return null;
+  if (negationListRejectsSegment_(src)) return null;
   var parts = [];
   var i = 0;
   while (i < src.length) {
@@ -908,7 +1062,7 @@ function translateOneSegment_(part, cache) {
       if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
       body += next;
     }
-    body = body.replace(/[的了吧呢啊嗎呀嘛哦喔]+$/, "");
+    body = body.replace(/[的了吧呢啊呀嘛哦喔]+$/, "");
     if (!body) return lead + peeled.prefix + peeled.rest + trail;
     return lead + peeled.prefix + body + trail;
   }
