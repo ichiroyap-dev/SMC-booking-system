@@ -1,21 +1,22 @@
 --- apps-script-isolate/line-digest-nit/original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
-+++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 13:52:23.705560876 +0000
-@@ -1,3 +1,14 @@
++++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 14:22:07.506731517 +0000
+@@ -1,3 +1,15 @@
 +/**
 + * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
 + * 中文總覽、讀表、寫表、LINE 發送都沒改。
 + * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
 + * 備註翻譯還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
 + * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
-+ * B 欄備註、整行退回、C 欄一般翻譯與固定警示的尾段，都走同一套保護。
-+ * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。都不是整則固定多等約 3 秒。
++ * 金額與方案代碼在送翻前切開，只把中文片段送進 LanguageApp，再照原順序接回。不靠私用區記號。
++ * 店務維護提醒（整行退回）整句翻一次，不按逗號切開。失敗就整句留原文。
++ * 常見備註先走 REMARK_PHRASES_，長詞優先。一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
 + * 「Service invoked too many times」且不是 in a short time：不暫停、不重試。
-+ * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，沒有整欄停止旗標；每個中文分段仍可能各呼叫一次，不重試、不暫停。
++ * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，沒有整欄停止旗標；每個尚未被對照吃掉的中文片段仍可能各呼叫一次，不重試、不暫停。
 + */
  function checkAndSendDailyReminders() {
    // ======= 1. 系統安全性憑證設定 =======
    var LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN");
-@@ -209,6 +220,8 @@
+@@ -209,6 +221,8 @@
    if (!taskCn) return "Tidak ada terjemahan";
    var lines = taskCn.split("\n");
    var translatedLines = [];
@@ -24,7 +25,7 @@
    
    var daysMap = { 'Sun': 'Minggu', 'Mon': 'Senin', 'Tue': 'Selasa', 'Wed': 'Rabu', 'Thu': 'Kamis', 'Fri': 'Jumat', 'Sat': 'Sabtu' };
    var monthsMap = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-@@ -248,7 +261,7 @@
+@@ -248,7 +262,7 @@
      }
      if (line.indexOf("🥡 外帶") === 0) {
        var takeoutN = line.match(/\d+/);
@@ -33,7 +34,7 @@
        continue;
      }
  
-@@ -280,7 +293,8 @@
+@@ -280,7 +294,8 @@
        var hadPipe = line.indexOf("|") !== -1;
        var parts = line.split("|");
        var frontPart = parts[0].trim();
@@ -43,7 +44,7 @@
  
        var timePrefix = frontPart.match(/^\d{2}:\d{2}\s+/);
        var timePrefixStr = timePrefix ? timePrefix[0] : "";
-@@ -297,30 +311,19 @@
+@@ -297,30 +312,19 @@
        var translatedFront = timePrefixStr + titleID + nameAndCode;
  
        var translatedBack = backPart.trim();
@@ -62,7 +63,7 @@
 -          translatedBack = translatedBack.replace(rawChinese, transChinese);
 -        } catch (e) {}
 -      }
-+      // 只在 ；;、，,（）()、| 與換行切開。不加 / 或空白。數字與英文留在同一段。
++      // 只在 ；;、，,（）()、| 與換行切開。金額裡的千分位逗號不切開。不加 / 或空白。
 +      translatedBack = translateRemarkBodyToId_(translatedBack, translateCache);
  
        if (!hadPipe) translatedLines.push(translatedFront);
@@ -75,12 +76,12 @@
 -    } catch(e) {
 -      translatedLines.push(line);
 -    }
-+    // 整行退回與備註同一套：保護金額、翻譯、逐段核對、正規化，最後才還原來源。
-+    translatedLines.push(translateRemarkBodyToId_(line, translateCache));
++    // 店務維護提醒：整句翻一次，不按逗號切開。金額仍先切走，失敗就整句留原文。
++    translatedLines.push(translateRemarkBodyToId_(line, translateCache, true));
    }
    return translatedLines.join("\n");
  }
-@@ -328,17 +331,262 @@
+@@ -328,17 +332,568 @@
  function translateSessionHeadingLine_(line, idName) {
    var pendingTail = "jumlah meja menunggu konfirmasi";
    // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
@@ -268,51 +269,352 @@
 +  return translated;
 +}
 +
-+function translateRemarkBodyToId_(text, cache) {
++// 固定備註對照。比對時長詞優先。第三欄 true 表示印尼文還要店裡員工確認。
++// 整張表與開放句型寫在 REAL_LANGUAGEAPP_ACCEPTANCE.md。改譯文只改這個陣列。
++var REMARK_PHRASES_ = [
++  ["對蝦子過敏", "alergi udang", false],
++  ["花生過敏", "alergi kacang", false],
++  ["不要香菜", "tanpa daun ketumbar", false],
++  ["不要葱", "tanpa daun bawang", false],
++  ["不要蔥", "tanpa daun bawang", false],
++  ["不要油炸", "jangan digoreng", false],
++  ["不要辣", "tidak pedas", false],
++  ["小孩椅", "kursi anak", false],
++  ["兒童椅", "kursi anak", true],
++  ["少鹽", "sedikit garam", false],
++  ["桶仔雞", "ayam tong", true],
++  ["筊白筍", "rebung air (jiaobai)", true],
++  ["雞湯", "sup ayam", true],
++  ["素食", "makanan vegetarian", true],
++  ["米血", "kue darah beras (mi xue)", true],
++  ["小朋友", "anak", true],
++  ["幼兒", "balita", true],
++  ["大人", "dewasa", true],
++  ["生日", "ulang tahun", false],
++  ["靠窗", "dekat jendela", false],
++  ["要VIP桌", "minta meja VIP", false],
++  ["訂金", "uang muka", true],
++  ["尾款", "sisa pembayaran", true],
++  ["找零", "kembalian", true],
++  ["已付", "sudah dibayar", false],
++  ["未付", "belum dibayar", false],
++  ["加桌", "tambah meja", true],
++  ["香菜", "daun ketumbar", false],
++  ["花生", "kacang", false],
++  ["蝦子", "udang", false],
++  ["蝦", "udang", false],
++  ["雞蛋", "telur", true],
++  ["葱", "daun bawang", false],
++  ["蔥", "daun bawang", false],
++  ["牛肉", "daging sapi", true],
++  ["蛋", "telur", true],
++  ["奶", "susu", true],
++  ["牛", "daging sapi", true],
++  ["雞", "ayam", true],
++  ["過敏", "alergi", false],
++  ["元", "", true]
++];
++
++function asciiDigits_(text) {
++  return String(text || "").replace(/[０-９]/g, function(ch) {
++    return String.fromCharCode(ch.charCodeAt(0) - 0xFF10 + 0x30);
++  });
++}
++
++function longestPhraseAt_(text, index) {
++  var best = null;
++  var i;
++  for (i = 0; i < REMARK_PHRASES_.length; i++) {
++    var zh = REMARK_PHRASES_[i][0];
++    if (text.indexOf(zh, index) !== index) continue;
++    if (!best || zh.length > best.len) best = { len: zh.length, id: REMARK_PHRASES_[i][1] };
++  }
++  return best;
++}
++
++function glossRunAt_(text, index) {
++  var parts = [];
++  var i = index;
++  while (i < text.length) {
++    var phrase = longestPhraseAt_(text, i);
++    if (phrase) {
++      if (phrase.id) parts.push(phrase.id);
++      i += phrase.len;
++      continue;
++    }
++    var ch = text.charAt(i);
++    if (ch === "和" || ch === "與" || ch === "及") {
++      parts.push("dan");
++      i += 1;
++      continue;
++    }
++    if (ch === "或") {
++      parts.push("atau");
++      i += 1;
++      continue;
++    }
++    if (ch === "、") {
++      parts.push(",");
++      i += 1;
++      continue;
++    }
++    break;
++  }
++  return { len: i - index, id: parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() };
++}
++
++function longestPatternAt_(text, index) {
++  var rest = text.slice(index);
++  var best = null;
++  function consider(len, id) {
++    if (!len) return;
++    if (!best || len > best.len) best = { len: len, id: id };
++  }
++  var m = rest.match(/^([0-9０-９]+)大([0-9０-９]+)小/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " dewasa " + asciiDigits_(m[2]) + " anak");
++  m = rest.match(/^([0-9０-９]+)大/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " dewasa");
++  m = rest.match(/^([0-9０-９]+)小/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " anak");
++  m = rest.match(/^([0-9０-９]+)小朋友/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " anak");
++  m = rest.match(/^([0-9０-９]+)幼兒/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " balita");
++  m = rest.match(/^([0-9０-９]+)大人/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " dewasa");
++  m = rest.match(/^([0-9０-９]+)份/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " porsi");
++  m = rest.match(/^([0-9０-９]+)隻/);
++  if (m) consider(m[0].length, asciiDigits_(m[1]) + " ekor");
++  m = rest.match(/^([0-9０-９]{1,2}:[0-9０-９]{2})到/);
++  if (m) consider(m[0].length, "tiba jam " + asciiDigits_(m[1]));
++  m = rest.match(/^([0-9０-９]{1,2})點到/);
++  if (m) consider(m[0].length, "tiba jam " + asciiDigits_(m[1]));
++  var run;
++  if (rest.indexOf("不能吃") === 0) {
++    run = glossRunAt_(rest, 3);
++    if (run.len > 0) consider(3 + run.len, "tamu tidak bisa makan " + run.id);
++  }
++  if (rest.indexOf("可以吃") === 0) {
++    run = glossRunAt_(rest, 3);
++    if (run.len > 0) consider(3 + run.len, "tamu bisa makan " + run.id);
++  }
++  if (rest.indexOf("不要放") === 0) {
++    run = glossRunAt_(rest, 3);
++    if (run.len > 0) consider(3 + run.len, "jangan pakai " + run.id);
++  }
++  if (rest.indexOf("不要") === 0) {
++    run = glossRunAt_(rest, 2);
++    if (run.len > 0) consider(2 + run.len, "tanpa " + run.id);
++  }
++  if (rest.charAt(0) === "對") {
++    run = glossRunAt_(rest, 1);
++    if (run.len > 0 && rest.slice(1 + run.len, 3 + run.len) === "過敏") {
++      consider(1 + run.len + 2, "alergi " + run.id);
++    }
++  }
++  return best;
++}
++
++function scanGloss_(text) {
++  var parts = [];
++  var src = String(text || "");
++  var i = 0;
++  while (i < src.length) {
++    var phrase = longestPhraseAt_(src, i);
++    var pattern = longestPatternAt_(src, i);
++    var best = null;
++    if (phrase && (!pattern || phrase.len >= pattern.len)) best = phrase;
++    else if (pattern) best = pattern;
++    if (best) {
++      if (best.id) parts.push({ type: "id", text: best.id });
++      i += best.len;
++      continue;
++    }
++    var j = i + 1;
++    while (j < src.length && !longestPhraseAt_(src, j) && !longestPatternAt_(src, j)) j++;
++    parts.push({ type: "src", text: src.slice(i, j) });
++    i = j;
++  }
++  return parts;
++}
++
++function isSkippablePiece_(text) {
++  var t = String(text || "").trim();
++  if (!t) return true;
++  if (!/[\u4e00-\u9fff]/.test(t) && !/[A-Za-z]/.test(t)) return true;
++  if (/^[的了吧呢啊嗎呀嘛哦喔]$/.test(t)) return true;
++  return false;
++}
++
++function isInsideAmount_(whole, offset) {
++  // 逗號要算在金額裡，後面必須剛好三位數字。$500,2隻雞 的逗號不是千分位。
++  var src = String(whole || "");
++  var ch = src.charAt(offset);
++  if (ch !== "," && ch !== "，") return false;
++  if (!/^\d{3}(?!\d)/.test(src.slice(offset + 1))) return false;
++  var head = src.slice(0, offset);
++  if (/(?:NT\s*)?[\$＄]\s*\d{1,3}(?:[,，]\d{3})*$/.test(head)) return true;
++  return /(?:^|[^0-9０-９])\d{1,3}(?:[,，]\d{3})*$/.test(head);
++}
++
++function splitAroundTokens_(text) {
++  var src = String(text || "");
++  var marks = [];
++  function stash(match) {
++    marks.push(match);
++    return "\uE000" + (marks.length - 1) + "\uE001";
++  }
++  // 來源裡的私用區已先編成 \uE000E / \uE000F。這裡的記號只在本機切開，不送進 LanguageApp。
++  var marked = src.replace(/\uE000E|\uE000F/g, stash);
++  marked = marked.replace(/\d+(?:\.\d+)?\s*[Kk]\s*[Xx]?\d*\s*[Aa]/g, stash);
++  marked = marked.replace(/(?:NT\s*)?[\$＄]\s*\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?/g, stash);
++  marked = marked.replace(/(?:NT\s*)?[\$＄]\s*\d+(?:\.\d+)?/g, stash);
++  marked = marked.replace(/\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?/g, stash);
++  var runs = [];
++  var re = /\uE000(\d+)\uE001/g;
++  var last = 0;
++  var found;
++  while ((found = re.exec(marked)) !== null) {
++    if (found.index > last) runs.push({ type: "text", text: marked.slice(last, found.index) });
++    runs.push({ type: "token", text: marks[parseInt(found[1], 10)] });
++    last = found.index + found[0].length;
++  }
++  if (last < marked.length) runs.push({ type: "text", text: marked.slice(last) });
++  if (!runs.length) runs.push({ type: "text", text: src });
++  return runs;
++}
++
++function needsJoinSpace_(prev, next) {
++  if (!prev || !next) return false;
++  if (/\s/.test(prev) || /\s/.test(next)) return false;
++  if (/[\/|)\]）,.;:!?]/.test(next)) return false;
++  var prevWord = /[A-Za-z0-9]/.test(prev);
++  var nextWord = /[A-Za-z0-9$＄]/.test(next);
++  return prevWord && nextWord;
++}
++
++function stripAddedEnding_(source, translated) {
++  var src = String(source || "").replace(/\s+$/, "");
++  var out = String(translated || "").replace(/\s+$/, "");
++  if (/[.。!！?？]$/.test(src)) return out;
++  return out.replace(/[.。!！?？]+$/, "");
++}
++
++function pieceAccepted_(source, translated) {
++  var got = String(translated || "").trim();
++  var src = String(source || "").trim();
++  if (!got) return false;
++  if (got === src && /[\u4e00-\u9fff]/.test(src)) return false;
++  if (/[\$＄]/.test(got) || /NT\$/i.test(got) || /\bRp\b/.test(got)) return false;
++  if (got.indexOf("\uE000") !== -1 || got.indexOf("\uE001") !== -1) return false;
++  return true;
++}
++
++function translateTextRun_(piece, cache, wholeSentence) {
++  var parts = wholeSentence ? [{ type: "src", text: piece }] : scanGloss_(piece);
++  var rendered = [];
++  var g;
++  for (g = 0; g < parts.length; g++) {
++    if (parts[g].type === "id") {
++      if (parts[g].text) rendered.push(parts[g].text);
++      continue;
++    }
++    var srcPart = parts[g].text;
++    if (isSkippablePiece_(srcPart) || !/[\u4e00-\u9fff]/.test(srcPart)) {
++      rendered.push(srcPart);
++      continue;
++    }
++    if (cache && cache[QUOTA_FLAG_]) return null;
++    var translated = translatePieceCached_(cache, srcPart);
++    if (cache && cache[QUOTA_FLAG_]) return null;
++    if (!pieceAccepted_(srcPart, translated)) return null;
++    rendered.push(stripAddedEnding_(srcPart, translated));
++  }
++  return rendered;
++}
++
++function translateOneSegment_(part, cache, wholeSentence) {
++  var lead = (part.match(/^\s*/) || [""])[0];
++  var trail = (part.match(/\s*$/) || [""])[0];
++  var core = part.trim();
++  if (!core) return part;
++  var peeled = peelFrozenLabels_(core);
++  if (cache && cache[QUOTA_FLAG_]) return null;
++  if (!/[\u4e00-\u9fff]/.test(peeled.rest)) return lead + peeled.prefix + peeled.rest + trail;
++  var runs = splitAroundTokens_(peeled.rest);
++  var rendered = [];
++  var r;
++  for (r = 0; r < runs.length; r++) {
++    if (runs[r].type === "token") {
++      rendered.push(runs[r].text);
++      continue;
++    }
++    if (isSkippablePiece_(runs[r].text)) {
++      rendered.push(runs[r].text);
++      continue;
++    }
++    var pieces = translateTextRun_(runs[r].text, cache, wholeSentence);
++    if (!pieces) return null;
++    var p;
++    for (p = 0; p < pieces.length; p++) rendered.push(pieces[p]);
++  }
++  var body = "";
++  var i;
++  for (i = 0; i < rendered.length; i++) {
++    var next = rendered[i];
++    if (!next) continue;
++    if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
++    body += next;
++  }
++  return lead + peeled.prefix + body + trail;
++}
++
++function splitRemarkSegments_(text) {
++  var src = String(text || "");
++  var parts = [];
++  var buf = "";
++  var i;
++  for (i = 0; i < src.length; i++) {
++    var ch = src.charAt(i);
++    var isSep = ch === "," || /^[；;、，（）()|\n]$/.test(ch);
++    if (isSep && isInsideAmount_(src, i)) isSep = false;
++    if (!isSep) {
++      buf += ch;
++      continue;
++    }
++    if (buf) parts.push(buf);
++    parts.push(ch);
++    buf = "";
++  }
++  if (buf) parts.push(buf);
++  return parts;
++}
++
++function translateRemarkBodyToId_(text, cache, wholeSentence) {
 +  var src = normalizeFullwidthTime_(text);
 +  if (!src) return "";
 +  src = escapeSentinels_(src);
-+  var box = protectRemarkTokens_(src);
-+  var parts = box.text.split(/([；;、，,（）()|\n])/);
++  if (wholeSentence) {
++    var whole = translateOneSegment_(src, cache, true);
++    if (whole == null) return unescapeSentinels_(normalizeIdPunctuation_(src));
++    return unescapeSentinels_(normalizeIdPunctuation_(whole));
++  }
++  var parts = splitRemarkSegments_(src);
 +  var out = [];
-+  for (var i = 0; i < parts.length; i++) {
++  var i;
++  for (i = 0; i < parts.length; i++) {
 +    var part = parts[i];
 +    if (!part) continue;
 +    if (/^[；;、，,（）()|\n]$/.test(part)) {
 +      out.push(part);
 +      continue;
 +    }
-+    var ids = listPlaceholderIds_(part);
-+    var lead = (part.match(/^\s*/) || [""])[0];
-+    var trail = (part.match(/\s*$/) || [""])[0];
-+    var core = part.trim();
-+    if (!core) {
-+      out.push(part);
-+      continue;
-+    }
-+    var peeled = peelFrozenLabels_(core);
-+    if (cache && cache[QUOTA_FLAG_]) {
-+      out.push(part);
-+      continue;
-+    }
-+    if (!/[\u4e00-\u9fff]/.test(peeled.rest)) {
-+      out.push(part);
-+      continue;
-+    }
-+    var translatedCore = translatePieceCached_(cache, peeled.rest);
-+    if (cache && cache[QUOTA_FLAG_]) {
-+      out.push(part);
-+      continue;
-+    }
-+    var stitched = lead + peeled.prefix + translatedCore + trail;
-+    if (!placeholdersIntact_(stitched, ids)) {
-+      out.push(part);
-+      continue;
-+    }
-+    out.push(stitched);
++    var seg = translateOneSegment_(part, cache, false);
++    if (seg == null) out.push(part);
++    else out.push(seg);
 +  }
-+  // 先正規化仍含占位符的文字，最後才把來源金額放回，避免 $1,000已付 被逗號規則拆開。
-+  return unescapeSentinels_(restorePlaceholders_(normalizeIdPunctuation_(out.join("")), box.tokens));
++  return unescapeSentinels_(normalizeIdPunctuation_(out.join("")));
 +}
 +
 +function normalizeFullwidthTime_(text) {
@@ -322,7 +624,10 @@
 +function normalizeIdPunctuation_(text) {
 +  var s = normalizeFullwidthTime_(text);
 +  s = s.replace(/；/g, ";");
-+  s = s.replace(/[、，]/g, ",");
++  s = s.replace(/[、，]/g, function(match, offset, whole) {
++    if (match === "，" && isInsideAmount_(whole, offset)) return "，";
++    return ",";
++  });
 +  s = s.replace(/（/g, "(");
 +  s = s.replace(/）/g, ")");
 +  s = s.replace(/：/g, ": ");
@@ -331,7 +636,9 @@
 +  s = s.replace(/？/g, "? ");
 +  s = s.replace(/;(?!\s)/g, "; ");
 +  // 只有「數字,正好三位」且後面不是字才是千分位。,300份 / ,300 porsi 要空一格。
++  // $1,000 / NT$12,000 的逗號是來源金額，不能被拆開。
 +  s = s.replace(/,(?!\s)/g, function(match, offset, whole) {
++    if (isInsideAmount_(whole, offset)) return ",";
 +    var before = offset > 0 ? whole.charAt(offset - 1) : "";
 +    var after = whole.slice(offset + 1);
 +    if (/\d/.test(before) && /^\d{3}(?![\dA-Za-z\u00C0-\u024F\u4e00-\u9fff\uFF10-\uFF19])/.test(after)) {
@@ -346,7 +653,7 @@
  }
  
  function translateTotalLine_(line) {
-@@ -373,31 +621,53 @@
+@@ -373,31 +928,53 @@
    return "(Total " + (tables ? tables[0] : "0") + " meja)";
  }
  
@@ -414,7 +721,7 @@
 +  if (known && !known.tail) return known.fixed;
 +  if (known) return joinOperationalNote_(known.fixed, known.tail);
 +  // 翻失敗、空結果或原樣退回時留下中文警示，不可改成「沒有說明」。
-+  // cache 傳 null，沒有整欄配額停止旗標。每日配額錯誤後，每個中文分段仍可能各呼叫一次；不重試、不暫停。忙日驗收要算進這些呼叫。
++  // cache 傳 null，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉的中文片段仍可能各呼叫一次；不重試、不暫停。忙日驗收要算進這些呼叫。
 +  return translateRemarkBodyToId_(trans, null);
  }
  

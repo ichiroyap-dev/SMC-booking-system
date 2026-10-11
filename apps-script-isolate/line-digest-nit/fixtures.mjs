@@ -131,17 +131,7 @@ export const BUSY_DAY = {
 };
 
 export const BUSY_DAY_CALLS = [
-  "花生過敏",
-  "不要辣",
-  "小孩椅",
-  "桶仔雞2隻",
-  "雞湯1份",
-  "9大3小",
   "啤酂10箱要冰",
-  "12點到",
-  "２份",
-  "要VIP桌",
-  "不要香菜",
 ];
 
 export const HEADING_CASES = [
