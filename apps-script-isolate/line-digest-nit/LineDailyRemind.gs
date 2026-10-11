@@ -7,7 +7,7 @@
  * B 欄備註、整行退回、C 欄一般翻譯與固定警示的尾段，都走同一套保護。
  * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。都不是整則固定多等約 3 秒。
  * 「Service invoked too many times」且不是 in a short time：不暫停、不重試。
- * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，仍可能再呼叫一次。
+ * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，沒有整欄停止旗標；每個中文分段仍可能各呼叫一次，不重試、不暫停。
  */
 function checkAndSendDailyReminders() {
   // ======= 1. 系統安全性憑證設定 =======
@@ -666,7 +666,7 @@ function translateNoteCnToId(noteCn) {
   if (known && !known.tail) return known.fixed;
   if (known) return joinOperationalNote_(known.fixed, known.tail);
   // 翻失敗、空結果或原樣退回時留下中文警示，不可改成「沒有說明」。
-  // cache 傳 null：總覽若已因每日配額停止，這裡仍可能再呼叫一次。
+  // cache 傳 null，沒有整欄配額停止旗標。每日配額錯誤後，每個中文分段仍可能各呼叫一次；不重試、不暫停。忙日驗收要算進這些呼叫。
   return translateRemarkBodyToId_(trans, null);
 }
 
