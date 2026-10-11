@@ -6,7 +6,7 @@
  * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
  * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
  * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
- * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。同一條、／和／或列舉裡，每個食材跟最近的頭（不能吃、不吃、不要、不要放、可以吃、X過敏，以及不要辣這類完整否定詞）。可以吃不能跨過否定、過敏或非食材，否則該「；」項目留中文。否定與過敏仍可跨過非食材。有一項對不上，就只把該「；」項目留中文，同一備註的其他「；」項目照翻。逗號仍把同一個「；」項目綁在一起。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
+ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。同一條、／和／或列舉裡，每個食材跟最近的頭（不能吃、不吃、不要、不要放、可以吃，以及不要辣這類完整否定詞）。X過敏只包住那個詞，後面再有食材就整段留中文。可以吃不能跨過否定、過敏或非食材，否則該「；」項目留中文。否定與過敏仍可跨過非食材。句尾的。.!！先拿開再接回，否定留在食材上；的了吧呢啊呀嘛哦喔拿掉，即使後面還有句號。問號和嗎不拿掉：列舉因此對不上就整段留中文，單獨的「不要辣嗎」仍整段送翻。逗號兩邊若是裸食材貼著否定、過敏、可以吃或「對」，或「對…」和「…過敏」被逗號拆開，整個「；」項目留中文，不把逗號改成頓號。有一項對不上，就只把該「；」項目留中文，同一備註的其他「；」項目照翻。只有「元」時留原文。
  * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。蔥花、蛋奶、蒜、海鮮是完整詞。
  * 店務維護提醒整句翻一次，不按逗號切開。整句路徑不套用「換」和句首「不要」的留中文規則。失敗就整句留原文。
  * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
@@ -844,12 +844,7 @@ function classifyScopeItem_(item) {
   var zh = item.zh || "";
   var phrase = longestPhraseAt_(zh, 0);
   if (phrase && phrase.id && phrase.len === zh.length && phrase.id.indexOf("alergi ") === 0) {
-    return {
-      type: "head",
-      leading: "",
-      foods: [phrase.id.slice("alergi ".length)],
-      scope: { kind: "dan", gloss: "alergi ", positive: false }
-    };
+    return { type: "closed", id: phrase.id };
   }
   var head = longestListHead_(zh);
   var fixedWhole = phrase && phrase.id && phrase.len === zh.length && isFixedNegationPhrase_(zh.slice(0, phrase.len));
@@ -873,7 +868,17 @@ function classifyScopeItem_(item) {
       };
     }
   }
+  if (containsFoodWord_(zh)) return { type: "reject" };
   return { type: "other", id: item.id };
+}
+
+function containsFoodWord_(text) {
+  var src = String(text || "");
+  var i;
+  for (i = 0; i < src.length; i++) {
+    if (readFoodItem_(src, i)) return true;
+  }
+  return false;
 }
 
 function renderScoped_(scope, items, seps, leadSep) {
@@ -882,6 +887,7 @@ function renderScoped_(scope, items, seps, leadSep) {
   if (scope.leading) bits.push(scope.leading);
   var pending = null;
   var blocked = false;
+  var blockBareFood = false;
   function flush() {
     if (!pending) return;
     var restart = bits.length > 0 && !pending.newHead;
@@ -893,10 +899,19 @@ function renderScoped_(scope, items, seps, leadSep) {
   for (i = 0; i < items.length; i++) {
     var sepBefore = i === 0 ? (leadSep || "") : seps[i - 1];
     var cls = classifyScopeItem_(items[i]);
+    if (cls.type === "reject") return { reject: true };
+    if (cls.type === "closed") {
+      flush();
+      if (sepBefore) pushSep_(bits, sepBefore);
+      bits.push(cls.id);
+      blockBareFood = true;
+      continue;
+    }
     if (cls.type === "head") {
       flush();
       current = cls.scope;
       blocked = false;
+      blockBareFood = false;
       if (cls.leading) {
         if (sepBefore) pushSep_(bits, sepBefore);
         bits.push(cls.leading);
@@ -915,6 +930,7 @@ function renderScoped_(scope, items, seps, leadSep) {
       continue;
     }
     if (cls.type === "food") {
+      if (blockBareFood) return { reject: true };
       if (current.positive && blocked) return { reject: true };
       if (pending && pending.kind === current.kind && pending.gloss === current.gloss) {
         pending.foodSeps.push(sepBefore);
@@ -973,7 +989,37 @@ function matchOpenList_(rest, head) {
   return { len: head.zh.length + mixed.len, id: rendered.id };
 }
 
+function peelListTail_(text) {
+  var src = String(text || "");
+  var i = src.length;
+  var punct = "";
+  while (i > 0) {
+    var ch = src.charAt(i - 1);
+    if (/[的了吧呢啊呀嘛哦喔]/.test(ch)) {
+      i -= 1;
+      continue;
+    }
+    if (/[。.!！]/.test(ch)) {
+      punct = ch + punct;
+      i -= 1;
+      continue;
+    }
+    break;
+  }
+  return { core: src.slice(0, i), punct: punct };
+}
+
+function callWithListTail_(rest, fn) {
+  // 只拿掉句尾的。.!！和的了吧呢啊呀嘛哦喔再認列舉。長度仍停在核心，標點留在後面當可跳過字接回。
+  // 這樣「不吃辣。」仍是整詞，不會因為多吃一個句號而輸給「不吃＋辣」。
+  return fn(peelListTail_(rest).core);
+}
+
 function matchListGrammar_(rest) {
+  return callWithListTail_(rest, matchListGrammarCore_);
+}
+
+function matchListGrammarCore_(rest) {
   var phrase = longestPhraseAt_(rest, 0);
   var head = longestListHead_(rest);
   var fixed = phrase && phrase.id && isFixedNegationPhrase_(rest.slice(0, phrase.len));
@@ -986,6 +1032,10 @@ function matchListGrammar_(rest) {
 }
 
 function matchAllergy_(rest) {
+  return callWithListTail_(rest, matchAllergyCore_);
+}
+
+function matchAllergyCore_(rest) {
   if (rest.charAt(0) !== "對") return null;
   var mixed = readMixedItems_(rest, 1, true);
   if (!mixed) return null;
@@ -1002,6 +1052,10 @@ function matchAllergy_(rest) {
 }
 
 function matchBareAllergy_(rest) {
+  return callWithListTail_(rest, matchBareAllergyCore_);
+}
+
+function matchBareAllergyCore_(rest) {
   // 沒有「對」也要把整串食材收到過敏：花生、蝦子過敏、花生蝦子過敏。吃不完就回 null，不可只留最後一項。
   if (!rest || rest.charAt(0) === "對") return null;
   var parts = [];
@@ -1351,6 +1405,7 @@ function translateOneSegment_(part, cache, wholeSentence) {
   var peeled = peelFrozenLabels_(core);
   if (cache && cache[QUOTA_FLAG_]) return null;
   if (!/[\u4e00-\u9fff]/.test(peeled.rest)) return lead + peeled.prefix + peeled.rest + trail;
+  if (commaSplitsPolarity_(peeled.rest)) return null;
   var covered = coverSegment_(peeled.rest);
   if (covered) {
     var body = "";
@@ -1371,7 +1426,7 @@ function translateOneSegment_(part, cache, wholeSentence) {
       body += next;
       prevPhrase = part.type === "id" && !!part.phrase;
     }
-    body = body.replace(/[的了吧呢啊呀嘛哦喔]+$/, "");
+    body = body.replace(/[的了吧呢啊呀嘛哦喔]+([。.!！]*)$/, "$1");
     if (!body) return lead + peeled.prefix + peeled.rest + trail;
     return lead + peeled.prefix + body + trail;
   }
@@ -1413,6 +1468,7 @@ function segmentMustStayChinese_(part) {
   if (!core) return false;
   var peeled = peelFrozenLabels_(core);
   if (!/[\u4e00-\u9fff]/.test(peeled.rest)) return false;
+  if (commaSplitsPolarity_(peeled.rest)) return true;
   if (coverSegment_(peeled.rest)) return false;
   if (polarityListRejects_(peeled.rest)) return true;
   if (uncertainScope_(peeled.rest, false)) return true;
@@ -1442,7 +1498,80 @@ function splitTopLevelItems_(text) {
   return parts;
 }
 
+function foodCore_(text) {
+  return String(text || "").trim().replace(/^Catatan:\s*/, "").replace(/[的了吧呢啊呀嘛哦喔。.!！?？嗎]+$/g, "");
+}
+
+function isBareFoodPiece_(text) {
+  var core = foodCore_(text);
+  if (!core) return false;
+  var food = readFoodItem_(core, 0);
+  if (food && food.len === core.length && !allergyTail_(core, food.len)) return true;
+  var mixed = readMixedItems_(core, 0);
+  if (!mixed || mixed.reject || mixed.len !== core.length || !mixed.seps.length) return false;
+  var n;
+  for (n = 0; n < mixed.items.length; n++) if (!mixed.items[n].food) return false;
+  return true;
+}
+
+function isPolarityPiece_(text) {
+  var core = foodCore_(text);
+  if (!core) return false;
+  if (core.indexOf("過敏") !== -1) return true;
+  if (/^(?:不要|不吃|不能吃|可以吃|對)/.test(core)) return true;
+  if (core.indexOf("不要") !== -1 || core.indexOf("不吃") !== -1 || core.indexOf("不能吃") !== -1 || core.indexOf("可以吃") !== -1) return true;
+  return false;
+}
+
+function splitCommaPieces_(text) {
+  var src = String(text || "");
+  var parts = [];
+  var buf = "";
+  var i;
+  for (i = 0; i < src.length; i++) {
+    var ch = src.charAt(i);
+    if ((ch === "," || ch === "，") && !isInsideAmount_(src, i)) {
+      if (buf.trim()) parts.push(buf.trim());
+      buf = "";
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf.trim()) parts.push(buf.trim());
+  return parts;
+}
+
+function commaItemSplitsPolarity_(text) {
+  var parts = splitCommaPieces_(text);
+  if (parts.length < 2) return false;
+  var i;
+  for (i = 0; i < parts.length - 1; i++) {
+    var leftBare = isBareFoodPiece_(parts[i]);
+    var rightBare = isBareFoodPiece_(parts[i + 1]);
+    var leftPol = isPolarityPiece_(parts[i]);
+    var rightPol = isPolarityPiece_(parts[i + 1]);
+    if ((leftPol && rightBare) || (leftBare && rightPol)) return true;
+    var leftCore = foodCore_(parts[i]);
+    var rightCore = foodCore_(parts[i + 1]);
+    var leftDui = leftCore.indexOf("對") === 0;
+    var rightDui = rightCore.indexOf("對") === 0;
+    if ((leftDui && rightCore.indexOf("過敏") !== -1) || (rightDui && leftCore.indexOf("過敏") !== -1)) return true;
+  }
+  return false;
+}
+
+function commaSplitsPolarity_(text) {
+  var items = splitTopLevelItems_(text);
+  var i;
+  for (i = 0; i < items.length; i++) {
+    if (isTopLevelSep_(items[i])) continue;
+    if (commaItemSplitsPolarity_(items[i])) return true;
+  }
+  return false;
+}
+
 function translateSemicolonItem_(item, cache) {
+  if (commaSplitsPolarity_(item)) return item;
   var parts = splitRemarkSegments_(item);
   var j;
   for (j = 0; j < parts.length; j++) {

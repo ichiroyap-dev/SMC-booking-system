@@ -1175,28 +1175,47 @@ function nearestFoodScopes(head, items, sub) {
   return found;
 }
 
+function foodFollowsClosedAllergy(items, sub) {
+  if (sub.kind !== "allergy") return false;
+  const at = items.indexOf(sub.zh);
+  return items.slice(at + 1).some((zh) => polarityFoodGloss[zh]);
+}
+
 for (const head of subHeadOuter) {
   for (const sub of subHeadSpecs) {
     for (const pos of [0, 1, 2]) {
       const zhItems = subHeadItems(sub, pos);
-      const spec = {
-        src: polaritySource(head, zhItems),
-        id: subHeadExpected(head, zhItems, sub),
-        foods: nearestFoodScopes(head, zhItems, sub),
-      };
+      const closedHold = foodFollowsClosedAllergy(zhItems, sub);
+      const spec = closedHold
+        ? {
+            src: polaritySource(head, zhItems),
+            chinese: true,
+            keep: [head.name].concat(zhItems),
+            forbid: ["alergi", "kacang", "udang", "daun ketumbar", "daging sapi", "daun bawang", "ayam", "tanpa ", "jangan", "bisa makan", "tidak"],
+          }
+        : {
+            src: polaritySource(head, zhItems),
+            id: subHeadExpected(head, zhItems, sub),
+            foods: nearestFoodScopes(head, zhItems, sub),
+          };
       for (const entry of protectedEntries) {
         generativeCount += 1;
         const label = "generative subhead " + entry + " " + head.name + " " + sub.zh + "@" + pos;
         const got = runProtected(entry, "success", spec.src);
         const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
         ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-        ok(sentence === spec.id, label + "\n  got: " + sentence);
-        const clauses = sentence.split(", ");
-        for (const food of spec.foods) {
-          const scopeHead = { kind: food.scope };
-          ok(clauses.some((clause) => foodHasPolarity(scopeHead, clause, food.id)), label + " nearest head missed " + food.id + ": " + sentence);
-          if (food.scope === "dan-ok") {
-            ok(clauses.some((clause) => (clause.indexOf("tamu bisa makan ") === 0 || clause.indexOf("bisa makan ") === 0) && clause.indexOf(food.id) !== -1 && clause.indexOf("tidak") === -1), label + " positive drifted " + food.id + ": " + sentence);
+        if (spec.chinese) {
+          for (const piece of spec.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
+          for (const bad of spec.forbid) ok(sentence.indexOf(bad) === -1, label + " pulled a later food into the allergy: " + sentence);
+        } else {
+          ok(sentence === spec.id, label + "\n  got: " + sentence);
+          const clauses = sentence.split(", ");
+          for (const food of spec.foods) {
+            const scopeHead = { kind: food.scope };
+            ok(clauses.some((clause) => foodHasPolarity(scopeHead, clause, food.id)), label + " nearest head missed " + food.id + ": " + sentence);
+            if (food.scope === "dan-ok") {
+              ok(clauses.some((clause) => (clause.indexOf("tamu bisa makan ") === 0 || clause.indexOf("bisa makan ") === 0) && clause.indexOf(food.id) !== -1 && clause.indexOf("tidak") === -1), label + " positive drifted " + food.id + ": " + sentence);
+            }
           }
         }
       }
@@ -1222,10 +1241,74 @@ for (const src of positiveHoldSources) {
     for (const piece of src.split("、")) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
   }
 }
+
+const punctMarks = ["", "。", ".", "!", "！", "的", "?", "嗎"];
+const punctSeps = ["、", "，", ","];
+const chinesePolarityForbid = ["kacang", "telur", "udang", "tanpa ", "jangan", "alergi", "bisa makan", "tidak pedas", "tidak makan", "tidak bisa"];
+
+function punctSuffix(mark) {
+  if (mark === "。" || mark === ".") return ".";
+  if (mark === "！" || mark === "!") return "!";
+  return "";
+}
+
+function punctMatrixSource(head, sep, mark) {
+  if (head.kind === "allergy") return "對花生" + sep + "雞蛋過敏" + mark;
+  if (head.kind === "fixed") return head.name + sep + "花生" + sep + "雞蛋" + mark;
+  return head.name + "花生" + sep + "雞蛋" + mark;
+}
+
+function punctMatrixId(head, mark) {
+  const base = head.kind === "allergy"
+    ? "alergi kacang dan telur"
+    : head.kind === "fixed"
+      ? head.gloss + ", tanpa kacang, tanpa telur"
+      : polarityOf(head.kind, ["kacang", "telur"]);
+  return base + punctSuffix(mark);
+}
+
+for (const head of generativeHeads) {
+  for (const sep of punctSeps) {
+    for (const mark of punctMarks) {
+      const src = punctMatrixSource(head, sep, mark);
+      const question = mark === "?" || mark === "嗎";
+      const translated = sep === "、" && !question;
+      const questionKept = mark === "?" && sep === "、";
+      for (const entry of protectedEntries) {
+        generativeCount += 1;
+        const label = "generative punct " + entry + " " + head.name + " sep " + sep + " mark " + (mark || "none");
+        const got = runProtected(entry, "success", src);
+        const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+        const asked = questionKept ? punctMatrixId(head, "") + "?" : "";
+        if (translated || (questionKept && sentence === asked)) {
+          ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+          ok(sentence === (translated ? punctMatrixId(head, mark) : asked), label + "\n  got: " + sentence);
+          const clauses = sentence.split(", ");
+          for (const id of ["kacang", "telur"]) {
+            ok(clauses.some((clause) => foodHasPolarity(head, clause, id)), label + " lost polarity on " + id + ": " + sentence);
+          }
+          if (head.kind === "dan-ok") ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
+          if (questionKept) ok(sentence.slice(-1) === "?", label + " dropped the question mark: " + sentence);
+        } else {
+          const pieces = ["花生", "雞蛋"];
+          if (head.kind === "allergy") pieces.push("對", "過敏");
+          else pieces.push(head.name);
+          for (const piece of pieces) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
+          for (const bad of chinesePolarityForbid) ok(sentence.indexOf(bad) === -1, label + " guessed " + bad + ": " + sentence);
+          const wholeCall = got.calls.length === 1 && got.calls[0] === src;
+          ok(got.calls.length === 0 || wholeCall, label + " calls: " + JSON.stringify(got.calls));
+          if (mark === "嗎") ok(sentence.indexOf("嗎") !== -1, label + " dropped 嗎: " + sentence);
+          if (mark === "?") ok(sentence.indexOf("?") !== -1, label + " dropped the question mark: " + sentence);
+        }
+      }
+    }
+  }
+}
 ok(
   generativeCount === generativeHeads.length * (generativeShapes.length + 3 + 4) * protectedEntries.length
     + subHeadOuter.length * subHeadSpecs.length * 3 * protectedEntries.length
-    + positiveHoldSources.length * protectedEntries.length,
+    + positiveHoldSources.length * protectedEntries.length
+    + generativeHeads.length * punctSeps.length * punctMarks.length * protectedEntries.length,
   "generative list grammar count " + generativeCount,
 );
 
@@ -1256,7 +1339,7 @@ const namedListBugs = [
   ["可以吃雞、不吃牛、雞蛋", "tamu bisa makan ayam, tamu tidak makan daging sapi dan telur", ["bisa makan telur", "bisa makan daging"]],
   ["可以吃雞、不要香菜、花生", "tamu bisa makan ayam, tanpa daun ketumbar, tanpa kacang", ["bisa makan kacang", "bisa makan daun"]],
   ["可以吃雞、不要放蔥、香菜", "tamu bisa makan ayam, jangan pakai daun bawang, jangan pakai daun ketumbar", ["bisa makan daun", "bisa makan bawang"]],
-  ["可以吃雞、花生過敏、蝦子", "tamu bisa makan ayam, alergi kacang dan udang", ["bisa makan udang", "bisa makan kacang"]],
+  ["不要辣、花生過敏、少鹽", "tidak pedas, alergi kacang, sedikit garam", ["alergi daun", "tanpa sedikit"]],
   ["不要辣、可以吃雞、花生", "tidak pedas, tamu bisa makan ayam dan kacang", ["tanpa kacang", "tanpa ayam"]],
   ["不要雞蛋、可以吃雞、雞蛋", "tanpa telur, tamu bisa makan ayam dan telur", ["tanpa telur, tamu bisa makan ayam, tanpa"]],
 ];
@@ -1271,12 +1354,81 @@ for (const entry of protectedEntries) {
   }
 }
 
+const allergyClosedHolds = [
+  "不要辣、花生過敏、香菜",
+  "可以吃雞、花生過敏、蝦子",
+  "不要辣、花生過敏、少鹽、香菜",
+];
+for (const entry of protectedEntries) {
+  for (const src of allergyClosedHolds) {
+    const label = "closed allergy " + entry + " " + src;
+    const got = runProtected(entry, "success", src);
+    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+    for (const piece of src.split("、")) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
+    for (const bad of ["alergi", "kacang", "udang", "daun ketumbar", "ayam", "tanpa", "bisa makan", "pedas", "sedikit garam"]) {
+      ok(sentence.indexOf(bad) === -1, label + " pulled a later food into the allergy: " + sentence);
+    }
+  }
+}
+
+const sharedCommaCases = [
+  { left: "不要辣", right: "花生", dunId: "tidak pedas, tanpa kacang", head: { kind: "fixed" }, ids: ["kacang"], keep: ["不要辣", "花生"], forbid: ["kacang", "pedas", "tanpa"] },
+  { left: "不能吃花生", right: "蝦子", dunId: "tamu tidak bisa makan kacang dan udang", head: { kind: "dan-neg" }, ids: ["kacang", "udang"], keep: ["不能吃", "花生", "蝦子"], forbid: ["kacang", "udang", "makan"] },
+  { left: "花生", right: "蝦子過敏", dunId: "alergi kacang dan udang", head: { kind: "allergy" }, ids: ["kacang", "udang"], keep: ["花生", "蝦子", "過敏"], forbid: ["kacang", "udang", "alergi"] },
+];
+for (const entry of protectedEntries) {
+  for (const row of sharedCommaCases) {
+    for (const sep of ["、", "，", ","]) {
+      const src = row.left + sep + row.right;
+      const label = "shared comma " + entry + " " + src;
+      const got = runProtected(entry, "success", src);
+      const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+      ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+      if (sep === "、") {
+        ok(sentence === row.dunId, label + "\n  got: " + sentence);
+        const clauses = sentence.split(", ");
+        for (const id of row.ids) {
+          ok(clauses.some((clause) => foodHasPolarity(row.head, clause, id)), label + " lost polarity on " + id + ": " + sentence);
+        }
+      } else {
+        for (const piece of row.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
+        for (const bad of row.forbid) ok(sentence.indexOf(bad) === -1, label + " guessed shared scope: " + sentence);
+      }
+    }
+  }
+}
+
+const phrasePunct = [
+  ["不要辣。", "tidak pedas."],
+  ["不要辣.", "tidak pedas."],
+  ["不要辣!", "tidak pedas!"],
+  ["不要辣！", "tidak pedas!"],
+  ["不要辣的", "tidak pedas"],
+  ["不吃辣。", "tamu tidak makan pedas."],
+  ["不吃辣的", "tamu tidak makan pedas"],
+  ["不要放辣。", "jangan pakai cabai."],
+  ["客人不要辣。", "tamu minta tidak pedas."],
+  ["不要辣，靠窗", "tidak pedas, dekat jendela"],
+  ["不要辣，不要香菜", "tidak pedas, tanpa daun ketumbar"],
+];
+for (const entry of protectedEntries) {
+  for (const row of phrasePunct) {
+    const label = "phrase punct " + entry + " " + row[0];
+    const got = runProtected(entry, "success", row[0]);
+    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+    ok(sentence === row[1], label + "\n  got: " + sentence);
+    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+  }
+}
+
 const semicolonItems = [
   ["山藥雞湯米粉換筊白筍；12：30到", "山藥雞湯米粉換筊白筍; tiba jam 12:30"],
   ["12點到；對芒果過敏", "tiba jam 12; 對芒果過敏"],
   ["花生過敏；客人說不要辣", "alergi kacang; 客人說不要辣"],
   ["尾款NT$12,000元；不要找零", "sisa pembayaran NT$12,000; 不要找零"],
   ["花生過敏；若客人遲到，不要保留座位", "alergi kacang; 若客人遲到, 不要保留座位"],
+  ["不要辣、花生、雞蛋。；靠窗", "tidak pedas, tanpa kacang, tanpa telur. ; dekat jendela"],
 ];
 for (const entry of protectedEntries) {
   if (entry === "whole-line") continue;
