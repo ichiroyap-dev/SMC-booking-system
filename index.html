@@ -448,7 +448,7 @@
             border: 0;
         }
         .site-nav a { color: #5c4634; }
-        .site-nav a[aria-current="page"] { color: #b4511b; font-weight: 700; }
+        .site-nav a[aria-current="page"] { color: #9a3412; font-weight: 700; }
         /* 品牌 LOGO：logo.png（repo 根目錄，透明底橫式，公雞＋紅字「水美土雞城」）。
            若 logo.png 尚未上傳，onerror 會退回 favicon.png 公雞圖＋文字字標，不會出現破圖。 */
         .brand-lockup {
@@ -595,12 +595,13 @@
             background: rgba(31, 18, 10, 0.42);
             backdrop-filter: blur(3px);
         }
+        /* 白字在 #ee650d 上只有約 3.2:1；#c2410c 約 5.2:1，hover #9a3412 約 7.3:1。 */
         .hero-primary {
-            background: #ee650d;
+            background: #c2410c;
             color: white;
             box-shadow: 0 12px 20px rgba(154, 60, 8, 0.28);
         }
-        .hero-primary:hover { background: #cf5107; }
+        .hero-primary:hover { background: #9a3412; }
         .hero-secondary {
             color: #fff8ed;
             border: 1px solid rgba(255, 248, 237, 0.35);
@@ -639,17 +640,32 @@
             border-color: rgba(122, 78, 42, 0.12);
         }
         #booking-section { border-top: 3px solid #d85b16; }
+        /* 欄位框線需 ≥3:1 才能辨識欄位：#938375 對欄位底與表單卡深端都約 3.3–3.6:1。 */
         #booking-section input,
         #booking-section select,
         #booking-section textarea {
             color: #3c2a1d;
             background-color: #fffdfa;
-            border-color: #ded5c8;
+            border-color: #938375;
+        }
+        #booking-section ::placeholder { color: #78716c; opacity: 1; }
+        #booking-section .text-stone-500 { color: #57534e; }
+        #booking-section .text-orange-600,
+        #timeWarning { color: #c2410c; }
+        #booking-section .text-red-600 { color: #b91c1c; }
+        #booking-section .text-\[11px\] { font-size: 12px; line-height: 1.6; }
+        /* 橘色 ring 只有約 2.8:1；改用深色外框，和已選卡片的橘框分開。 */
+        #booking-section input:focus-visible,
+        #booking-section select:focus-visible,
+        #booking-section textarea:focus-visible,
+        #booking-section button:focus-visible {
+            outline: 3px solid #3c2a1d;
+            outline-offset: 2px;
         }
         #submitBtn { letter-spacing: 0.08em; }
-        /* 表單奶油和蜜桃只差約 2–4，除了頂線再多留一點間距。 */
+        /* 表單下緣 mb-8 會和這裡的 margin-top 合併；3rem 才真的多出 16px，讓奶油表單和蜜桃聯絡卡分開。 */
         #booking-notice {
-            margin-top: 0.75rem;
+            margin-top: 3rem;
             min-width: 0;
         }
         #booking-notice > * { min-width: 0; }
@@ -709,6 +725,7 @@
             color: #fff8ed;
         }
         .dish-list { padding: clamp(1.5rem, 3vw, 2.5rem); }
+        .dish-list .quick-action { white-space: normal; text-align: center; }
         .dish-item {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -743,11 +760,10 @@
         }
         .arrival-item { padding: 1.35rem; background: #fffdf9; }
         .arrival-number { color: #b4511b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; }
-        /* 既有淺色底彼此只差約 2–7。相鄰淺色區塊用其中離白卡最遠的蜜桃，再加訂位表單同色的細頂線標出接縫。 */
+        /* 既有淺色底彼此只差約 2–7。相鄰淺色區塊用其中離白卡最遠的蜜桃；橘色頂線只留給訂位表單，資訊卡不加，免得看起來像第二張表單。 */
         .tone-peach {
             background: linear-gradient(135deg, #faf1e5 0%, #f3e3d1 100%);
             border-color: rgba(181, 102, 43, 0.22);
-            border-top: 2px solid #d85b16;
         }
         .tone-peach .section-kicker,
         .tone-peach .contact-link { color: #9a3412; }
@@ -784,8 +800,12 @@
             background: #fff7ed;
             box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.12);
         }
+        .choice-card:has(input:focus-visible) {
+            outline: 3px solid #c2410c;
+            outline-offset: 3px;
+        }
         .choice-card .choice-title { font-weight: 700; color: #3c2a1d; }
-        .choice-card .choice-desc { font-size: 11px; line-height: 1.45; color: #78716c; }
+        .choice-card .choice-desc { font-size: 12px; line-height: 1.6; color: #57534e; }
         .need-chip {
             display: inline-flex;
             align-items: center;
@@ -859,13 +879,13 @@
         .takeout-row-info { min-width: 0; }
         .takeout-name { display: block; font-weight: 700; color: #44403c; }
         .takeout-row.is-signature .takeout-name { color: #9a3412; }
-        .takeout-meta { display: block; font-size: 11px; color: #57534e; font-weight: 400; margin-top: 0.15rem; }
+        .takeout-meta { display: block; font-size: 12px; line-height: 1.6; color: #57534e; font-weight: 400; margin-top: 0.15rem; }
         .takeout-stepper { display: inline-flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
         .step-btn {
             width: 40px;
             height: 40px;
             border-radius: 10px;
-            border: 1px solid #e7e5e4;
+            border: 1px solid #938375;
             background: #fafaf9;
             color: #44403c;
             font-size: 1.15rem;
@@ -879,11 +899,9 @@
             padding: 0.25rem;
             text-align: center;
             border-radius: 10px;
-            border: 1px solid #e7e5e4;
+            border: 1px solid #938375;
             background: #fafaf9;
-            outline: none;
         }
-        .takeout-stepper input[type="number"]:focus { box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.35); }
         .takeout-summary {
             border: 1px solid #fed7aa;
             background: #fff7ed;
@@ -906,10 +924,13 @@
             .hero-photo img { object-fit: contain; object-position: center; }
             .hero-photo::before { background: linear-gradient(180deg, rgba(64, 37, 22, 0.35), transparent 16%); }
             .hero-booking-cta { display: none !important; }
+            /* 480–767px 兩欄時菜名欄只剩約 120px，價格溢出、按鈕被裁；改單欄。 */
+            .signature-grid { grid-template-columns: 1fr; }
+            .signature-photo-card { min-height: 340px; }
         }
 
         @media (max-width: 479px) {
-            body { padding: 1.1rem 12px 24px; }
+            body.px-4 { padding: 1.1rem 12px 24px; }
             .glass-card { border-radius: 18px; }
             .mobile-single-column { grid-template-columns: minmax(0, 1fr) !important; }
             .mobile-tab { padding-left: 8px; padding-right: 8px; font-size: 14px; white-space: nowrap; }
@@ -931,8 +952,6 @@
             .booking-form-card { padding: 1.25rem; }
             .takeout-row { flex-wrap: wrap; }
             .takeout-stepper { margin-left: auto; }
-            .signature-grid { grid-template-columns: 1fr; }
-            .signature-photo-card { min-height: 340px; }
             .arrival-grid { grid-template-columns: 1fr; }
             #booking-notice,
             #menu,
@@ -964,7 +983,7 @@
         </header>
 
         <nav aria-label="手機快速預約" class="mobile-top-cta md:hidden grid grid-cols-2 gap-2 mb-4">
-            <a href="#booking-section" onclick="switchMode('dining')" class="quick-action bg-[#ee650d] text-white hover:bg-[#cf5107] text-sm py-3">內用訂位</a>
+            <a href="#booking-section" onclick="switchMode('dining')" class="quick-action bg-[#c2410c] text-white hover:bg-[#9a3412] text-sm py-3">內用訂位</a>
             <a href="#takeout" onclick="switchMode('takeout')" class="quick-action border border-stone-300 bg-white text-stone-800 hover:bg-stone-50 text-sm py-3">外帶預約</a>
         </nav>
 
