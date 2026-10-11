@@ -18,6 +18,12 @@ export const PHRASEBOOK = {
   "要VIP桌": "minta meja VIP",
   "靠窗": "dekat jendela",
   "花生過敏 | 靠窗": "alergi kacang | dekat jendela",
+  "2隻雞": "2 ekor ayam",
+  "300份": "300 porsi",
+  "12:30到": "tiba 12:30",
+  "訂金": "uang muka",
+  "尾款": "sisa pembayaran",
+  "加桌": "tambah meja",
 };
 
 // Same shape appendSessionBlock_ / buildDigestText_ consume. Not sheet rows.

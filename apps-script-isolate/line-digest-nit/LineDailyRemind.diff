@@ -1,16 +1,18 @@
 --- apps-script-isolate/line-digest-nit/original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
-+++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 01:13:50.331948438 +0000
-@@ -1,3 +1,9 @@
++++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 06:39:30.022483407 +0000
+@@ -1,3 +1,11 @@
 +/**
 + * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
 + * 中文總覽、讀表、寫表、LINE 發送都沒改。
 + * 上線前要先把線上腳本拉下來，和 original/LineDailyRemind.gs 對過；線上可能已不同。
 + * 備註翻譯還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
++ * 一般翻譯錯誤只暫停 250ms 再試一次（單次失敗的暫停，不是整則多等約 3 秒）。
++ * 每日翻譯配額用盡則不暫停、不重試，該段直接留原文。
 + */
  function checkAndSendDailyReminders() {
    // ======= 1. 系統安全性憑證設定 =======
    var LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN");
-@@ -209,6 +215,8 @@
+@@ -209,6 +217,8 @@
    if (!taskCn) return "Tidak ada terjemahan";
    var lines = taskCn.split("\n");
    var translatedLines = [];
@@ -19,7 +21,7 @@
    
    var daysMap = { 'Sun': 'Minggu', 'Mon': 'Senin', 'Tue': 'Selasa', 'Wed': 'Rabu', 'Thu': 'Kamis', 'Fri': 'Jumat', 'Sat': 'Sabtu' };
    var monthsMap = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-@@ -248,7 +256,7 @@
+@@ -248,7 +258,7 @@
      }
      if (line.indexOf("🥡 外帶") === 0) {
        var takeoutN = line.match(/\d+/);
@@ -28,7 +30,7 @@
        continue;
      }
  
-@@ -280,7 +288,8 @@
+@@ -280,7 +290,8 @@
        var hadPipe = line.indexOf("|") !== -1;
        var parts = line.split("|");
        var frontPart = parts[0].trim();
@@ -38,7 +40,7 @@
  
        var timePrefix = frontPart.match(/^\d{2}:\d{2}\s+/);
        var timePrefixStr = timePrefix ? timePrefix[0] : "";
-@@ -297,30 +306,18 @@
+@@ -297,30 +308,18 @@
        var translatedFront = timePrefixStr + titleID + nameAndCode;
  
        var translatedBack = backPart.trim();
@@ -57,7 +59,7 @@
 -          translatedBack = translatedBack.replace(rawChinese, transChinese);
 -        } catch (e) {}
 -      }
-+      // 只在 ；;、，,（）() 與換行切開，數字和英文留在同一段。方案代碼與金額先占位。
++      // 只在 ；;、，,（）()、| 與換行切開。不加 / 或空白。數字與英文留在同一段。
 +      translatedBack = translateRemarkBodyToId_(translatedBack, translateCache);
  
        if (!hadPipe) translatedLines.push(translatedFront);
@@ -74,7 +76,7 @@
    }
    return translatedLines.join("\n");
  }
-@@ -328,17 +325,175 @@
+@@ -328,17 +327,263 @@
  function translateSessionHeadingLine_(line, idName) {
    var pendingTail = "jumlah meja menunggu konfirmasi";
    // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
@@ -97,17 +99,31 @@
 +
 +var FROZEN_REMARK_LABELS_ = ["Jumlah orang menunggu konfirmasi", "Perkiraan biaya", "Catatan:"];
 +
++function remarkPlaceholder_(id) {
++  return "\uE000" + id + "\uE001";
++}
++
++function escapeSentinels_(text) {
++  return String(text || "").replace(/\uE000/g, "\uE000E").replace(/\uE001/g, "\uE000F");
++}
++
++function unescapeSentinels_(text) {
++  return String(text || "").replace(/\uE000F/g, "\uE001").replace(/\uE000E/g, "\uE000");
++}
++
 +function protectRemarkTokens_(text) {
 +  var tokens = [];
 +  function stash(match) {
 +    var id = tokens.length;
 +    tokens.push(match);
-+    return "{{" + id + "}}";
++    return remarkPlaceholder_(id);
 +  }
 +  var src = String(text || "");
 +  // 每次新建 regex，避免 /g 的 lastIndex 留到下一則備註。
 +  src = src.replace(/\d+(?:\.\d+)?\s*[Kk]\s*[Xx]?\d*\s*[Aa]/g, stash);
-+  src = src.replace(/(?:NT\s*)?[\$＄]\s*\d[\d,，.]*/g, stash);
++  // 千分位必須剛好 3 位。$500,2隻雞 只保護 $500，不能把數量 2 吃進金額。
++  src = src.replace(/(?:NT\s*)?[\$＄]\s*\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?/g, stash);
++  src = src.replace(/(?:NT\s*)?[\$＄]\s*\d+(?:\.\d+)?/g, stash);
 +  src = src.replace(/\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?/g, stash);
 +  return { text: src, tokens: tokens };
 +}
@@ -118,16 +134,45 @@
 +  return raw.replace(/[,，](\d{3})/g, ".$1");
 +}
 +
-+function restoreRemarkTokens_(text, tokens) {
++function listPlaceholderIds_(text) {
++  var ids = [];
++  var re = /\uE000(\d+)\uE001/g;
++  var match;
++  while ((match = re.exec(String(text || ""))) !== null) ids.push(match[1]);
++  return ids;
++}
++
++function placeholdersIntact_(text, expectedIds) {
++  var found = listPlaceholderIds_(text);
++  if (found.length !== expectedIds.length) return false;
++  var expectCount = {};
++  var foundCount = {};
++  var i;
++  for (i = 0; i < expectedIds.length; i++) {
++    expectCount[expectedIds[i]] = (expectCount[expectedIds[i]] || 0) + 1;
++  }
++  for (i = 0; i < found.length; i++) {
++    foundCount[found[i]] = (foundCount[found[i]] || 0) + 1;
++  }
++  var key;
++  for (key in expectCount) {
++    if (!Object.prototype.hasOwnProperty.call(expectCount, key)) continue;
++    if (expectCount[key] !== 1 || foundCount[key] !== 1) return false;
++  }
++  for (key in foundCount) {
++    if (!Object.prototype.hasOwnProperty.call(foundCount, key)) continue;
++    if (expectCount[key] !== 1) return false;
++  }
++  return true;
++}
++
++function restorePlaceholders_(text, tokens, formatAmounts) {
++  // 缺的占位符不補到別處。呼叫端必須先確認這一段完整，否則改回該段原文。
 +  var src = String(text || "");
-+  var missing = [];
 +  for (var i = 0; i < tokens.length; i++) {
-+    var ph = "{{" + i + "}}";
-+    var shown = formatProtectedTokenForId_(tokens[i]);
-+    if (src.indexOf(ph) === -1) {
-+      missing.push(shown);
-+      continue;
-+    }
++    var ph = remarkPlaceholder_(i);
++    if (src.indexOf(ph) === -1) continue;
++    var shown = formatAmounts ? formatProtectedTokenForId_(tokens[i]) : String(tokens[i]);
 +    var next = "";
 +    var from = 0;
 +    var idx = src.indexOf(ph);
@@ -135,15 +180,18 @@
 +      next += src.slice(from, idx);
 +      var before = next.slice(-1);
 +      var after = src.charAt(idx + ph.length);
-+      var left = before && !/[\s([{\uFF08]/.test(before) ? " " : "";
-+      var right = after && !/[\s)\]}\uFF09,.;；、：:!?！？。\n]/.test(after) ? " " : "";
++      var left = "";
++      var right = "";
++      if (formatAmounts) {
++        left = before && !/[\s([{\uFF08]/.test(before) ? " " : "";
++        right = after && !/[\s)\]}\uFF09,.;；、：:!?！？。|\n]/.test(after) ? " " : "";
++      }
 +      next += left + shown + right;
 +      from = idx + ph.length;
 +      idx = src.indexOf(ph, from);
 +    }
 +    src = next + src.slice(from);
 +  }
-+  if (missing.length) src += " " + missing.join(" ");
 +  return src;
 +}
 +
@@ -176,7 +224,16 @@
 +  return { prefix: prefix, rest: rest };
 +}
 +
++var QUOTA_FLAG_ = "\u0000quota";
++
++function isDailyTranslateQuotaError_(err) {
++  var msg = String(err && (err.message || err) || "");
++  if (/in a short time/i.test(msg)) return false;
++  return /for one day/i.test(msg) || /quota/i.test(msg) || /每日/.test(msg) || /配額/.test(msg);
++}
++
 +function pauseBeforeTranslateRetry_() {
++  // 單次一般錯誤的暫停。不是整則備註固定多等約 3 秒。配額用盡不會進到這裡。
 +  try {
 +    Utilities.sleep(250);
 +  } catch (e) {}
@@ -184,7 +241,8 @@
 +
 +function translatePieceCached_(cache, piece) {
 +  var key = String(piece);
-+  if (cache && Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
++  if (cache && cache[QUOTA_FLAG_]) return key;
++  if (cache && key !== QUOTA_FLAG_ && Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
 +  var translated = key;
 +  for (var attempt = 0; attempt < 2; attempt++) {
 +    try {
@@ -197,45 +255,69 @@
 +      break;
 +    } catch (e) {
 +      translated = key;
++      if (isDailyTranslateQuotaError_(e)) {
++        if (cache) cache[QUOTA_FLAG_] = true;
++        break;
++      }
 +      if (attempt === 0) pauseBeforeTranslateRetry_();
 +    }
 +  }
-+  if (cache) cache[key] = translated;
++  if (cache && key !== QUOTA_FLAG_) cache[key] = translated;
 +  return translated;
 +}
 +
 +function translateRemarkBodyToId_(text, cache) {
-+  var src = String(text || "");
++  var src = normalizeFullwidthTime_(text);
 +  if (!src) return "";
++  src = escapeSentinels_(src);
 +  var box = protectRemarkTokens_(src);
-+  var parts = box.text.split(/([；;、，,（）()\n])/);
++  var parts = box.text.split(/([；;、，,（）()|\n])/);
 +  var out = [];
 +  for (var i = 0; i < parts.length; i++) {
 +    var part = parts[i];
 +    if (!part) continue;
-+    if (/^[；;、，,（）()\n]$/.test(part)) {
++    if (/^[；;、，,（）()|\n]$/.test(part)) {
 +      out.push(part);
 +      continue;
 +    }
++    var ids = listPlaceholderIds_(part);
 +    var lead = (part.match(/^\s*/) || [""])[0];
 +    var trail = (part.match(/\s*$/) || [""])[0];
 +    var core = part.trim();
 +    if (!core) {
-+      out.push(part);
++      out.push(restorePlaceholders_(part, box.tokens, false));
 +      continue;
 +    }
 +    var peeled = peelFrozenLabels_(core);
-+    if (!/[\u4e00-\u9fff]/.test(peeled.rest)) {
-+      out.push(part);
++    if (cache && cache[QUOTA_FLAG_]) {
++      out.push(restorePlaceholders_(part, box.tokens, false));
 +      continue;
 +    }
-+    out.push(lead + peeled.prefix + translatePieceCached_(cache, peeled.rest) + trail);
++    if (!/[\u4e00-\u9fff]/.test(peeled.rest)) {
++      out.push(restorePlaceholders_(part, box.tokens, true));
++      continue;
++    }
++    var translatedCore = translatePieceCached_(cache, peeled.rest);
++    if (cache && cache[QUOTA_FLAG_]) {
++      out.push(restorePlaceholders_(part, box.tokens, false));
++      continue;
++    }
++    var stitched = lead + peeled.prefix + translatedCore + trail;
++    if (!placeholdersIntact_(stitched, ids)) {
++      out.push(restorePlaceholders_(part, box.tokens, false));
++      continue;
++    }
++    out.push(restorePlaceholders_(stitched, box.tokens, true));
 +  }
-+  return normalizeIdPunctuation_(restoreRemarkTokens_(out.join(""), box.tokens));
++  return unescapeSentinels_(normalizeIdPunctuation_(out.join("")));
++}
++
++function normalizeFullwidthTime_(text) {
++  return String(text || "").replace(/([0-9０-９])：([0-9０-９])/g, "$1:$2");
 +}
 +
 +function normalizeIdPunctuation_(text) {
-+  var s = String(text || "");
++  var s = normalizeFullwidthTime_(text);
 +  s = s.replace(/；/g, ";");
 +  s = s.replace(/[、，]/g, ",");
 +  s = s.replace(/（/g, "(");
@@ -245,7 +327,15 @@
 +  s = s.replace(/！/g, "! ");
 +  s = s.replace(/？/g, "? ");
 +  s = s.replace(/;(?!\s)/g, "; ");
-+  s = s.replace(/,(?!\s|\d{3}(?:\D|$))/g, ", ");
++  // 只有「數字,正好三位」且後面不是字才是千分位。,300份 / ,300 porsi 要空一格。
++  s = s.replace(/,(?!\s)/g, function(match, offset, whole) {
++    var before = offset > 0 ? whole.charAt(offset - 1) : "";
++    var after = whole.slice(offset + 1);
++    if (/\d/.test(before) && /^\d{3}(?![\dA-Za-z\u00C0-\u024F\u4e00-\u9fff\uFF10-\uFF19])/.test(after)) {
++      return ",";
++    }
++    return ", ";
++  });
 +  s = s.replace(/([^\s(])\(/g, "$1 (");
 +  s = s.replace(/\)([^\s),.;!?])/g, ") $1");
 +  s = s.replace(/[ \t]{2,}/g, " ");
@@ -253,7 +343,7 @@
  }
  
  function translateTotalLine_(line) {
-@@ -393,11 +548,10 @@
+@@ -393,11 +638,10 @@
      return "✅ Reservasi hari ini normal (Total " + (tables ? tables[0] : "0") + " meja)";
    }
    
