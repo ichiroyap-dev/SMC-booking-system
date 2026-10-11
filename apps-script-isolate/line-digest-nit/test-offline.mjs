@@ -908,6 +908,141 @@ for (const entry of protectedEntries) {
   }
 }
 
+const generativeHeads = [
+  { name: "不要", kind: "tanpa" },
+  { name: "不要放", kind: "repeat" },
+  { name: "不能吃", kind: "dan-neg" },
+  { name: "不吃", kind: "dan-eat" },
+  { name: "可以吃", kind: "dan-ok" },
+  { name: "對", kind: "allergy" },
+  { name: "不要辣", kind: "fixed", gloss: "tidak pedas" },
+  { name: "不要放辣", kind: "fixed", gloss: "jangan pakai cabai" },
+  { name: "不吃辣", kind: "fixed", gloss: "tamu tidak makan pedas" },
+  { name: "客人不要辣", kind: "fixed", gloss: "tamu minta tidak pedas" },
+  { name: "不要太鹹", kind: "fixed", gloss: "jangan terlalu asin" },
+  { name: "不要油炸", kind: "fixed", gloss: "jangan digoreng" },
+];
+const generativeShapes = ["food", "foodFood", "foodNonfood", "nonfood", "unknown"];
+
+function polarityOf(kind, ids) {
+  if (kind === "tanpa") return ids.map((id) => "tanpa " + id).join(", ");
+  if (kind === "repeat") return ids.map((id) => "jangan pakai " + id).join(", ");
+  if (kind === "dan-neg") return "tamu tidak bisa makan " + ids.join(" dan ");
+  if (kind === "dan-eat") return "tamu tidak makan " + ids.join(" dan ");
+  return "tamu bisa makan " + ids.join(" dan ");
+}
+
+function generativeCase(head, shape) {
+  if (head.kind === "allergy") {
+    if (shape === "food") return { src: "對花生過敏", id: "alergi kacang" };
+    if (shape === "foodFood") return { src: "對花生、蝦子過敏", id: "alergi kacang dan udang" };
+    if (shape === "foodNonfood") return { src: "對花生、少鹽過敏", chinese: true, keep: ["對花生", "少鹽", "過敏"], forbid: ["alergi", "sedikit garam"] };
+    if (shape === "nonfood") return { src: "對少鹽過敏", chinese: true, keep: ["少鹽", "過敏"], forbid: ["alergi", "sedikit garam"] };
+    return { src: "對芒果過敏", chinese: true, keep: ["芒果", "過敏"], forbid: ["alergi"] };
+  }
+  if (head.kind === "fixed") {
+    if (shape === "food") return { src: head.name + "、花生", id: head.gloss + ", tanpa kacang", forbid: [", kacang"] };
+    if (shape === "foodFood") return { src: head.name + "、花生、蝦子", id: head.gloss + ", tanpa kacang, tanpa udang", forbid: [", kacang", ", udang"] };
+    if (shape === "foodNonfood") return { src: head.name + "、花生、少鹽", id: head.gloss + ", tanpa kacang, sedikit garam", forbid: ["tanpa sedikit", "jangan pakai sedikit", ", kacang"] };
+    if (shape === "nonfood") return { src: head.name + "、少鹽", id: head.gloss + ", sedikit garam", forbid: ["tanpa sedikit", "jangan pakai sedikit", "makan sedikit"] };
+    return { src: head.name + "、芒果", chinese: true, keep: [head.name, "芒果"], forbid: [head.gloss, "tanpa "] };
+  }
+  if (shape === "food") return { src: head.name + "花生", id: polarityOf(head.kind, ["kacang"]) };
+  if (shape === "foodFood") return { src: head.name + "花生、蝦子", id: polarityOf(head.kind, ["kacang", "udang"]) };
+  if (shape === "foodNonfood") {
+    return {
+      src: head.name + "花生、少鹽",
+      id: polarityOf(head.kind, ["kacang"]) + ", sedikit garam",
+      forbid: ["tanpa sedikit", "jangan pakai sedikit", "makan sedikit", "dan sedikit"],
+    };
+  }
+  if (shape === "nonfood") return { src: head.name + "少鹽", chinese: true, keep: [head.name, "少鹽"], forbid: ["sedikit garam", "jangan pakai", "tanpa ", "bisa makan"] };
+  return { src: head.name + "芒果", chinese: true, keep: [head.name, "芒果"], forbid: ["jangan pakai", "tanpa ", "bisa makan"] };
+}
+
+function wholeLineSendsUncovered(src) {
+  if (src.indexOf("過敏") !== -1) return false;
+  if (/不要辣$/.test(src)) return false;
+  return true;
+}
+
+let generativeCount = 0;
+for (const head of generativeHeads) {
+  for (const shape of generativeShapes) {
+    const spec = generativeCase(head, shape);
+    for (const entry of protectedEntries) {
+      generativeCount += 1;
+      const label = "generative " + entry + " " + head.name + " " + shape;
+      const got = runProtected(entry, "success", spec.src);
+      const prefix = protectedPrefixes[entry] || "";
+      const sentence = got.body.slice(prefix.length);
+      if (spec.chinese && entry === "whole-line" && wholeLineSendsUncovered(spec.src)) {
+        ok(got.calls.length === 1 && got.calls[0] === spec.src, label + " whole-line fragment: " + JSON.stringify(got.calls));
+      } else {
+        ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+      }
+      if (!spec.chinese) {
+        ok(sentence === spec.id, label + "\n  got: " + sentence);
+        if (head.kind === "dan-ok") ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
+      } else {
+        for (const piece of spec.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
+      }
+      for (const bad of spec.forbid || []) ok(sentence.indexOf(bad) === -1, label + " applied the head to a non-food: " + sentence);
+    }
+  }
+}
+ok(generativeCount === generativeHeads.length * generativeShapes.length * protectedEntries.length, "generative list grammar count " + generativeCount);
+
+const namedListBugs = [
+  ["不要放蔥、少鹽", "jangan pakai daun bawang, sedikit garam", ["jangan pakai sedikit"]],
+  ["不要放蔥、不要辣", "jangan pakai daun bawang, tidak pedas", ["jangan pakai tidak"]],
+  ["不要放香菜、靠窗", "jangan pakai daun ketumbar, dekat jendela", ["jangan pakai dekat"]],
+  ["不要放香菜、小孩椅", "jangan pakai daun ketumbar, kursi anak", ["jangan pakai kursi"]],
+  ["不要放香菜、生日", "jangan pakai daun ketumbar, ulang tahun", ["jangan pakai ulang"]],
+  ["不能吃花生、不要辣", "tamu tidak bisa makan kacang, tidak pedas", ["dan tidak"]],
+  ["不能吃蝦、少鹽", "tamu tidak bisa makan udang, sedikit garam", ["dan sedikit"]],
+  ["不能吃花生、已付", "tamu tidak bisa makan kacang, sudah dibayar", ["dan sudah"]],
+  ["不能吃牛、靠窗", "tamu tidak bisa makan daging sapi, dekat jendela", ["dan dekat"]],
+  ["可以吃雞、花生過敏", "tamu bisa makan ayam, alergi kacang", ["dan alergi"]],
+  ["可以吃雞、不要辣", "tamu bisa makan ayam, tidak pedas", ["dan tidak"]],
+  ["不要放辣、香菜", "jangan pakai cabai, tanpa daun ketumbar", [", daun ketumbar"]],
+  ["不要放辣、花生", "jangan pakai cabai, tanpa kacang", [", kacang"]],
+  ["客人不要辣、花生", "tamu minta tidak pedas, tanpa kacang", [", kacang"]],
+  ["不吃辣、花生", "tamu tidak makan pedas, tanpa kacang", [", kacang"]],
+];
+for (const entry of protectedEntries) {
+  for (const row of namedListBugs) {
+    const label = "list bug " + entry + " " + row[0];
+    const got = runProtected(entry, "success", row[0]);
+    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+    ok(sentence === row[1], label + "\n  got: " + sentence);
+    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+    for (const bad of row[2]) ok(sentence.indexOf(bad) === -1, label + " double scope: " + sentence);
+  }
+}
+
+const semicolonItems = [
+  ["山藥雞湯米粉換筊白筍；12：30到", "山藥雞湯米粉換筊白筍; tiba jam 12:30"],
+  ["12點到；對芒果過敏", "tiba jam 12; 對芒果過敏"],
+  ["花生過敏；客人說不要辣", "alergi kacang; 客人說不要辣"],
+  ["尾款NT$12,000元；不要找零", "sisa pembayaran NT$12,000; 不要找零"],
+  ["花生過敏；若客人遲到，不要保留座位", "alergi kacang; 若客人遲到, 不要保留座位"],
+];
+for (const entry of protectedEntries) {
+  if (entry === "whole-line") continue;
+  for (const row of semicolonItems) {
+    const label = "semicolon item " + entry + " " + row[0];
+    const got = runProtected(entry, "success", row[0]);
+    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+    ok(sentence === row[1], label + "\n  got: " + sentence);
+    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+  }
+}
+{
+  const kept = runProtected("whole-line", "success", "山藥雞湯米粉換筊白筍；12：30到");
+  ok(kept.calls.length === 1 && kept.calls[0] === "山藥雞湯米粉換筊白筍；12:30到", "maintenance line does not split the F-1 sample: " + JSON.stringify(kept.calls));
+}
+
 {
   const calls = [];
   const app = protectedApp("success", calls);
@@ -1014,9 +1149,7 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkSend("question 不要辣嗎 sends the whole segment", "不要辣嗎");
   const noChair = checkChinese("non-food 不要小孩椅 stays Chinese", "不要小孩椅");
   ok(noChair === "Catatan: 不要小孩椅" && noChair.indexOf("kursi anak") === -1, "不要小孩椅 was guessed: " + noChair);
-  const chairList = checkChinese("non-food 不要香菜、小孩椅 stays Chinese", "不要香菜、小孩椅");
-  ok(chairList.indexOf("小孩椅") !== -1, "non-food negation dropped 小孩椅: " + chairList);
-  ok(chairList.indexOf("kursi anak") === -1 && chairList.indexOf("daun ketumbar") === -1, "non-food negation translated a fragment: " + chairList);
+  checkDict("non-food after 不要 is its own phrase 不要香菜、小孩椅", "不要香菜、小孩椅", "tanpa daun ketumbar, kursi anak");
   checkDict("enumeration includes 蒜", "不要香菜、蔥、蒜", "tanpa daun ketumbar, tanpa daun bawang, tanpa bawang putih");
   checkDict("negation list keeps food exclusion 不要辣、花生", "不要辣、花生", "tidak pedas, tanpa kacang");
   checkDict("negation list keeps food exclusion 不要辣、蝦子", "不要辣、蝦子", "tidak pedas, tanpa udang");

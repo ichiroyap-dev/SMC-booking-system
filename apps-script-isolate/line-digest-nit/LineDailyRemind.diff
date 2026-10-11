@@ -1,5 +1,5 @@
 --- apps-script-isolate/line-digest-nit/original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
-+++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 16:00:35.345569566 +0000
++++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 16:18:01.740136157 +0000
 @@ -1,3 +1,18 @@
 +/**
 + * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
@@ -9,7 +9,7 @@
 + * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
 + * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
 + * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
-+ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。完整否定詞後面的食材各自帶 tanpa。不能吃、可以吃、不吃用 dan 把整串收在同一個動詞下；不要放的每一項都重複 jangan pakai。同一句裡只要有一段因範圍留中文，整句都留中文。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
++ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。列舉頭只收食材：不要逐項 tanpa，不要放逐項 jangan pakai，不能吃／可以吃／不吃用 dan，對…過敏用 alergi … dan，不要辣這類完整否定詞後面的食材再加 tanpa。少鹽、不要辣、靠窗、小孩椅、生日、已付、X過敏等非食材結束列舉，各自用完整詞；接不上就只把該「；」項目留中文，同一備註的其他「；」項目照翻。逗號仍把同一個「；」項目綁在一起。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
 + * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。蔥花、蛋奶、蒜、海鮮是完整詞。
 + * 店務維護提醒整句翻一次，不按逗號切開。整句路徑不套用「換」和句首「不要」的留中文規則。失敗就整句留原文。
 + * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
@@ -66,7 +66,7 @@
 -          translatedBack = translatedBack.replace(rawChinese, transChinese);
 -        } catch (e) {}
 -      }
-+      // 只在 ；;，,（）()| 與換行切開。「、」留在段內。金額裡的千分位逗號不切開。不加 / 或空白。
++      // 「；」分開的項目各自翻。項目裡的逗號仍綁在一起。金額裡的千分位逗號不切開。不加 / 或空白。
 +      translatedBack = translateRemarkBodyToId_(translatedBack, translateCache);
  
        if (!hadPipe) translatedLines.push(translatedFront);
@@ -84,7 +84,7 @@
    }
    return translatedLines.join("\n");
  }
-@@ -328,17 +335,1034 @@
+@@ -328,17 +335,964 @@
  function translateSessionHeadingLine_(line, idName) {
    var pendingTail = "jumlah meja menunggu konfirmasi";
    // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
@@ -393,19 +393,6 @@
 +  return text.slice(index, index + 2) === "過敏";
 +}
 +
-+function readGlossItem_(text, index) {
-+  if (text.slice(index, index + 2) === "過敏") return null;
-+  var phrase = longestPhraseAt_(text, index);
-+  if (phrase && phrase.len > 1 && phrase.id) return { len: phrase.len, id: phrase.id };
-+  // 蒜是完整詞，但只有一字。只在列舉邊界收，不放進會切開長詞的單字表。
-+  if (phrase && phrase.len === 1 && phrase.id && FOOD_WORD_[text.charAt(index)] && isListBoundary_(text, index + 1)) {
-+    return { len: 1, id: phrase.id };
-+  }
-+  var id = singleCharXId_(text.charAt(index));
-+  if (!id || !isListBoundary_(text, index + 1)) return null;
-+  return { len: 1, id: id };
-+}
-+
 +function readFoodItem_(text, index) {
 +  if (text.slice(index, index + 2) === "過敏") return null;
 +  var best = null;
@@ -423,108 +410,159 @@
 +  return { len: 1, id: id };
 +}
 +
-+function readNegationItem_(text, index) {
-+  // 少鹽不是菜名，但「不要香菜、少鹽」已是整段對照，要留著。
-+  if (text.slice(index, index + 2) === "少鹽") return { len: 2, id: "sedikit garam" };
-+  return readFoodItem_(text, index);
-+}
-+
-+function glossRunAt_(text, index, scopeDan) {
-+  // 多字詞，或列舉裡邊界清楚的單字 X。過敏不在這裡吃掉。
-+  // scopeDan：不能吃／可以吃把「、」也接成 dan，動詞管到每一項。
-+  var parts = [];
-+  var i = index;
-+  while (i < text.length) {
-+    if (text.slice(i, i + 2) === "過敏") break;
-+    var item = readGlossItem_(text, i);
-+    if (item) {
-+      parts.push(item.id);
-+      i += item.len;
-+      continue;
-+    }
-+    var ch = text.charAt(i);
-+    var conj = ch === "和" || ch === "與" || ch === "及" || ch === "或" || ch === "、";
-+    if (!conj) break;
-+    var nxt = readGlossItem_(text, i + 1);
-+    if (!nxt) break;
-+    if (ch === "或") parts.push("atau");
-+    else if (scopeDan || ch !== "、") parts.push("dan");
-+    else parts.push(",");
-+    parts.push(nxt.id);
-+    i += 1 + nxt.len;
++function phraseGloss_(zh) {
++  var i;
++  for (i = 0; i < REMARK_PHRASES_.length; i++) {
++    if (REMARK_PHRASES_[i][0] === zh) return REMARK_PHRASES_[i][1];
 +  }
-+  return { len: i - index, id: parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() };
++  return "";
 +}
 +
-+function collectGlossIds_(text, index) {
++function listConj_(ch) {
++  if (ch === "、") return ",";
++  if (ch === "或") return "atau";
++  if (ch === "和" || ch === "與" || ch === "及") return "dan";
++  return "";
++}
++
++function allergyTail_(text, index) {
++  return text.slice(index, index + 2) === "過敏";
++}
++
++// 列舉只收食材。allowAllergyTail 只給「對…過敏」：最後一項後面就是過敏。
++// 其他句型遇到「食材＋過敏」要停下來，讓「花生過敏」自己成詞。
++function readFoodList_(text, index, allowAllergyTail) {
 +  var ids = [];
++  var seps = [];
 +  var i = index;
++  var first = readFoodItem_(text, i);
++  if (!first) return null;
++  if (!allowAllergyTail && allergyTail_(text, i + first.len)) return null;
++  ids.push(first.id);
++  i += first.len;
 +  while (i < text.length) {
-+    if (text.slice(i, i + 2) === "過敏") break;
-+    var item = readGlossItem_(text, i);
-+    if (item) {
-+      ids.push(item.id);
-+      i += item.len;
-+      continue;
-+    }
-+    var ch = text.charAt(i);
-+    if (ch !== "和" && ch !== "與" && ch !== "及" && ch !== "或" && ch !== "、") break;
-+    var nxt = readGlossItem_(text, i + 1);
++    var sep = listConj_(text.charAt(i));
++    if (!sep) break;
++    var nxt = readFoodItem_(text, i + 1);
 +    if (!nxt) break;
++    if (!allowAllergyTail && allergyTail_(text, i + 1 + nxt.len)) break;
++    seps.push(sep);
 +    ids.push(nxt.id);
 +    i += 1 + nxt.len;
 +  }
-+  return { len: i - index, ids: ids };
++  return { len: i - index, ids: ids, seps: seps };
 +}
 +
-+function matchClosedX_(rest, prefix, template, scopeDan) {
-+  if (rest.indexOf(prefix) !== 0) return null;
-+  var run = glossRunAt_(rest, prefix.length, scopeDan);
-+  if (run.len > 0 && run.id && prefix.length + run.len === rest.length) {
-+    return { len: rest.length, id: template + run.id };
-+  }
-+  if (rest.length === prefix.length + 1) {
-+    var one = singleCharXId_(rest.charAt(prefix.length));
-+    if (one) return { len: rest.length, id: template + one };
-+  }
-+  return null;
++function joinListBits_(bits) {
++  return bits.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim();
 +}
 +
-+function matchRepeatedClosed_(rest, prefix, head) {
-+  if (rest.indexOf(prefix) !== 0) return null;
-+  var run = collectGlossIds_(rest, prefix.length);
-+  if (run.ids.length && prefix.length + run.len === rest.length) {
-+    var bits = [];
-+    var n;
-+    for (n = 0; n < run.ids.length; n++) bits.push(head + run.ids[n]);
-+    return { len: rest.length, id: bits.join(", ") };
++function pushSep_(bits, sep) {
++  bits.push(sep === "," ? "," : sep);
++}
++
++function joinTanpa_(ids, seps) {
++  var bits = ["tanpa " + ids[0]];
++  var i;
++  for (i = 1; i < ids.length; i++) {
++    pushSep_(bits, seps[i - 1]);
++    bits.push("tanpa " + ids[i]);
 +  }
-+  if (rest.length === prefix.length + 1) {
-+    var one = singleCharXId_(rest.charAt(prefix.length));
-+    if (one) return { len: rest.length, id: head + one };
++  return joinListBits_(bits);
++}
++
++function joinRepeat_(head, ids, seps) {
++  var bits = [head + ids[0]];
++  var i;
++  for (i = 1; i < ids.length; i++) {
++    pushSep_(bits, seps[i - 1]);
++    bits.push(head + ids[i]);
 +  }
-+  return null;
++  return joinListBits_(bits);
++}
++
++function joinDan_(gloss, ids, seps) {
++  var out = ids[0];
++  var i;
++  for (i = 1; i < ids.length; i++) {
++    out += (seps[i - 1] === "atau" ? " atau " : " dan ") + ids[i];
++  }
++  return gloss + out;
++}
++
++function joinFixed_(gloss, firstSep, ids, seps) {
++  var bits = [gloss];
++  var i;
++  pushSep_(bits, firstSep);
++  bits.push("tanpa " + ids[0]);
++  for (i = 1; i < ids.length; i++) {
++    pushSep_(bits, seps[i - 1]);
++    bits.push("tanpa " + ids[i]);
++  }
++  return joinListBits_(bits);
++}
++
++// 開放列舉頭。完整否定詞（不要辣、不要奶油、不吃辣、客人不要辣）另走詞典，後面的食材再加 tanpa。
++var LIST_HEADS_ = [
++  { zh: "不要放", kind: "repeat", gloss: "jangan pakai " },
++  { zh: "不能吃", kind: "dan", gloss: "tamu tidak bisa makan " },
++  { zh: "可以吃", kind: "dan", gloss: "tamu bisa makan " },
++  { zh: "不吃", kind: "dan", gloss: "tamu tidak makan " },
++  { zh: "不要", kind: "tanpa", gloss: "tanpa " }
++];
++
++function longestListHead_(rest) {
++  var best = null;
++  var i;
++  for (i = 0; i < LIST_HEADS_.length; i++) {
++    var head = LIST_HEADS_[i];
++    if (rest.indexOf(head.zh) !== 0) continue;
++    if (!best || head.zh.length > best.zh.length) best = head;
++  }
++  return best;
++}
++
++function isFixedNegationPhrase_(zh) {
++  if (!zh || zh.length < 3) return false;
++  return zh.indexOf("不要") === 0 || zh.indexOf("不吃") === 0 || zh.indexOf("客人不要") === 0;
++}
++
++function matchFixedPhraseList_(rest) {
++  var phrase = longestPhraseAt_(rest, 0);
++  if (!phrase || !phrase.id) return null;
++  var zh = rest.slice(0, phrase.len);
++  if (!isFixedNegationPhrase_(zh)) return null;
++  var sep = listConj_(rest.charAt(phrase.len));
++  if (!sep) return null;
++  var foods = readFoodList_(rest, phrase.len + 1, false);
++  if (!foods) return null;
++  return { len: phrase.len + 1 + foods.len, id: joinFixed_(phrase.id, sep, foods.ids, foods.seps) };
++}
++
++function matchListGrammar_(rest) {
++  var fromHead = null;
++  var head = longestListHead_(rest);
++  if (head) {
++    var run = readFoodList_(rest, head.zh.length, false);
++    if (run) {
++      var id = "";
++      if (head.kind === "tanpa") id = joinTanpa_(run.ids, run.seps);
++      else if (head.kind === "repeat") id = joinRepeat_(head.gloss, run.ids, run.seps);
++      else id = joinDan_(head.gloss, run.ids, run.seps);
++      fromHead = { len: head.zh.length + run.len, id: id };
++    }
++  }
++  var fromPhrase = matchFixedPhraseList_(rest);
++  if (fromPhrase && (!fromHead || fromPhrase.len > fromHead.len)) return fromPhrase;
++  return fromHead;
 +}
 +
 +function matchAllergy_(rest) {
 +  if (rest.charAt(0) !== "對") return null;
-+  var parts = [];
-+  var i = 1;
-+  var first = readGlossItem_(rest, i);
-+  if (!first) return null;
-+  parts.push(first.id);
-+  i += first.len;
-+  while (i < rest.length && rest.slice(i, i + 2) !== "過敏") {
-+    var ch = rest.charAt(i);
-+    if (ch !== "和" && ch !== "與" && ch !== "及" && ch !== "、") break;
-+    var nxt = readGlossItem_(rest, i + 1);
-+    if (!nxt) break;
-+    parts.push("dan");
-+    parts.push(nxt.id);
-+    i += 1 + nxt.len;
-+  }
-+  if (rest.slice(i, i + 2) !== "過敏") return null;
-+  return { len: i + 2, id: "alergi " + parts.join(" ").replace(/\s{2,}/g, " ").trim() };
++  var foods = readFoodList_(rest, 1, true);
++  if (!foods) return null;
++  if (rest.slice(1 + foods.len, 1 + foods.len + 2) !== "過敏") return null;
++  return { len: 1 + foods.len + 2, id: "alergi " + joinDan_("", foods.ids, foods.seps).trim() };
 +}
 +
 +function matchBareAllergy_(rest) {
@@ -551,131 +589,12 @@
 +  return { len: i + 2, id: "alergi " + parts.join(" ").replace(/\s{2,}/g, " ").trim() };
 +}
 +
-+function negationPiece_(id, later) {
-+  if (!later || id === "sedikit garam") return id;
-+  return "tanpa " + id;
-+}
-+
-+function negationRunAt_(text, index) {
-+  // 第一個食材由呼叫端加 tanpa。後面的食材各自再加 tanpa。少鹽維持原詞。
-+  var parts = [];
-+  var i = index;
-+  var later = false;
-+  while (i < text.length) {
-+    var item = readNegationItem_(text, i);
-+    if (item) {
-+      parts.push(negationPiece_(item.id, later));
-+      later = true;
-+      i += item.len;
-+      continue;
-+    }
-+    var ch = text.charAt(i);
-+    var conj = ch === "和" || ch === "與" || ch === "及" || ch === "或" || ch === "、";
-+    if (!conj) break;
-+    var nxt = readNegationItem_(text, i + 1);
-+    if (!nxt) break;
-+    if (ch === "或") parts.push("atau");
-+    else if (ch === "、") parts.push(",");
-+    else parts.push("dan");
-+    parts.push(negationPiece_(nxt.id, true));
-+    later = true;
-+    i += 1 + nxt.len;
-+  }
-+  return { len: i - index, id: parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() };
-+}
-+
-+function matchNegation_(rest) {
-+  if (rest.indexOf("不要放") === 0 || rest.indexOf("不要") !== 0) return null;
-+  var run = negationRunAt_(rest, 2);
-+  if (run.len > 0 && run.id && 2 + run.len === rest.length) {
-+    return { len: rest.length, id: "tanpa " + run.id };
-+  }
-+  if (rest.length === 3) {
-+    var one = singleCharXId_(rest.charAt(2));
-+    if (one) return { len: rest.length, id: "tanpa " + one };
-+  }
-+  return null;
-+}
-+
-+function isSeparateRequest_(text, index) {
-+  var phrase = longestPhraseAt_(text, index);
-+  if (!phrase || phrase.len < 2 || !phrase.id) return null;
-+  var word = text.slice(index, index + phrase.len);
-+  if (word === "小孩椅" || word === "兒童椅") return null;
-+  if (FOOD_WORD_[word] || SINGLE_CHAR_X_[word]) return null;
-+  return { len: phrase.len, id: phrase.id };
-+}
-+
-+function matchFixedNegationList_(rest) {
-+  // 完整否定詞後面：食材各自 tanpa，其他字典詞各自一則。小孩椅不在這裡猜。
-+  var lead = longestPhraseAt_(rest, 0);
-+  if (!lead || lead.len < 3 || rest.slice(0, 2) !== "不要" || rest.slice(0, 3) === "不要放") return null;
-+  if (lead.len >= rest.length) return null;
-+  var parts = [lead.id];
-+  var i = lead.len;
-+  while (i < rest.length) {
-+    var ch = rest.charAt(i);
-+    if (ch !== "、" && ch !== "和" && ch !== "與" && ch !== "及") return null;
-+    i += 1;
-+    if (rest.slice(i, i + 2) === "少鹽") {
-+      parts.push("sedikit garam");
-+      i += 2;
-+      continue;
-+    }
-+    var food = readFoodItem_(rest, i);
-+    if (food) {
-+      parts.push("tanpa " + food.id);
-+      i += food.len;
-+      continue;
-+    }
-+    var other = isSeparateRequest_(rest, i);
-+    if (!other) return null;
-+    parts.push(other.id);
-+    i += other.len;
-+  }
-+  if (i !== rest.length) return null;
-+  return { len: rest.length, id: parts.join(", ") };
-+}
-+
 +function matchDishNotSpicy_(rest) {
 +  var i;
 +  for (i = 0; i < REMARK_PHRASES_.length; i++) {
 +    var zh = REMARK_PHRASES_[i][0];
 +    if (!DISH_WORD_[zh]) continue;
 +    if (rest === zh + "不要辣") return { len: rest.length, id: REMARK_PHRASES_[i][1] + " tidak pedas" };
-+  }
-+  return null;
-+}
-+
-+function collectFoodIds_(text, index) {
-+  var ids = [];
-+  var i = index;
-+  while (i < text.length) {
-+    var item = readFoodItem_(text, i);
-+    if (item) {
-+      ids.push(item.id);
-+      i += item.len;
-+      continue;
-+    }
-+    var ch = text.charAt(i);
-+    if (ch !== "和" && ch !== "與" && ch !== "及" && ch !== "、") break;
-+    var nxt = readFoodItem_(text, i + 1);
-+    if (!nxt) break;
-+    ids.push(nxt.id);
-+    i += 1 + nxt.len;
-+  }
-+  return { len: i - index, ids: ids };
-+}
-+
-+function matchBuChi_(rest) {
-+  if (rest.indexOf("不吃") !== 0) return null;
-+  var run = collectFoodIds_(rest, 2);
-+  if (run.ids.length && 2 + run.len === rest.length) {
-+    return { len: rest.length, id: "tamu tidak makan " + run.ids.join(" dan ") };
-+  }
-+  if (rest.length === 3) {
-+    var one = singleCharXId_(rest.charAt(2));
-+    if (one) return { len: rest.length, id: "tamu tidak makan " + one };
 +  }
 +  return null;
 +}
@@ -710,30 +629,16 @@
 +  return false;
 +}
 +
-+function negationListRejectsSegment_(text) {
-+  // 範圍已經由完整否定詞吃滿的，不要再擋。小孩椅這類仍不拼。
-+  if (matchFixedNegationList_(text)) return false;
-+  if (text.indexOf("不要") !== 0 || text.indexOf("不要放") === 0) return false;
-+  var i = 0;
-+  var lead = longestPhraseAt_(text, 0);
-+  if (lead && lead.len > 2 && text.slice(0, 2) === "不要") i = lead.len;
-+  else i = 2;
-+  while (i < text.length) {
-+    var item = readNegationItem_(text, i);
-+    if (item) {
-+      i += item.len;
-+      continue;
-+    }
-+    var ch = text.charAt(i);
-+    if (ch === "、" || ch === "和" || ch === "與" || ch === "及" || ch === "或") {
-+      i += 1;
-+      continue;
-+    }
-+    var phrase = longestPhraseAt_(text, i);
-+    if (phrase && phrase.len > 1 && phrase.id) return true;
-+    return false;
++function opensUncoveredList_(text) {
++  // 句首已是列舉頭或完整否定詞、卻吃不滿：留中文，不把剩下的字送去猜。問句與整句維護提醒不走這裡。
++  if (/嗎$/.test(text)) return false;
++  var i;
++  for (i = 0; i < LIST_HEADS_.length; i++) {
++    if (text.indexOf(LIST_HEADS_[i].zh) === 0) return true;
 +  }
-+  return false;
++  var phrase = longestPhraseAt_(text, 0);
++  if (!phrase) return false;
++  return isFixedNegationPhrase_(text.slice(0, phrase.len));
 +}
 +
 +function foodSpansBefore_(text, allergyAt) {
@@ -801,20 +706,10 @@
 +  if (m) consider(m[0].length, "tiba jam " + asciiDigits_(m[1]));
 +  m = rest.match(/^([0-9０-９]{1,2})點到/);
 +  if (m) consider(m[0].length, "tiba jam " + asciiDigits_(m[1]));
-+  var closed = matchClosedX_(rest, "不能吃", "tamu tidak bisa makan ", true);
-+  if (closed) consider(closed.len, closed.id);
-+  closed = matchClosedX_(rest, "可以吃", "tamu bisa makan ", true);
-+  if (closed) consider(closed.len, closed.id);
-+  var repeated = matchRepeatedClosed_(rest, "不要放", "jangan pakai ");
-+  if (repeated) consider(repeated.len, repeated.id);
-+  var neg = matchNegation_(rest);
-+  if (neg) consider(neg.len, neg.id);
-+  var fixedNeg = matchFixedNegationList_(rest);
-+  if (fixedNeg) consider(fixedNeg.len, fixedNeg.id);
++  var listed = matchListGrammar_(rest);
++  if (listed) consider(listed.len, listed.id);
 +  var dish = matchDishNotSpicy_(rest);
 +  if (dish) consider(dish.len, dish.id);
-+  var buchi = matchBuChi_(rest);
-+  if (buchi) consider(buchi.len, buchi.id);
 +  var swap = matchSwap_(rest);
 +  if (swap) consider(swap.len, swap.id);
 +  var allergy = matchAllergy_(rest);
@@ -900,7 +795,6 @@
 +function coverSegment_(text) {
 +  var src = String(text || "");
 +  if (foodPrecedesUnscopedAllergy_(src)) return null;
-+  if (negationListRejectsSegment_(src)) return null;
 +  var parts = [];
 +  var i = 0;
 +  while (i < src.length) {
@@ -1016,8 +910,9 @@
 +    return lead + peeled.prefix + body + trail;
 +  }
 +  // 金額或方案代碼旁邊吃不滿：整段留原文，不把碎片送出去。
-+  // 否定、過敏、換菜對不滿：整段留中文，不送去猜。
++  // 否定、過敏、換菜對不滿：整段留中文，不送去猜。整句維護提醒不擋句首列舉頭。
 +  if (segmentHasToken_(peeled.rest) || uncertainScope_(peeled.rest, wholeSentence)) return null;
++  if (!wholeSentence && opensUncoveredList_(peeled.rest)) return null;
 +  if (cache && cache[QUOTA_FLAG_]) return null;
 +  var translated = translatePieceCached_(cache, peeled.rest);
 +  if (cache && cache[QUOTA_FLAG_]) return null;
@@ -1052,7 +947,54 @@
 +  var peeled = peelFrozenLabels_(core);
 +  if (!/[\u4e00-\u9fff]/.test(peeled.rest)) return false;
 +  if (coverSegment_(peeled.rest)) return false;
-+  return uncertainScope_(peeled.rest, false);
++  if (uncertainScope_(peeled.rest, false)) return true;
++  return opensUncoveredList_(peeled.rest);
++}
++
++function isTopLevelSep_(ch) {
++  return ch === "；" || ch === ";" || ch === "\n";
++}
++
++function splitTopLevelItems_(text) {
++  var src = String(text || "");
++  var parts = [];
++  var buf = "";
++  var i;
++  for (i = 0; i < src.length; i++) {
++    var ch = src.charAt(i);
++    if (!isTopLevelSep_(ch)) {
++      buf += ch;
++      continue;
++    }
++    if (buf) parts.push(buf);
++    parts.push(ch);
++    buf = "";
++  }
++  if (buf) parts.push(buf);
++  return parts;
++}
++
++function translateSemicolonItem_(item, cache) {
++  var parts = splitRemarkSegments_(item);
++  var j;
++  for (j = 0; j < parts.length; j++) {
++    if (!parts[j] || /^[，,（）()|]$/.test(parts[j])) continue;
++    if (segmentMustStayChinese_(parts[j])) return item;
++  }
++  var out = [];
++  var i;
++  for (i = 0; i < parts.length; i++) {
++    var part = parts[i];
++    if (!part) continue;
++    if (/^[，,（）()|]$/.test(part)) {
++      out.push(part);
++      continue;
++    }
++    var seg = translateOneSegment_(part, cache, false);
++    if (seg == null) out.push(part);
++    else out.push(seg);
++  }
++  return out.join("");
 +}
 +
 +function translateRemarkBodyToId_(text, cache, wholeSentence) {
@@ -1064,24 +1006,12 @@
 +    if (whole == null) return unescapeSentinels_(normalizeIdPunctuation_(src));
 +    return unescapeSentinels_(normalizeIdPunctuation_(whole));
 +  }
-+  var parts = splitRemarkSegments_(src);
-+  var j;
-+  for (j = 0; j < parts.length; j++) {
-+    if (!parts[j] || /^[；;，,（）()|\n]$/.test(parts[j])) continue;
-+    if (segmentMustStayChinese_(parts[j])) return unescapeSentinels_(normalizeIdPunctuation_(src));
-+  }
++  var items = splitTopLevelItems_(src);
 +  var out = [];
 +  var i;
-+  for (i = 0; i < parts.length; i++) {
-+    var part = parts[i];
-+    if (!part) continue;
-+    if (/^[；;，,（）()|\n]$/.test(part)) {
-+      out.push(part);
-+      continue;
-+    }
-+    var seg = translateOneSegment_(part, cache, false);
-+    if (seg == null) out.push(part);
-+    else out.push(seg);
++  for (i = 0; i < items.length; i++) {
++    if (isTopLevelSep_(items[i])) out.push(items[i]);
++    else out.push(translateSemicolonItem_(items[i], cache));
 +  }
 +  return unescapeSentinels_(normalizeIdPunctuation_(out.join("")));
 +}
@@ -1122,7 +1052,7 @@
  }
  
  function translateTotalLine_(line) {
-@@ -373,31 +1397,53 @@
+@@ -373,31 +1327,53 @@
    return "(Total " + (tables ? tables[0] : "0") + " meja)";
  }
  
