@@ -204,12 +204,17 @@
             border-radius: 24px;
             box-shadow: 0 18px 42px rgba(71, 43, 20, 0.065);
         }
-        .band-sand {
-            background: linear-gradient(135deg, #f1e1cb 0%, #e9d5bb 100%);
-            border-color: rgba(122, 78, 42, 0.18);
+        /* 首頁招牌區的深咖啡；淺色底和白色問答卡只差約 2–7。 */
+        .tone-brown {
+            background: linear-gradient(135deg, #321f13, #52301b);
+            border-color: rgba(50, 31, 19, 0.5);
         }
-        .band-sand .section-kicker,
-        .band-sand .contact-link { color: #9a3412; }
+        .on-dark h2,
+        .on-dark h3 { color: #fff8ed; }
+        .on-dark p { color: rgba(255, 248, 237, 0.78); }
+        .on-dark .section-kicker,
+        .on-dark .contact-link { color: #f8ce91; }
+        .on-dark .contact-link:hover { color: #fff8ed; }
         .section-kicker {
             color: #b4511b;
             font-size: 0.75rem;
@@ -471,7 +476,7 @@
             </section>
         </article>
 
-        <aside class="band-sand glass-card p-6 md:p-8 mb-8" aria-labelledby="faq-cta-title">
+        <aside class="tone-brown on-dark glass-card p-6 md:p-8 mb-8" aria-labelledby="faq-cta-title">
             <h2 id="faq-cta-title" class="brand-font text-2xl text-stone-800 mb-3">準備好再上山吃飯</h2>
             <p class="text-stone-600 leading-7 mb-6">請先訂位再出發。臨時來店會先確認餐點與價錢，建議先來電詢問。未預約不保證供應烤雞。</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
