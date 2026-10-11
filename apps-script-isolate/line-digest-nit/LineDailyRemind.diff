@@ -1,5 +1,5 @@
 --- apps-script-isolate/line-digest-nit/original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
-+++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 16:18:01.740136157 +0000
++++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-11 16:40:39.389045424 +0000
 @@ -1,3 +1,18 @@
 +/**
 + * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
@@ -9,7 +9,7 @@
 + * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
 + * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
 + * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
-+ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。列舉頭只收食材：不要逐項 tanpa，不要放逐項 jangan pakai，不能吃／可以吃／不吃用 dan，對…過敏用 alergi … dan，不要辣這類完整否定詞後面的食材再加 tanpa。少鹽、不要辣、靠窗、小孩椅、生日、已付、X過敏等非食材結束列舉，各自用完整詞；接不上就只把該「；」項目留中文，同一備註的其他「；」項目照翻。逗號仍把同一個「；」項目綁在一起。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
++ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。同一條、／和／或列舉裡，每個食材都帶頭的極性（tanpa、jangan pakai、tidak bisa makan、tidak makan、alergi；可以吃不加 tidak），非食材夾在中間仍用自己的完整詞。有一項對不上，就只把該「；」項目留中文，同一備註的其他「；」項目照翻。逗號仍把同一個「；」項目綁在一起。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
 + * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。蔥花、蛋奶、蒜、海鮮是完整詞。
 + * 店務維護提醒整句翻一次，不按逗號切開。整句路徑不套用「換」和句首「不要」的留中文規則。失敗就整句留原文。
 + * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
@@ -84,7 +84,7 @@
    }
    return translatedLines.join("\n");
  }
-@@ -328,17 +335,964 @@
+@@ -328,17 +335,1106 @@
  function translateSessionHeadingLine_(line, idName) {
    var pendingTail = "jumlah meja menunggu konfirmasi";
    // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
@@ -429,29 +429,7 @@
 +  return text.slice(index, index + 2) === "過敏";
 +}
 +
-+// 列舉只收食材。allowAllergyTail 只給「對…過敏」：最後一項後面就是過敏。
-+// 其他句型遇到「食材＋過敏」要停下來，讓「花生過敏」自己成詞。
-+function readFoodList_(text, index, allowAllergyTail) {
-+  var ids = [];
-+  var seps = [];
-+  var i = index;
-+  var first = readFoodItem_(text, i);
-+  if (!first) return null;
-+  if (!allowAllergyTail && allergyTail_(text, i + first.len)) return null;
-+  ids.push(first.id);
-+  i += first.len;
-+  while (i < text.length) {
-+    var sep = listConj_(text.charAt(i));
-+    if (!sep) break;
-+    var nxt = readFoodItem_(text, i + 1);
-+    if (!nxt) break;
-+    if (!allowAllergyTail && allergyTail_(text, i + 1 + nxt.len)) break;
-+    seps.push(sep);
-+    ids.push(nxt.id);
-+    i += 1 + nxt.len;
-+  }
-+  return { len: i - index, ids: ids, seps: seps };
-+}
++// 同一條、／和／或列舉要走完。食材＋過敏停下來，讓「花生過敏」自己成詞。
 +
 +function joinListBits_(bits) {
 +  return bits.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim();
@@ -527,6 +505,123 @@
 +  return zh.indexOf("不要") === 0 || zh.indexOf("不吃") === 0 || zh.indexOf("客人不要") === 0;
 +}
 +
++function glossExact_(text) {
++  var src = String(text || "");
++  if (!src) return "";
++  var parts = [];
++  var i = 0;
++  while (i < src.length) {
++    var best = null;
++    var phrase = longestPhraseAt_(src, i);
++    if (phrase && phrase.id) best = { len: phrase.len, id: phrase.id };
++    var pattern = longestPatternAt_(src.slice(i));
++    if (pattern && pattern.id && (!best || pattern.len > best.len)) best = { len: pattern.len, id: pattern.id };
++    var span = matchSpanPattern_(src, i);
++    if (span && span.id && (!best || span.len > best.len)) best = { len: span.len, id: span.id };
++    var token = matchTokenAt_(src, i);
++    if (token && (!best || token.len > best.len)) best = { len: token.len, id: token.text };
++    if (!best) {
++      if (isSkippableChar_(src.charAt(i))) {
++        parts.push(src.charAt(i));
++        i += 1;
++        continue;
++      }
++      return "";
++    }
++    if (best.id) parts.push(best.id);
++    i += best.len;
++  }
++  return parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim();
++}
++
++function itemEnd_(text, index, stopAtAllergy) {
++  var i = index;
++  while (i < text.length && !listConj_(text.charAt(i))) {
++    if (stopAtAllergy && allergyTail_(text, i)) break;
++    i += 1;
++  }
++  return i;
++}
++
++function readOneItem_(text, index, stopAtAllergy) {
++  if (index >= text.length || listConj_(text.charAt(index))) return null;
++  if (stopAtAllergy && allergyTail_(text, index)) return null;
++  var end = itemEnd_(text, index, stopAtAllergy);
++  if (end === index) return null;
++  var food = readFoodItem_(text, index);
++  // 「對…過敏」的過敏是句尾，不是「花生過敏」這個詞。否定列舉裡的花生過敏仍整顆當非食材。
++  if (food && index + food.len === end && (stopAtAllergy || !allergyTail_(text, index + food.len))) {
++    return { len: food.len, id: food.id, food: true };
++  }
++  var gloss = glossExact_(text.slice(index, end));
++  if (!gloss) return null;
++  return { len: end - index, id: gloss, food: false };
++}
++
++function readMixedItems_(text, index, stopAtAllergy) {
++  var first = readOneItem_(text, index, stopAtAllergy);
++  if (!first) {
++    var j = index;
++    while (j < text.length && !listConj_(text.charAt(j))) {
++      if (stopAtAllergy && allergyTail_(text, j)) break;
++      j += 1;
++    }
++    if (j < text.length && listConj_(text.charAt(j))) return { reject: true };
++    return null;
++  }
++  var items = [first];
++  var seps = [];
++  var i = index + first.len;
++  while (i < text.length && listConj_(text.charAt(i))) {
++    var sep = listConj_(text.charAt(i));
++    var nxt = readOneItem_(text, i + 1, stopAtAllergy);
++    if (!nxt) return { reject: true };
++    seps.push(sep);
++    items.push(nxt);
++    i += 1 + nxt.len;
++  }
++  return { len: i - index, items: items, seps: seps, reject: false };
++}
++
++function restartedGloss_(gloss) {
++  if (gloss.indexOf("tamu ") === 0) return gloss.slice("tamu ".length);
++  return gloss;
++}
++
++function renderFoodRun_(kind, gloss, ids, seps, restart) {
++  if (kind === "dan") return joinDan_(restart ? restartedGloss_(gloss) : gloss, ids, seps);
++  if (kind === "repeat") return joinRepeat_(gloss, ids, seps);
++  return joinTanpa_(ids, seps);
++}
++
++function renderMixed_(kind, gloss, items, seps, leading, leadSep) {
++  var bits = [];
++  if (leading) bits.push(leading);
++  var i = 0;
++  while (i < items.length) {
++    var sepBefore = i === 0 ? (leadSep || "") : seps[i - 1];
++    if (!items[i].food) {
++      if (sepBefore) pushSep_(bits, sepBefore);
++      bits.push(items[i].id);
++      i += 1;
++      continue;
++    }
++    var ids = [items[i].id];
++    var foodSeps = [];
++    var firstSep = sepBefore;
++    i += 1;
++    while (i < items.length && items[i].food) {
++      foodSeps.push(seps[i - 1]);
++      ids.push(items[i].id);
++      i += 1;
++    }
++    var restart = bits.length > 0;
++    if (firstSep) pushSep_(bits, firstSep);
++    bits.push(renderFoodRun_(kind, gloss, ids, foodSeps, restart));
++  }
++  return joinListBits_(bits);
++}
++
 +function matchFixedPhraseList_(rest) {
 +  var phrase = longestPhraseAt_(rest, 0);
 +  if (!phrase || !phrase.id) return null;
@@ -534,35 +629,51 @@
 +  if (!isFixedNegationPhrase_(zh)) return null;
 +  var sep = listConj_(rest.charAt(phrase.len));
 +  if (!sep) return null;
-+  var foods = readFoodList_(rest, phrase.len + 1, false);
-+  if (!foods) return null;
-+  return { len: phrase.len + 1 + foods.len, id: joinFixed_(phrase.id, sep, foods.ids, foods.seps) };
++  var mixed = readMixedItems_(rest, phrase.len + 1);
++  if (!mixed) return { reject: true };
++  if (mixed.reject) return mixed;
++  return { len: phrase.len + 1 + mixed.len, id: renderMixed_("tanpa", "tanpa ", mixed.items, mixed.seps, phrase.id, sep) };
++}
++
++function matchOpenList_(rest, head) {
++  var mixed = readMixedItems_(rest, head.zh.length);
++  if (!mixed || mixed.reject) return mixed;
++  var onlyFood = true;
++  var n;
++  for (n = 0; n < mixed.items.length; n++) {
++    if (!mixed.items[n].food) onlyFood = false;
++  }
++  if (mixed.seps.length === 0 && !onlyFood) return null;
++  var hasFood = false;
++  for (n = 0; n < mixed.items.length; n++) if (mixed.items[n].food) hasFood = true;
++  if (!hasFood) return null;
++  return { len: head.zh.length + mixed.len, id: renderMixed_(head.kind, head.gloss, mixed.items, mixed.seps, "", "") };
 +}
 +
 +function matchListGrammar_(rest) {
-+  var fromHead = null;
++  var phrase = longestPhraseAt_(rest, 0);
 +  var head = longestListHead_(rest);
-+  if (head) {
-+    var run = readFoodList_(rest, head.zh.length, false);
-+    if (run) {
-+      var id = "";
-+      if (head.kind === "tanpa") id = joinTanpa_(run.ids, run.seps);
-+      else if (head.kind === "repeat") id = joinRepeat_(head.gloss, run.ids, run.seps);
-+      else id = joinDan_(head.gloss, run.ids, run.seps);
-+      fromHead = { len: head.zh.length + run.len, id: id };
-+    }
++  var fixed = phrase && phrase.id && isFixedNegationPhrase_(rest.slice(0, phrase.len));
++  if (fixed && (!head || phrase.len > head.zh.length)) {
++    var listed = matchFixedPhraseList_(rest);
++    if (listed) return listed;
 +  }
-+  var fromPhrase = matchFixedPhraseList_(rest);
-+  if (fromPhrase && (!fromHead || fromPhrase.len > fromHead.len)) return fromPhrase;
-+  return fromHead;
++  if (!head) return null;
++  return matchOpenList_(rest, head);
 +}
 +
 +function matchAllergy_(rest) {
 +  if (rest.charAt(0) !== "對") return null;
-+  var foods = readFoodList_(rest, 1, true);
-+  if (!foods) return null;
-+  if (rest.slice(1 + foods.len, 1 + foods.len + 2) !== "過敏") return null;
-+  return { len: 1 + foods.len + 2, id: "alergi " + joinDan_("", foods.ids, foods.seps).trim() };
++  var mixed = readMixedItems_(rest, 1, true);
++  if (!mixed) return null;
++  if (mixed.reject) return mixed;
++  var at = 1 + mixed.len;
++  if (rest.slice(at, at + 2) !== "過敏") return null;
++  var hasFood = false;
++  var n;
++  for (n = 0; n < mixed.items.length; n++) if (mixed.items[n].food) hasFood = true;
++  if (!hasFood) return null;
++  return { len: at + 2, id: renderMixed_("dan", "alergi ", mixed.items, mixed.seps, "", "") };
 +}
 +
 +function matchBareAllergy_(rest) {
@@ -667,13 +778,20 @@
 +  return false;
 +}
 +
++function allergyWrappedFromDui_(text, foodAt, end) {
++  var duiAt = text.lastIndexOf("對", foodAt);
++  if (duiAt < 0) return false;
++  var wrapped = matchAllergy_(text.slice(duiAt));
++  return !!(wrapped && wrapped.id && !wrapped.reject && duiAt + wrapped.len >= end);
++}
++
 +function foodPrecedesUnscopedAllergy_(text) {
 +  var from = 0;
 +  while (from < text.length) {
 +    var at = text.indexOf("過敏", from);
 +    if (at < 0) return false;
 +    var spans = foodSpansBefore_(text, at);
-+    if (spans.length && !allergyCovers_(text, spans[0], at + 2 - spans[0])) return true;
++    if (spans.length && !allergyCovers_(text, spans[0], at + 2 - spans[0]) && !allergyWrappedFromDui_(text, spans[0], at + 2)) return true;
 +    from = at + 2;
 +  }
 +  return false;
@@ -707,13 +825,13 @@
 +  m = rest.match(/^([0-9０-９]{1,2})點到/);
 +  if (m) consider(m[0].length, "tiba jam " + asciiDigits_(m[1]));
 +  var listed = matchListGrammar_(rest);
-+  if (listed) consider(listed.len, listed.id);
++  if (listed && listed.id && !listed.reject) consider(listed.len, listed.id);
 +  var dish = matchDishNotSpicy_(rest);
 +  if (dish) consider(dish.len, dish.id);
 +  var swap = matchSwap_(rest);
 +  if (swap) consider(swap.len, swap.id);
 +  var allergy = matchAllergy_(rest);
-+  if (allergy) consider(allergy.len, allergy.id);
++  if (allergy && allergy.id && !allergy.reject) consider(allergy.len, allergy.id);
 +  var bare = matchBareAllergy_(rest);
 +  if (bare) consider(bare.len, bare.id);
 +  return best;
@@ -792,24 +910,37 @@
 +  return false;
 +}
 +
++function polarityListRejects_(text) {
++  var src = String(text || "");
++  var i;
++  for (i = 0; i < src.length; i++) {
++    var hit = matchListGrammar_(src.slice(i));
++    if (hit && hit.reject) return true;
++    var allergyHit = matchAllergy_(src.slice(i));
++    if (allergyHit && allergyHit.reject) return true;
++  }
++  return false;
++}
++
 +function coverSegment_(text) {
 +  var src = String(text || "");
 +  if (foodPrecedesUnscopedAllergy_(src)) return null;
++  if (polarityListRejects_(src)) return null;
 +  var parts = [];
 +  var i = 0;
 +  while (i < src.length) {
 +    var best = null;
 +    var phrase = longestPhraseAt_(src, i);
-+    if (phrase) best = { len: phrase.len, id: phrase.id, kind: "id" };
++    if (phrase) best = { len: phrase.len, id: phrase.id, kind: "id", phrase: true };
 +    var pattern = longestPatternAt_(src, i);
-+    if (pattern && (!best || pattern.len > best.len)) best = { len: pattern.len, id: pattern.id, kind: "id" };
++    if (pattern && (!best || pattern.len > best.len)) best = { len: pattern.len, id: pattern.id, kind: "id", phrase: false };
 +    var span = matchSpanPattern_(src, i);
-+    if (span && (!best || span.len > best.len)) best = { len: span.len, id: span.id, kind: "id" };
++    if (span && (!best || span.len > best.len)) best = { len: span.len, id: span.id, kind: "id", phrase: false };
 +    var token = matchTokenAt_(src, i);
 +    if (token && (!best || token.len > best.len)) best = { len: token.len, id: token.text, kind: "token" };
 +    if (best) {
 +      if (best.kind === "token") parts.push({ type: "token", text: best.id });
-+      else if (best.id) parts.push({ type: "id", text: best.id });
++      else if (best.id) parts.push({ type: "id", text: best.id, phrase: !!best.phrase });
 +      i += best.len;
 +      continue;
 +    }
@@ -898,12 +1029,21 @@
 +  var covered = coverSegment_(peeled.rest);
 +  if (covered) {
 +    var body = "";
++    var prevPhrase = false;
 +    var i;
 +    for (i = 0; i < covered.length; i++) {
-+      var next = covered[i].text;
++      var part = covered[i];
++      var next = part.text;
++      if (part.type === "src") {
++        if (next) body += next;
++        prevPhrase = false;
++        continue;
++      }
 +      if (!next) continue;
-+      if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
++      if (prevPhrase && part.phrase) body += ", ";
++      else if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
 +      body += next;
++      prevPhrase = part.type === "id" && !!part.phrase;
 +    }
 +    body = body.replace(/[的了吧呢啊呀嘛哦喔]+$/, "");
 +    if (!body) return lead + peeled.prefix + peeled.rest + trail;
@@ -912,6 +1052,7 @@
 +  // 金額或方案代碼旁邊吃不滿：整段留原文，不把碎片送出去。
 +  // 否定、過敏、換菜對不滿：整段留中文，不送去猜。整句維護提醒不擋句首列舉頭。
 +  if (segmentHasToken_(peeled.rest) || uncertainScope_(peeled.rest, wholeSentence)) return null;
++  if (polarityListRejects_(peeled.rest)) return null;
 +  if (!wholeSentence && opensUncoveredList_(peeled.rest)) return null;
 +  if (cache && cache[QUOTA_FLAG_]) return null;
 +  var translated = translatePieceCached_(cache, peeled.rest);
@@ -947,6 +1088,7 @@
 +  var peeled = peelFrozenLabels_(core);
 +  if (!/[\u4e00-\u9fff]/.test(peeled.rest)) return false;
 +  if (coverSegment_(peeled.rest)) return false;
++  if (polarityListRejects_(peeled.rest)) return true;
 +  if (uncertainScope_(peeled.rest, false)) return true;
 +  return opensUncoveredList_(peeled.rest);
 +}
@@ -1052,7 +1194,7 @@
  }
  
  function translateTotalLine_(line) {
-@@ -373,31 +1327,53 @@
+@@ -373,31 +1469,53 @@
    return "(Total " + (tables ? tables[0] : "0") + " meja)";
  }
  

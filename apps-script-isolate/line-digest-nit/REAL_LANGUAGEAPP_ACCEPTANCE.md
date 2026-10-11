@@ -84,7 +84,7 @@ Google 常在短譯文後面加 `.`。每個片段在接回去之前，若來源
 
 對照和句型必須吃完這一段（金額、方案代碼、標點可以夾在中間）。「、」留在段內，不當分段符，也不把所有「、」拆開。吃不滿、又不是否定／過敏／換菜範圍問題，才整段送 LanguageApp。否定、過敏或換菜對不滿時，只把包含那一段的「；」項目留中文（項目裡的逗號仍綁在一起），同一備註的其他「；」項目照翻。這一段裡有金額或方案代碼、卻吃不滿，整段留中文，不送碎片。對照結果尾端的的了吧呢啊呀嘛哦喔拿掉。「嗎」是問句，不拿掉；`不要辣嗎` 整段送翻。整段只有「元」時留原文。整行維護提醒整句送翻，不套用「換」和句首「不要」的留中文規則。
 
-列舉頭（不要、不要放、不能吃、不吃、可以吃、對…過敏，以及不要辣、不要放辣、不吃辣、客人不要辣、不要太鹹、不要油炸、不要奶油這類完整否定詞）後面只收食材。食材帶該頭的極性。少鹽、不要辣、靠窗、小孩椅、生日、已付、X過敏等非食材結束列舉，各自用完整詞；接不上就留該「；」項目的中文。
+列舉頭（不要、不要放、不能吃、不吃、可以吃、對…過敏，以及不要辣、不要放辣、不吃辣、客人不要辣、不要太鹹、不要油炸、不要奶油這類完整否定詞）的同一條、／和／或列舉裡，每一個食材都帶該頭的極性，不管它在非食材前面或後面。少鹽、不要辣、靠窗、小孩椅、生日、已付、X過敏等非食材用自己的完整詞。有一項對不上，就留該「；」項目的中文。
 
 ### 表內整詞
 
@@ -164,17 +164,17 @@ Google 常在短譯文後面加 `.`。每個片段在接回去之前，若來源
 | N份 | N porsi | 不要再譯成 eksemplar |
 | N隻 | N ekor | |
 | N點到 / H:MM到 | tiba jam N | 要留下「到」 |
-| 不能吃X / 不能吃X、Y | tamu tidak bisa makan X / tamu tidak bisa makan X dan Y | 否定管到每一項。`不能吃花生、蝦子` 是 kacang dan udang |
+| 不能吃X / 不能吃X、Y | tamu tidak bisa makan X / tamu tidak bisa makan X dan Y | 否定管到每一項。`不能吃花生、蝦子` 是 kacang dan udang。非食材後面的食材重新說一次、不加第二個 tamu：`不能吃花生、靠窗、香菜` 是 `tamu tidak bisa makan kacang, dekat jendela, tidak bisa makan daun ketumbar` |
 | 可以吃X / 可以吃X、Y | tamu bisa makan X / tamu bisa makan X dan Y | 不可加 tidak |
 | 不要放X / 不要放X、Y | jangan pakai X / jangan pakai X, jangan pakai Y | 每一項都重複 jangan pakai |
 | 不吃X / 不吃X、Y | tamu tidak makan X / tamu tidak makan X dan Y | 不混用 tanpa。要員工確認 |
 | 不要X | tanpa X | 不要譯成 Tidak ada X。X 收在段尾 |
-| 對X過敏 / 對X和Y過敏 / 對X、Y過敏 | alergi X / alergi X dan Y | 「、」與「和」都接 dan。整詞優先。`過敏` 不能先被吃掉 |
+| 對X過敏 / 對X和Y過敏 / 對X、Y過敏 | alergi X / alergi X dan Y | 「、」與「和」都接 dan。整詞優先。`過敏` 不能先被吃掉。夾著非食材時食材仍是 alergi：`對花生、少鹽過敏` 是 `alergi kacang, sedikit garam`。沒有食材的 `對少鹽過敏` 留中文 |
 | X過敏 | alergi X | `蝦子過敏` 是 alergi udang，不是 udang alergi。花生過敏等整詞優先 |
 | X、Y過敏 / X和Y過敏 / XY過敏 | alergi X dan Y | 沒有「對」也要整串食材都標成過敏。`花生、蝦子過敏`、`花生蝦子過敏` 都是 alergi kacang dan udang。`花生、蒜過敏` 是 alergi kacang dan bawang putih。中間吃不滿（例如靠窗）整段留中文，不可只標最後一項 |
 | 不要X、Y、Z | tanpa X, tanpa Y, tanpa Z | 後面的食材各自帶 tanpa。`不要香菜、蔥` 是 `tanpa daun ketumbar, tanpa daun bawang`。少鹽仍是 `sedikit garam`，不加 tanpa |
 | 不要辣、花生 / 不要油炸、花生 | tidak pedas, tanpa kacang / jangan digoreng, tanpa kacang | 完整否定詞後面的每個食材都要排除。`不要辣、蝦子`、`不要辣、香菜` 相同。對不滿就整段留中文 |
-| 不要辣、靠窗 | tidak pedas, dekat jendela | 非食材結束列舉，用自己的完整詞，不加 tanpa。單獨的 `不要小孩椅` 仍留中文 |
+| 不要辣、靠窗 | tidak pedas, dekat jendela | 非食材用自己的完整詞，不加 tanpa。它後面的食材仍要帶極性：`不要油炸、少鹽、香菜` 是 `jangan digoreng, sedikit garam, tanpa daun ketumbar`；`不要辣、花生、少鹽、蝦子` 是 `tidak pedas, tanpa kacang, sedikit garam, tanpa udang`；`不吃辣、少鹽、花生` 是 `tamu tidak makan pedas, sedikit garam, tanpa kacang`；`不要放花生、少鹽、香菜` 是 `jangan pakai kacang, sedikit garam, jangan pakai daun ketumbar`。單獨的 `不要小孩椅` 仍留中文。兩個緊鄰的對照詞中間補 `, `：`不要辣不要香菜` 是 `tidak pedas, tanpa daun ketumbar` |
 | X不要辣 | X tidak pedas | X 只能是表內菜色（桶仔雞、雞湯、筊白筍、米血、素食）。`烤雞不要辣` 留中文 |
 | 不吃X | tamu tidak makan X | X 是食材。`不吃牛`、`不吃花生` 成立。`不吃雞皮` 留中文。要員工確認 |
 | 換X / A換B | ganti dengan X / ganti A dengan B | A、B、X 都要是表內整詞。`雞湯換筊白筍`、`換筊白筍` 成立。`山藥雞湯米粉換筊白筍` 留中文 |
