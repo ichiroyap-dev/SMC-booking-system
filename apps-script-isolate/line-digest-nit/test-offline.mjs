@@ -116,7 +116,7 @@ resetCalls();
 const amountIn = "12:10 測試甲先生 (8) | 備註：預估金額 $2,000 (生日；不要葱)";
 const amountGot = fixed.translateTaskCnToId(amountIn);
 ok(
-  amountGot === "12:10 Bapak 測試甲 (8) | Catatan: Perkiraan biaya $2.000 (ulang tahun; tanpa daun bawang)",
+  amountGot === "12:10 Bapak 測試甲 (8) | Catatan: Perkiraan biaya $2,000 (ulang tahun; tanpa daun bawang)",
   "amount + segments: " + amountGot,
 );
 ok(
@@ -407,7 +407,7 @@ const failApp = loadGs(modifiedRemind, {
 const failGot = failApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
 ok(remarkOf(failGot) === "Catatan: 花生過敏", "final failure keeps Chinese: " + failGot);
 ok(failN === 2, "final failure should try twice: " + failN);
-ok(failApp.__sleeps.length === 1, "final failure should pause once");
+ok(JSON.stringify(failApp.__sleeps) === JSON.stringify([250]), "generic error waits 250ms: " + JSON.stringify(failApp.__sleeps));
 
 resetCalls();
 const noteFail = loadGs(modifiedRemind, {
@@ -427,9 +427,9 @@ const PH = (id) => "\uE000" + id + "\uE001";
 
 resetCalls();
 const multiAmt = fixed.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：訂金$1,000；尾款$2,000");
-ok(remarkOf(multiAmt) === "Catatan: uang muka $1.000; sisa pembayaran $2.000", "multiple amounts kept in segment: " + multiAmt);
+ok(remarkOf(multiAmt) === "Catatan: uang muka $1,000; sisa pembayaran $2,000", "multiple amounts kept in segment: " + multiAmt);
 ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["訂金" + PH(0), "尾款" + PH(1)]), "multiple amounts calls: " + JSON.stringify(newCalls));
-ok(multiAmt.indexOf("$1.000 $2.000") === -1, "amounts were appended together: " + multiAmt);
+ok(multiAmt.indexOf("$1,000 $2,000") === -1 && multiAmt.indexOf("$1.000") === -1, "amounts were appended or reformatted: " + multiAmt);
 
 resetCalls();
 const lostAmt = loadGs(modifiedRemind, {
@@ -441,7 +441,8 @@ const lostAmt = loadGs(modifiedRemind, {
 const lostAmtGot = lostAmt.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：訂金$1,000；尾款$2,000");
 ok(remarkOf(lostAmtGot) === "Catatan: 訂金$1,000; 尾款$2,000", "multiple amounts lost stay in original segments: " + lostAmtGot);
 ok(lostAmtGot.indexOf("uang muka") === -1 && lostAmtGot.indexOf("sisa pembayaran") === -1, "lost amounts kept a partial translation: " + lostAmtGot);
-ok(lostAmtGot.indexOf("$1.000") === -1 && lostAmtGot.indexOf("$2.000") === -1, "lost amounts were reformatted and moved: " + lostAmtGot);
+ok(lostAmtGot.indexOf("$1.000") === -1 && lostAmtGot.indexOf("$2.000") === -1, "lost amounts were reformatted: " + lostAmtGot);
+ok(lostAmtGot.indexOf("$1, 000") === -1 && lostAmtGot.indexOf("$2, 000") === -1, "lost amounts were spaced inside the number: " + lostAmtGot);
 
 resetCalls();
 const multiCode = fixed.translateTaskCnToId("18:20 測試甲先生 (4) | 備註：靠窗5k1a；加桌5.5k9a");
@@ -467,7 +468,7 @@ const mangled = loadGs(modifiedRemind, {
   },
 });
 const mangledGot = mangled.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：訂金$1,000；尾款$2,000");
-ok(remarkOf(mangledGot) === "Catatan: uang muka $1.000; 尾款$2,000", "mangled placeholder falls back: " + mangledGot);
+ok(remarkOf(mangledGot) === "Catatan: uang muka $1,000; 尾款$2,000", "mangled placeholder falls back: " + mangledGot);
 ok(mangledGot.indexOf("\uE000") === -1, "mangled sentinel leaked: " + mangledGot);
 
 resetCalls();
@@ -479,9 +480,9 @@ const duplicated = loadGs(modifiedRemind, {
   },
 });
 const duplicatedGot = duplicated.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：訂金$1,000；尾款$2,000");
-ok(remarkOf(duplicatedGot) === "Catatan: uang muka $1.000; 尾款$2,000", "duplicated placeholder falls back: " + duplicatedGot);
+ok(remarkOf(duplicatedGot) === "Catatan: uang muka $1,000; 尾款$2,000", "duplicated placeholder falls back: " + duplicatedGot);
 ok((duplicatedGot.match(/\$2,000/g) || []).length === 1, "duplicated amount was repeated: " + duplicatedGot);
-ok(duplicatedGot.indexOf("$1.000 $2") === -1, "duplicated token was appended: " + duplicatedGot);
+ok(duplicatedGot.indexOf("$1,000 $2") === -1 && duplicatedGot.indexOf("$1.000") === -1, "duplicated token was appended or reformatted: " + duplicatedGot);
 
 const qtyAmountGot = assertPieceCalls(
   "amount regex does not swallow quantity",
@@ -494,7 +495,7 @@ ok(qtyAmountGot.indexOf("$500,2") === -1, "quantity stayed inside the amount: " 
 resetCalls();
 const literalBrace = fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：見{{0}}；$1,000");
 ok(literalBrace.indexOf("{{0}}") !== -1, "literal {{0}} is not a placeholder: " + literalBrace);
-ok(literalBrace.indexOf("$1.000") !== -1, "literal brace case lost the amount: " + literalBrace);
+ok(literalBrace.indexOf("$1,000") !== -1 && literalBrace.indexOf("$1.000") === -1, "literal brace case changed the amount: " + literalBrace);
 ok(literalBrace.indexOf("{{$1") === -1 && literalBrace.indexOf("{{1") === -1, "literal {{0}} was overwritten: " + literalBrace);
 
 resetCalls();
@@ -505,7 +506,7 @@ const sentinelApp = loadGs(modifiedRemind, {
   },
 });
 const sentinelGot = sentinelApp.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：標記\uE000；$1,000");
-ok(remarkOf(sentinelGot) === "Catatan: tanda\uE000; $1.000", "source sentinel collided with placeholder: " + JSON.stringify(sentinelGot));
+ok(remarkOf(sentinelGot) === "Catatan: tanda\uE000; $1,000", "source sentinel collided with placeholder: " + JSON.stringify(sentinelGot));
 
 const commaQtyGot = assertPieceCalls(
   "comma before quantity is spaced",
@@ -561,7 +562,193 @@ const shortApp = loadGs(modifiedRemind, {
 const shortGot = shortApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
 ok(remarkOf(shortGot) === "Catatan: 花生過敏", "short-time limit still falls back after retry: " + shortGot);
 ok(shortN === 2, "short-time limit should retry once: " + shortN);
-ok(JSON.stringify(shortApp.__sleeps) === JSON.stringify([250]), "short-time pause: " + JSON.stringify(shortApp.__sleeps));
+ok(JSON.stringify(shortApp.__sleeps) === JSON.stringify([1000]), "short-time waits 1000ms: " + JSON.stringify(shortApp.__sleeps));
+
+function noBrokenAmount(text) {
+  return (
+    text.indexOf("$1, 000") === -1 &&
+    text.indexOf("$2, 000") === -1 &&
+    text.indexOf("NT$12, 000") === -1 &&
+    text.indexOf("$1, 000.50") === -1 &&
+    text.indexOf("$1.000") === -1 &&
+    text.indexOf("$2.000") === -1 &&
+    text.indexOf("$1.000.50") === -1
+  );
+}
+
+function amountLine(remark) {
+  return "12:00 測試甲先生 (4) | 備註：" + remark;
+}
+
+function amountApp(mode, counter) {
+  return loadGs(modifiedRemind, {
+    translate(text) {
+      counter.n += 1;
+      const raw = String(text);
+      if (mode === "empty") return "";
+      if (mode === "identity") return raw;
+      if (mode === "generic") throw new Error("down");
+      if (mode === "quota") throw new Error("Service invoked too many times: translate.");
+      if (mode === "lost") {
+        return raw
+          .replace(/訂金/g, "uang muka")
+          .replace(/尾款/g, "sisa pembayaran")
+          .replace(/已付/g, "sudah dibayar")
+          .replace(/未付/g, "belum dibayar")
+          .replace(/元/g, "yuan")
+          .replace(/\uE000\d+\uE001/g, "");
+      }
+      if (mode === "renumbered") return raw.replace(/\uE000(\d+)\uE001/g, "\uE0009\uE001");
+      if (mode === "duplicated") return raw.replace(/\uE000\d+\uE001/g, (ph) => ph + ph);
+      return raw
+        .replace(/訂金/g, "uang muka")
+        .replace(/尾款/g, "sisa pembayaran")
+        .replace(/已付/g, "sudah dibayar")
+        .replace(/未付/g, "belum dibayar")
+        .replace(/元/g, "yuan");
+    },
+  });
+}
+
+const amountShapes = [
+  {
+    name: "$1,000已付",
+    remark: "$1,000已付",
+    success: "Catatan: $1,000 sudah dibayar",
+    source: "Catatan: $1,000已付",
+    forbidNt: true,
+  },
+  {
+    name: "NT$12,000元",
+    remark: "NT$12,000元",
+    success: "Catatan: NT$12,000 yuan",
+    source: "Catatan: NT$12,000元",
+    forbidNt: false,
+  },
+  {
+    name: "$1,000.50已付",
+    remark: "$1,000.50已付",
+    success: "Catatan: $1,000.50 sudah dibayar",
+    source: "Catatan: $1,000.50已付",
+    forbidNt: true,
+  },
+];
+
+const amountModes = ["success", "empty", "identity", "generic", "quota", "lost", "renumbered", "duplicated"];
+for (const shape of amountShapes) {
+  for (const mode of amountModes) {
+    const counter = { n: 0 };
+    const app = amountApp(mode, counter);
+    const got = app.translateTaskCnToId(amountLine(shape.remark));
+    const want = mode === "success" ? shape.success : shape.source;
+    const label = "amount " + mode + " keeps " + shape.name;
+    ok(remarkOf(got) === want, label + ": " + got);
+    ok(noBrokenAmount(got), label + " broke the number: " + got);
+    ok(got.indexOf(shape.remark.indexOf("NT$") === 0 ? "NT$12,000" : shape.remark.slice(0, shape.remark.search(/[\u4e00-\u9fff]/))) !== -1, label + " dropped the source token: " + got);
+    if (shape.forbidNt) ok(got.indexOf("NT$") === -1, label + " added NT$: " + got);
+    if (mode === "quota") {
+      ok(counter.n === 1, label + " retried: " + counter.n);
+      ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
+    } else if (mode === "generic") {
+      ok(counter.n === 2, label + " call count: " + counter.n);
+      ok(JSON.stringify(app.__sleeps) === JSON.stringify([250]), label + " pause: " + JSON.stringify(app.__sleeps));
+    } else {
+      ok(counter.n === 1, label + " call count: " + counter.n);
+      ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
+    }
+  }
+}
+
+const pairRemark = "訂金$1,000已付；尾款$2,000未付";
+const pairSource = "Catatan: 訂金$1,000已付; 尾款$2,000未付";
+const pairSuccess = "Catatan: uang muka $1,000 sudah dibayar; sisa pembayaran $2,000 belum dibayar";
+for (const mode of amountModes) {
+  const counter = { n: 0 };
+  const app = amountApp(mode, counter);
+  const got = app.translateTaskCnToId(amountLine(pairRemark));
+  const want = mode === "success" ? pairSuccess : pairSource;
+  const label = "two amounts " + mode;
+  ok(remarkOf(got) === want, label + ": " + got);
+  ok(noBrokenAmount(got), label + " broke a number: " + got);
+  const halves = (remarkOf(got).replace(/^Catatan:\s*/, "")).split("; ");
+  ok(halves.length === 2, label + " segment count: " + remarkOf(got));
+  ok(halves[0].indexOf("$1,000") !== -1 && halves[0].indexOf("$2,000") === -1, label + " first segment: " + halves[0]);
+  ok(halves[1].indexOf("$2,000") !== -1 && halves[1].indexOf("$1,000") === -1, label + " second segment: " + halves[1]);
+  ok(got.indexOf("NT$") === -1, label + " added NT$: " + got);
+  if (mode === "quota") {
+    ok(counter.n === 1, label + " called the second segment: " + counter.n);
+    ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
+  } else if (mode === "generic") {
+    ok(counter.n === 4, label + " call count: " + counter.n);
+    ok(JSON.stringify(app.__sleeps) === JSON.stringify([250, 250]), label + " pause: " + JSON.stringify(app.__sleeps));
+  } else {
+    ok(counter.n === 2, label + " call count: " + counter.n);
+  }
+}
+
+const quotaMessages = [
+  "Service invoked too many times: translate.",
+  "Exception: Service invoked too many times: translate.",
+  "Service invoked too many times: Calendar.",
+  "Service invoked too many times for one day: translate",
+];
+for (const message of quotaMessages) {
+  ok(fixed.isDailyTranslateQuotaError_(new Error(message)) === true, "daily quota matches " + message);
+  ok(fixed.isShortTimeLimitError_(new Error(message)) === false, "short-time false for " + message);
+  const counter = { n: 0 };
+  const app = loadGs(modifiedRemind, {
+    translate() {
+      counter.n += 1;
+      throw new Error(message);
+    },
+  });
+  const got = app.translateTaskCnToId(amountLine(pairRemark));
+  ok(remarkOf(got) === pairSource, "quota path " + message + ": " + got);
+  ok(noBrokenAmount(got), "quota path spaced " + message + ": " + got);
+  ok(counter.n === 1, "quota path calls " + message + ": " + counter.n);
+  ok(app.__sleeps.length === 0, "quota path slept " + message + ": " + JSON.stringify(app.__sleeps));
+}
+
+const notQuota = ["quota exceeded", "每日配額", "配額不足", "daily quota"];
+for (const message of notQuota) {
+  ok(fixed.isDailyTranslateQuotaError_(new Error(message)) === false, "not daily quota: " + message);
+  const counter = { n: 0 };
+  const app = loadGs(modifiedRemind, {
+    translate() {
+      counter.n += 1;
+      throw new Error(message);
+    },
+  });
+  const got = app.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
+  ok(remarkOf(got) === "Catatan: 花生過敏", "generic fallback for " + message + ": " + got);
+  ok(counter.n === 2, "generic retry for " + message + ": " + counter.n);
+  ok(JSON.stringify(app.__sleeps) === JSON.stringify([250]), "generic 250ms for " + message + ": " + JSON.stringify(app.__sleeps));
+}
+
+ok(
+  fixed.isDailyTranslateQuotaError_(new Error("Service invoked too many times in a short time: translate.")) === false,
+  "short-time is not daily quota",
+);
+ok(
+  fixed.isShortTimeLimitError_(new Error("Service invoked too many times in a short time: translate.")) === true,
+  "short-time detector",
+);
+
+{
+  const counter = { n: 0 };
+  const app = loadGs(modifiedRemind, {
+    translate() {
+      counter.n += 1;
+      throw new Error("Service invoked too many times: translate.");
+    },
+  });
+  app.translateTaskCnToId(amountLine(pairRemark));
+  const afterTask = counter.n;
+  const note = app.translateNoteCnToId("臨時改爐火");
+  ok(note === "臨時改爐火", "C-column after quota keeps Chinese: " + note);
+  ok(counter.n === afterTask + 1, "C-column null cache may call once after task quota: " + counter.n);
+  ok(app.__sleeps.length === 0, "C-column quota did not sleep: " + JSON.stringify(app.__sleeps));
+}
 
 // --- busy day: 9 dine-in + 3 takeout, cached call bound ---
 const busyCn = sync.buildDigestText_(BUSY_DAY.day, BUSY_DAY.date, BUSY_DAY.time, BUSY_DAY.lunch, BUSY_DAY.dinner);

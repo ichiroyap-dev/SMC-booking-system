@@ -1,10 +1,12 @@
 /**
  * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
  * 中文總覽、讀表、寫表、LINE 發送都沒改。
- * 上線前要先把線上腳本拉下來，和 original/LineDailyRemind.gs 對過；線上可能已不同。
+ * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
  * 備註翻譯還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
- * 一般翻譯錯誤只暫停 250ms 再試一次（單次失敗的暫停，不是整則多等約 3 秒）。
- * 每日翻譯配額用盡則不暫停、不重試，該段直接留原文。
+ * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
+ * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。都不是整則固定多等約 3 秒。
+ * 「Service invoked too many times」且不是 in a short time：不暫停、不重試。
+ * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，仍可能再呼叫一次。
  */
 function checkAndSendDailyReminders() {
   // ======= 1. 系統安全性憑證設定 =======
@@ -372,12 +374,6 @@ function protectRemarkTokens_(text) {
   return { text: src, tokens: tokens };
 }
 
-function formatProtectedTokenForId_(token) {
-  var raw = String(token || "");
-  if (/^\d+(?:\.\d+)?\s*[Kk]\s*[Xx]?\d*\s*[Aa]$/.test(raw)) return raw;
-  return raw.replace(/[,，](\d{3})/g, ".$1");
-}
-
 function listPlaceholderIds_(text) {
   var ids = [];
   var re = /\uE000(\d+)\uE001/g;
@@ -410,13 +406,13 @@ function placeholdersIntact_(text, expectedIds) {
   return true;
 }
 
-function restorePlaceholders_(text, tokens, formatAmounts) {
-  // 缺的占位符不補到別處。呼叫端必須先確認這一段完整，否則改回該段原文。
+function restorePlaceholders_(text, tokens) {
+  // 金額與方案代碼照來源原文放回。缺的占位符不補到別段。
   var src = String(text || "");
   for (var i = 0; i < tokens.length; i++) {
     var ph = remarkPlaceholder_(i);
     if (src.indexOf(ph) === -1) continue;
-    var shown = formatAmounts ? formatProtectedTokenForId_(tokens[i]) : String(tokens[i]);
+    var shown = String(tokens[i]);
     var next = "";
     var from = 0;
     var idx = src.indexOf(ph);
@@ -424,12 +420,8 @@ function restorePlaceholders_(text, tokens, formatAmounts) {
       next += src.slice(from, idx);
       var before = next.slice(-1);
       var after = src.charAt(idx + ph.length);
-      var left = "";
-      var right = "";
-      if (formatAmounts) {
-        left = before && !/[\s([{\uFF08]/.test(before) ? " " : "";
-        right = after && !/[\s)\]}\uFF09,.;；、：:!?！？。|\n]/.test(after) ? " " : "";
-      }
+      var left = before && /[A-Za-z]/.test(before) ? " " : "";
+      var right = after && /[A-Za-z]/.test(after) ? " " : "";
       next += left + shown + right;
       from = idx + ph.length;
       idx = src.indexOf(ph, from);
@@ -470,16 +462,23 @@ function peelFrozenLabels_(core) {
 
 var QUOTA_FLAG_ = "\u0000quota";
 
-function isDailyTranslateQuotaError_(err) {
+function isShortTimeLimitError_(err) {
   var msg = String(err && (err.message || err) || "");
-  if (/in a short time/i.test(msg)) return false;
-  return /for one day/i.test(msg) || /quota/i.test(msg) || /每日/.test(msg) || /配額/.test(msg);
+  return /in a short time/i.test(msg);
 }
 
-function pauseBeforeTranslateRetry_() {
-  // 單次一般錯誤的暫停。不是整則備註固定多等約 3 秒。配額用盡不會進到這裡。
+function isDailyTranslateQuotaError_(err) {
+  // 官方同型：Service invoked too many times: Calendar.
+  // 必須先排除 in a short time。不要用單獨的 quota／每日，避免一般句子被當成配額。
+  if (isShortTimeLimitError_(err)) return false;
+  var msg = String(err && (err.message || err) || "");
+  return /Service invoked too many times\b/i.test(msg);
+}
+
+function pauseBeforeTranslateRetry_(ms) {
+  // 單次失敗的暫停，不是整則固定多等約 3 秒。配額用盡不會進到這裡。
   try {
-    Utilities.sleep(250);
+    Utilities.sleep(ms);
   } catch (e) {}
 }
 
@@ -503,7 +502,7 @@ function translatePieceCached_(cache, piece) {
         if (cache) cache[QUOTA_FLAG_] = true;
         break;
       }
-      if (attempt === 0) pauseBeforeTranslateRetry_();
+      if (attempt === 0) pauseBeforeTranslateRetry_(isShortTimeLimitError_(e) ? 1000 : 250);
     }
   }
   if (cache && key !== QUOTA_FLAG_) cache[key] = translated;
@@ -529,31 +528,32 @@ function translateRemarkBodyToId_(text, cache) {
     var trail = (part.match(/\s*$/) || [""])[0];
     var core = part.trim();
     if (!core) {
-      out.push(restorePlaceholders_(part, box.tokens, false));
+      out.push(part);
       continue;
     }
     var peeled = peelFrozenLabels_(core);
     if (cache && cache[QUOTA_FLAG_]) {
-      out.push(restorePlaceholders_(part, box.tokens, false));
+      out.push(part);
       continue;
     }
     if (!/[\u4e00-\u9fff]/.test(peeled.rest)) {
-      out.push(restorePlaceholders_(part, box.tokens, true));
+      out.push(part);
       continue;
     }
     var translatedCore = translatePieceCached_(cache, peeled.rest);
     if (cache && cache[QUOTA_FLAG_]) {
-      out.push(restorePlaceholders_(part, box.tokens, false));
+      out.push(part);
       continue;
     }
     var stitched = lead + peeled.prefix + translatedCore + trail;
     if (!placeholdersIntact_(stitched, ids)) {
-      out.push(restorePlaceholders_(part, box.tokens, false));
+      out.push(part);
       continue;
     }
-    out.push(restorePlaceholders_(stitched, box.tokens, true));
+    out.push(stitched);
   }
-  return unescapeSentinels_(normalizeIdPunctuation_(out.join("")));
+  // 先正規化仍含占位符的文字，最後才把來源金額放回，避免 $1,000已付 被逗號規則拆開。
+  return unescapeSentinels_(restorePlaceholders_(normalizeIdPunctuation_(out.join("")), box.tokens));
 }
 
 function normalizeFullwidthTime_(text) {
@@ -639,6 +639,7 @@ function translateNoteCnToId(noteCn) {
   }
   
   // 翻失敗、空結果或原樣退回時留下中文警示，不可改成「沒有說明」。
+  // cache 傳 null：總覽若已因每日配額停止，這裡仍可能再呼叫一次。
   var translated = translatePieceCached_(null, trans);
   if (!translated || !String(translated).trim() || translated === trans) return trans;
   return normalizeIdPunctuation_(translated);
