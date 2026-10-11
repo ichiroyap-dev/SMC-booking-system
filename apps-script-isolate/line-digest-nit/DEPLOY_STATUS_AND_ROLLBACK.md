@@ -53,5 +53,5 @@ PR #39 的回滾點，是**部署前那一刻**、對**同一個** Apps Script �
 - `in a short time`：暫停 1000ms，再試一次。這是官方 Calendar 範例的等待，不保證 LanguageApp 一定成功。
 - `Service invoked too many times`，而且訊息不是 `in a short time`：不暫停、不重試，該段留中文原文。同一則 `translateTaskCnToId` 後面的片段不再呼叫。
 - 這個錯誤訊息比對不是完整清單，沒有涵蓋所有 LanguageApp 或所有語系的寫法。實際遇到其他樣型再補，不要把現在的比對說成全部。
-- 金額與方案代碼先切開，只送中文片段。店務維護提醒整句翻一次。常見備註走 `REMARK_PHRASES_`，對到的詞不呼叫 LanguageApp。
-- C 欄 `translateNoteCnToId` 傳 null cache，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉的中文片段仍可能再呼叫 LanguageApp 一次；不重試、不暫停。不要把整則通知說成零次額外呼叫。忙日驗收要分開計算這些呼叫，不能只算 B 欄。真實驗收清單見 `REAL_LANGUAGEAPP_ACCEPTANCE.md`。
+- 金額與方案代碼先切開，不送進 LanguageApp。對照必須吃完整段才用；有金額卻吃不滿就整段留中文。店務維護提醒整句翻一次，同一套對照也用在整行。
+- C 欄 `translateNoteCnToId` 傳 null cache，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉、而且沒有金額的整段仍可能再呼叫 LanguageApp 一次；不重試、不暫停。不要把整則通知說成零次額外呼叫。忙日驗收要分開計算這些呼叫，不能只算 B 欄。真實驗收清單見 `REAL_LANGUAGEAPP_ACCEPTANCE.md`。

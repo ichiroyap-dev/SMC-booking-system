@@ -12,7 +12,7 @@ export const PHRASEBOOK = {
   "桶仔雞2隻": "ayam tong 2 ekor",
   "雞湯1份": "sup ayam 1 porsi",
   "9大3小": "9 dewasa 3 anak",
-  "啤酂10箱要冰": "bir 10 kotak harus dingin",
+  "啤酒10箱要冰": "bir 10 kotak harus dingin",
   "12點到": "tiba pukul 12",
   "２份": "2 porsi",
   "要VIP桌": "minta meja VIP",
@@ -122,7 +122,7 @@ export const BUSY_DAY = {
   dinner: [
     dine("17:30", "測試06", "(2)", ""),
     dine("17:40", "測試07", "(5k1a)", "5k1a"),
-    dine("18:00", "測試08先生", "(6)", "啤酂10箱要冰"),
+    dine("18:00", "測試08先生", "(6)", "啤酒10箱要冰"),
     dine("18:10", "測試09小姐", "(4)", "12點到"),
     take("17:00", "外帶01", "桶仔雞2隻、雞湯1份"),
     take("17:20", "外帶02", "２份"),
@@ -131,7 +131,7 @@ export const BUSY_DAY = {
 };
 
 export const BUSY_DAY_CALLS = [
-  "啤酂10箱要冰",
+  "啤酒10箱要冰",
 ];
 
 export const HEADING_CASES = [

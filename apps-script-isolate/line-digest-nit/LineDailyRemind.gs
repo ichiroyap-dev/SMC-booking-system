@@ -4,11 +4,13 @@
  * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
  * 備註翻譯還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
  * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
- * 金額與方案代碼在送翻前切開，只把中文片段送進 LanguageApp，再照原順序接回。不靠私用區記號。
- * 店務維護提醒（整行退回）整句翻一次，不按逗號切開。失敗就整句留原文。
- * 常見備註先走 REMARK_PHRASES_，長詞優先。一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
+ * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
+ * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
+ * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。
+ * 店務維護提醒整句翻一次，不按逗號切開。同一套對照也用在整行。失敗就整句留原文。
+ * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
  * 「Service invoked too many times」且不是 in a short time：不暫停、不重試。
- * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，沒有整欄停止旗標；每個尚未被對照吃掉的中文片段仍可能各呼叫一次，不重試、不暫停。
+ * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，沒有整欄停止旗標；每個尚未被對照吃掉、而且沒有金額的整段仍可能各呼叫一次，不重試、不暫停。
  */
 function checkAndSendDailyReminders() {
   // ======= 1. 系統安全性憑證設定 =======
@@ -323,7 +325,7 @@ function translateTaskCnToId(taskCn) {
       continue;
     }
 
-    // 店務維護提醒：整句翻一次，不按逗號切開。金額仍先切走，失敗就整句留原文。
+    // 店務維護提醒：整句翻一次。對照吃得滿才用；有金額卻吃不滿就整句留原文。
     translatedLines.push(translateRemarkBodyToId_(line, translateCache, true));
   }
   return translatedLines.join("\n");
@@ -513,8 +515,8 @@ function translatePieceCached_(cache, piece) {
   return translated;
 }
 
-// 固定備註對照。比對時長詞優先。第三欄 true 表示印尼文還要店裡員工確認。
-// 整張表與開放句型寫在 REAL_LANGUAGEAPP_ACCEPTANCE.md。改譯文只改這個陣列。
+// 固定備註對照。比對時長詞優先，而且要吃完整段。第三欄 true 表示印尼文還要店裡員工確認。
+// 雞牛蛋奶蝦葱蔥只當封閉句型的 X。整張表寫在 REAL_LANGUAGEAPP_ACCEPTANCE.md。改譯文只改這個陣列。
 var REMARK_PHRASES_ = [
   ["對蝦子過敏", "alergi udang", false],
   ["花生過敏", "alergi kacang", false],
@@ -565,61 +567,111 @@ function asciiDigits_(text) {
   });
 }
 
+// 這些單字會切開牛奶、蛋糕、蔥花。自由配對不用，只當封閉句型的 X。
+var SINGLE_CHAR_X_ = { "雞": true, "牛": true, "蛋": true, "奶": true, "蝦": true, "葱": true, "蔥": true };
+
 function longestPhraseAt_(text, index) {
   var best = null;
   var i;
   for (i = 0; i < REMARK_PHRASES_.length; i++) {
     var zh = REMARK_PHRASES_[i][0];
+    if (SINGLE_CHAR_X_[zh]) continue;
     if (text.indexOf(zh, index) !== index) continue;
     if (!best || zh.length > best.len) best = { len: zh.length, id: REMARK_PHRASES_[i][1] };
   }
   return best;
 }
 
+function singleCharXId_(ch) {
+  if (!SINGLE_CHAR_X_[ch]) return "";
+  var i;
+  for (i = 0; i < REMARK_PHRASES_.length; i++) {
+    if (REMARK_PHRASES_[i][0] === ch) return REMARK_PHRASES_[i][1];
+  }
+  return "";
+}
+
 function glossRunAt_(text, index) {
+  // 只串多字詞。過敏與單字 X 不在這裡吃掉。
   var parts = [];
   var i = index;
   while (i < text.length) {
+    if (text.slice(i, i + 2) === "過敏") break;
     var phrase = longestPhraseAt_(text, i);
-    if (phrase) {
+    if (phrase && phrase.len > 1) {
       if (phrase.id) parts.push(phrase.id);
       i += phrase.len;
       continue;
     }
     var ch = text.charAt(i);
-    if (ch === "和" || ch === "與" || ch === "及") {
-      parts.push("dan");
-      i += 1;
-      continue;
-    }
-    if (ch === "或") {
-      parts.push("atau");
-      i += 1;
-      continue;
-    }
-    if (ch === "、") {
-      parts.push(",");
-      i += 1;
-      continue;
-    }
-    break;
+    var conj = ch === "和" || ch === "與" || ch === "及" || ch === "或" || ch === "、";
+    if (!conj) break;
+    var nxt = longestPhraseAt_(text, i + 1);
+    if (!nxt || nxt.len < 2 || text.slice(i + 1, i + 1 + nxt.len) === "過敏") break;
+    if (ch === "或") parts.push("atau");
+    else if (ch === "、") parts.push(",");
+    else parts.push("dan");
+    if (nxt.id) parts.push(nxt.id);
+    i += 1 + nxt.len;
   }
   return { len: i - index, id: parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() };
+}
+
+function matchClosedX_(rest, prefix, template) {
+  if (rest.indexOf(prefix) !== 0) return null;
+  var run = glossRunAt_(rest, prefix.length);
+  if (run.len > 0 && run.id && prefix.length + run.len === rest.length) {
+    return { len: rest.length, id: template + run.id };
+  }
+  if (rest.length === prefix.length + 1) {
+    var one = singleCharXId_(rest.charAt(prefix.length));
+    if (one) return { len: rest.length, id: template + one };
+  }
+  return null;
+}
+
+function matchAllergy_(rest) {
+  if (rest.charAt(0) !== "對") return null;
+  var parts = [];
+  var i = 1;
+  var first = longestPhraseAt_(rest, i);
+  if (first && first.len > 1 && rest.slice(i, i + first.len) !== "過敏") {
+    if (first.id) parts.push(first.id);
+    i += first.len;
+    while (i < rest.length && rest.slice(i, i + 2) !== "過敏") {
+      var ch = rest.charAt(i);
+      if (ch !== "和" && ch !== "與" && ch !== "及") break;
+      var nxt = longestPhraseAt_(rest, i + 1);
+      if (!nxt || nxt.len < 2 || rest.slice(i + 1, i + 1 + nxt.len) === "過敏") break;
+      parts.push("dan");
+      if (nxt.id) parts.push(nxt.id);
+      i += 1 + nxt.len;
+    }
+  } else if (rest.slice(i + 1, i + 3) === "過敏") {
+    var one = singleCharXId_(rest.charAt(i));
+    if (!one) return null;
+    parts.push(one);
+    i += 1;
+  } else {
+    return null;
+  }
+  if (!parts.length || rest.slice(i, i + 2) !== "過敏") return null;
+  return { len: i + 2, id: "alergi " + parts.join(" ").replace(/\s{2,}/g, " ").trim() };
 }
 
 function longestPatternAt_(text, index) {
   var rest = text.slice(index);
   var best = null;
   function consider(len, id) {
-    if (!len) return;
+    if (!len || !id) return;
     if (!best || len > best.len) best = { len: len, id: id };
   }
   var m = rest.match(/^([0-9０-９]+)大([0-9０-９]+)小/);
   if (m) consider(m[0].length, asciiDigits_(m[1]) + " dewasa " + asciiDigits_(m[2]) + " anak");
   m = rest.match(/^([0-9０-９]+)大/);
-  if (m) consider(m[0].length, asciiDigits_(m[1]) + " dewasa");
+  if (m && m[0].length === rest.length) consider(m[0].length, asciiDigits_(m[1]) + " dewasa");
   m = rest.match(/^([0-9０-９]+)小/);
-  if (m) consider(m[0].length, asciiDigits_(m[1]) + " anak");
+  if (m && m[0].length === rest.length) consider(m[0].length, asciiDigits_(m[1]) + " anak");
   m = rest.match(/^([0-9０-９]+)小朋友/);
   if (m) consider(m[0].length, asciiDigits_(m[1]) + " anak");
   m = rest.match(/^([0-9０-９]+)幼兒/);
@@ -634,61 +686,120 @@ function longestPatternAt_(text, index) {
   if (m) consider(m[0].length, "tiba jam " + asciiDigits_(m[1]));
   m = rest.match(/^([0-9０-９]{1,2})點到/);
   if (m) consider(m[0].length, "tiba jam " + asciiDigits_(m[1]));
-  var run;
-  if (rest.indexOf("不能吃") === 0) {
-    run = glossRunAt_(rest, 3);
-    if (run.len > 0) consider(3 + run.len, "tamu tidak bisa makan " + run.id);
-  }
-  if (rest.indexOf("可以吃") === 0) {
-    run = glossRunAt_(rest, 3);
-    if (run.len > 0) consider(3 + run.len, "tamu bisa makan " + run.id);
-  }
-  if (rest.indexOf("不要放") === 0) {
-    run = glossRunAt_(rest, 3);
-    if (run.len > 0) consider(3 + run.len, "jangan pakai " + run.id);
-  }
-  if (rest.indexOf("不要") === 0) {
-    run = glossRunAt_(rest, 2);
-    if (run.len > 0) consider(2 + run.len, "tanpa " + run.id);
-  }
-  if (rest.charAt(0) === "對") {
-    run = glossRunAt_(rest, 1);
-    if (run.len > 0 && rest.slice(1 + run.len, 3 + run.len) === "過敏") {
-      consider(1 + run.len + 2, "alergi " + run.id);
-    }
-  }
+  var closed = matchClosedX_(rest, "不能吃", "tamu tidak bisa makan ");
+  if (closed) consider(closed.len, closed.id);
+  closed = matchClosedX_(rest, "可以吃", "tamu bisa makan ");
+  if (closed) consider(closed.len, closed.id);
+  closed = matchClosedX_(rest, "不要放", "jangan pakai ");
+  if (closed) consider(closed.len, closed.id);
+  closed = matchClosedX_(rest, "不要", "tanpa ");
+  if (closed) consider(closed.len, closed.id);
+  var allergy = matchAllergy_(rest);
+  if (allergy) consider(allergy.len, allergy.id);
   return best;
 }
 
-function scanGloss_(text) {
-  var parts = [];
+function matchTokenAt_(text, index) {
+  var rest = String(text || "").slice(index);
+  var regs = [
+    /^\uE000E/,
+    /^\uE000F/,
+    /^\d+(?:\.\d+)?\s*[Kk]\s*[Xx]?\d*\s*[Aa]/,
+    /^(?:NT\s*)?[\$＄]\s*\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?/,
+    /^(?:NT\s*)?[\$＄]\s*\d+(?:\.\d+)?/,
+    /^\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?/
+  ];
+  var r;
+  for (r = 0; r < regs.length; r++) {
+    var found = rest.match(regs[r]);
+    if (found) return { len: found[0].length, text: found[0] };
+  }
+  return null;
+}
+
+function matchSpanPattern_(text, index) {
+  var rest = String(text || "").slice(index);
+  var token;
+  if (rest.indexOf("不要") === 0) {
+    token = matchTokenAt_(rest, 2);
+    if (token && rest.slice(2 + token.len, 2 + token.len + 2) === "改成") {
+      var other = matchTokenAt_(rest, 2 + token.len + 2);
+      if (other) {
+        return { len: 2 + token.len + 2 + other.len, id: "ganti " + token.text + " menjadi " + other.text };
+      }
+    }
+  }
+  if (rest.indexOf("加點") === 0) {
+    token = matchTokenAt_(rest, 2);
+    if (token && rest.slice(2 + token.len, 2 + token.len + 2) === "一份") {
+      return { len: 2 + token.len + 2, id: "tambah " + token.text + " 1 porsi" };
+    }
+  }
+  var words = [["訂金", "uang muka"], ["尾款", "sisa pembayaran"], ["找零", "kembalian"]];
+  var w;
+  for (w = 0; w < words.length; w++) {
+    if (rest.indexOf(words[w][0]) !== 0) continue;
+    token = matchTokenAt_(rest, words[w][0].length);
+    if (!token) continue;
+    var after = words[w][0].length + token.len;
+    var tail = "";
+    var extra = 0;
+    if (rest.slice(after, after + 2) === "已付") {
+      tail = " sudah dibayar";
+      extra = 2;
+    } else if (rest.slice(after, after + 2) === "未付") {
+      tail = " belum dibayar";
+      extra = 2;
+    }
+    return { len: after + extra, id: words[w][1] + " " + token.text + tail };
+  }
+  return null;
+}
+
+function isSkippableChar_(ch) {
+  if (!ch) return false;
+  if (/^[的了吧呢啊嗎呀嘛哦喔]$/.test(ch)) return true;
+  if (/[\u4e00-\u9fff]/.test(ch) || /[A-Za-z0-9]/.test(ch)) return false;
+  return true;
+}
+
+function segmentHasToken_(text) {
   var src = String(text || "");
+  var i;
+  for (i = 0; i < src.length; i++) {
+    if (matchTokenAt_(src, i)) return true;
+  }
+  return false;
+}
+
+function coverSegment_(text) {
+  var src = String(text || "");
+  var parts = [];
   var i = 0;
   while (i < src.length) {
-    var phrase = longestPhraseAt_(src, i);
-    var pattern = longestPatternAt_(src, i);
     var best = null;
-    if (phrase && (!pattern || phrase.len >= pattern.len)) best = phrase;
-    else if (pattern) best = pattern;
+    var phrase = longestPhraseAt_(src, i);
+    if (phrase) best = { len: phrase.len, id: phrase.id, kind: "id" };
+    var pattern = longestPatternAt_(src, i);
+    if (pattern && (!best || pattern.len > best.len)) best = { len: pattern.len, id: pattern.id, kind: "id" };
+    var span = matchSpanPattern_(src, i);
+    if (span && (!best || span.len > best.len)) best = { len: span.len, id: span.id, kind: "id" };
+    var token = matchTokenAt_(src, i);
+    if (token && (!best || token.len > best.len)) best = { len: token.len, id: token.text, kind: "token" };
     if (best) {
-      if (best.id) parts.push({ type: "id", text: best.id });
+      if (best.kind === "token") parts.push({ type: "token", text: best.id });
+      else if (best.id) parts.push({ type: "id", text: best.id });
       i += best.len;
       continue;
     }
-    var j = i + 1;
-    while (j < src.length && !longestPhraseAt_(src, j) && !longestPatternAt_(src, j)) j++;
-    parts.push({ type: "src", text: src.slice(i, j) });
-    i = j;
+    if (isSkippableChar_(src.charAt(i))) {
+      parts.push({ type: "src", text: src.charAt(i) });
+      i += 1;
+      continue;
+    }
+    return null;
   }
   return parts;
-}
-
-function isSkippablePiece_(text) {
-  var t = String(text || "").trim();
-  if (!t) return true;
-  if (!/[\u4e00-\u9fff]/.test(t) && !/[A-Za-z]/.test(t)) return true;
-  if (/^[的了吧呢啊嗎呀嘛哦喔]$/.test(t)) return true;
-  return false;
 }
 
 function isInsideAmount_(whole, offset) {
@@ -755,30 +866,7 @@ function pieceAccepted_(source, translated) {
   return true;
 }
 
-function translateTextRun_(piece, cache, wholeSentence) {
-  var parts = wholeSentence ? [{ type: "src", text: piece }] : scanGloss_(piece);
-  var rendered = [];
-  var g;
-  for (g = 0; g < parts.length; g++) {
-    if (parts[g].type === "id") {
-      if (parts[g].text) rendered.push(parts[g].text);
-      continue;
-    }
-    var srcPart = parts[g].text;
-    if (isSkippablePiece_(srcPart) || !/[\u4e00-\u9fff]/.test(srcPart)) {
-      rendered.push(srcPart);
-      continue;
-    }
-    if (cache && cache[QUOTA_FLAG_]) return null;
-    var translated = translatePieceCached_(cache, srcPart);
-    if (cache && cache[QUOTA_FLAG_]) return null;
-    if (!pieceAccepted_(srcPart, translated)) return null;
-    rendered.push(stripAddedEnding_(srcPart, translated));
-  }
-  return rendered;
-}
-
-function translateOneSegment_(part, cache, wholeSentence) {
+function translateOneSegment_(part, cache) {
   var lead = (part.match(/^\s*/) || [""])[0];
   var trail = (part.match(/\s*$/) || [""])[0];
   var core = part.trim();
@@ -786,32 +874,25 @@ function translateOneSegment_(part, cache, wholeSentence) {
   var peeled = peelFrozenLabels_(core);
   if (cache && cache[QUOTA_FLAG_]) return null;
   if (!/[\u4e00-\u9fff]/.test(peeled.rest)) return lead + peeled.prefix + peeled.rest + trail;
-  var runs = splitAroundTokens_(peeled.rest);
-  var rendered = [];
-  var r;
-  for (r = 0; r < runs.length; r++) {
-    if (runs[r].type === "token") {
-      rendered.push(runs[r].text);
-      continue;
+  var covered = coverSegment_(peeled.rest);
+  if (covered) {
+    var body = "";
+    var i;
+    for (i = 0; i < covered.length; i++) {
+      var next = covered[i].text;
+      if (!next) continue;
+      if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
+      body += next;
     }
-    if (isSkippablePiece_(runs[r].text)) {
-      rendered.push(runs[r].text);
-      continue;
-    }
-    var pieces = translateTextRun_(runs[r].text, cache, wholeSentence);
-    if (!pieces) return null;
-    var p;
-    for (p = 0; p < pieces.length; p++) rendered.push(pieces[p]);
+    return lead + peeled.prefix + body + trail;
   }
-  var body = "";
-  var i;
-  for (i = 0; i < rendered.length; i++) {
-    var next = rendered[i];
-    if (!next) continue;
-    if (body && needsJoinSpace_(body.slice(-1), next.charAt(0))) body += " ";
-    body += next;
-  }
-  return lead + peeled.prefix + body + trail;
+  // 金額或方案代碼旁邊吃不滿：整段留原文，不把碎片送出去。
+  if (segmentHasToken_(peeled.rest)) return null;
+  if (cache && cache[QUOTA_FLAG_]) return null;
+  var translated = translatePieceCached_(cache, peeled.rest);
+  if (cache && cache[QUOTA_FLAG_]) return null;
+  if (!pieceAccepted_(peeled.rest, translated)) return null;
+  return lead + peeled.prefix + stripAddedEnding_(peeled.rest, translated) + trail;
 }
 
 function splitRemarkSegments_(text) {
@@ -973,7 +1054,7 @@ function translateNoteCnToId(noteCn) {
   if (known && !known.tail) return known.fixed;
   if (known) return joinOperationalNote_(known.fixed, known.tail);
   // 翻失敗、空結果或原樣退回時留下中文警示，不可改成「沒有說明」。
-  // cache 傳 null，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉的中文片段仍可能各呼叫一次；不重試、不暫停。忙日驗收要算進這些呼叫。
+  // cache 傳 null，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉、而且沒有金額的整段仍可能各呼叫一次；不重試、不暫停。忙日驗收要算進這些呼叫。
   return translateRemarkBodyToId_(trans, null);
 }
 

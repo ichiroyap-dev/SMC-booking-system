@@ -284,8 +284,8 @@ const partyGot = assertPieceCalls(
 );
 const beerGot = assertPieceCalls(
   "qty mid-phrase",
-  "18:00 測試08先生 (6) | 備註：啤酂10箱要冰",
-  ["啤酂10箱要冰"],
+  "18:00 測試08先生 (6) | 備註：啤酒10箱要冰",
+  ["啤酒10箱要冰"],
   "Catatan: bir 10 kotak harus dingin",
 );
 const arriveGot = assertPieceCalls(
@@ -470,7 +470,8 @@ const mangled = loadGs(modifiedRemind, {
   },
 });
 const mangledGot = mangled.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：雜項$1,000；別項$2,000");
-ok(remarkOf(mangledGot) === "Catatan: biaya lain $1,000; 別項$2,000", "mangled placeholder falls back: " + mangledGot);
+ok(remarkOf(mangledGot) === "Catatan: 雜項$1,000; 別項$2,000", "token-adjacent fragments stay Chinese: " + mangledGot);
+ok(newCalls.length === 0, "token-adjacent fragments were sent: " + JSON.stringify(newCalls));
 ok(mangledGot.indexOf("\uE000") === -1, "mangled sentinel leaked: " + mangledGot);
 
 resetCalls();
@@ -482,14 +483,15 @@ const duplicated = loadGs(modifiedRemind, {
   },
 });
 const duplicatedGot = duplicated.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：雜項$1,000；別項$2,000");
-ok(remarkOf(duplicatedGot) === "Catatan: biaya lain $1,000; 別項別項$2,000", "duplicated piece does not duplicate the amount: " + duplicatedGot);
+ok(remarkOf(duplicatedGot) === "Catatan: 雜項$1,000; 別項$2,000", "duplicated piece does not duplicate the amount: " + duplicatedGot);
 ok((duplicatedGot.match(/\$2,000/g) || []).length === 1, "duplicated amount was repeated: " + duplicatedGot);
+ok(newCalls.length === 0, "duplicated amount sent a fragment: " + JSON.stringify(newCalls));
 ok(duplicatedGot.indexOf("$1,000 $2") === -1 && duplicatedGot.indexOf("$1.000") === -1, "duplicated token was appended or reformatted: " + duplicatedGot);
 
 const qtyAmountGot = assertPieceCalls(
   "amount regex does not swallow quantity",
   "11:00 外帶01 | 備註：$500,2隻雞",
-  [],
+  ["2隻雞"],
   "Catatan: $500, 2 ekor ayam",
 );
 ok(qtyAmountGot.indexOf("$500,2") === -1, "quantity stayed inside the amount: " + qtyAmountGot);
@@ -508,7 +510,8 @@ const sentinelApp = loadGs(modifiedRemind, {
   },
 });
 const sentinelGot = sentinelApp.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：標記\uE000；$1,000");
-ok(remarkOf(sentinelGot) === "Catatan: tanda\uE000; $1,000", "source sentinel collided with placeholder: " + JSON.stringify(sentinelGot));
+ok(remarkOf(sentinelGot) === "Catatan: 標記\uE000; $1,000", "source sentinel stays beside the amount: " + JSON.stringify(sentinelGot));
+ok(newCalls.length === 0, "sentinel segment sent a fragment: " + JSON.stringify(newCalls));
 
 const commaQtyGot = assertPieceCalls(
   "comma before quantity is spaced",
@@ -548,8 +551,8 @@ const quotaApp = loadGs(modifiedRemind, {
     throw new Error("Service invoked too many times for one day: translate");
   },
 });
-const quotaGot = quotaApp.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：雜項$1,000；別項$2,000");
-ok(remarkOf(quotaGot) === "Catatan: 雜項$1,000; 別項$2,000", "daily quota skips retry: " + quotaGot);
+const quotaGot = quotaApp.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：請改菜單；請再確認");
+ok(remarkOf(quotaGot) === "Catatan: 請改菜單; 請再確認", "daily quota skips retry: " + quotaGot);
 ok(quotaN === 1, "daily quota should not call the second segment or retry: " + quotaN);
 ok(quotaApp.__sleeps.length === 0, "daily quota slept: " + JSON.stringify(quotaApp.__sleeps));
 
@@ -607,21 +610,18 @@ const amountShapes = [
   {
     name: "$1,000",
     remark: "雜項$1,000收妥",
-    success: "Catatan: biaya lain $1,000 diterima",
     source: "Catatan: 雜項$1,000收妥",
     forbidNt: true,
   },
   {
     name: "NT$12,000",
     remark: "雜項NT$12,000收妥",
-    success: "Catatan: biaya lain NT$12,000 diterima",
     source: "Catatan: 雜項NT$12,000收妥",
     forbidNt: false,
   },
   {
     name: "$1,000.50",
     remark: "雜項$1,000.50收妥",
-    success: "Catatan: biaya lain $1,000.50 diterima",
     source: "Catatan: 雜項$1,000.50收妥",
     forbidNt: true,
   },
@@ -633,36 +633,24 @@ for (const shape of amountShapes) {
     const counter = { n: 0 };
     const app = amountApp(mode, counter);
     const got = app.translateTaskCnToId(amountLine(shape.remark));
-    const want = mode === "success" ? shape.success : shape.source;
+    const want = shape.source;
     const label = "amount " + mode + " keeps " + shape.name;
     ok(remarkOf(got) === want, label + ": " + got);
     ok(noBrokenAmount(got), label + " broke the number: " + got);
     ok(got.indexOf(shape.remark.indexOf("NT$") === 0 ? "NT$12,000" : shape.remark.slice(0, shape.remark.search(/[\u4e00-\u9fff]/))) !== -1, label + " dropped the source token: " + got);
     if (shape.forbidNt) ok(got.indexOf("NT$") === -1, label + " added NT$: " + got);
-    if (mode === "quota") {
-      ok(counter.n === 1, label + " retried: " + counter.n);
-      ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
-    } else if (mode === "generic") {
-      ok(counter.n === 2, label + " call count: " + counter.n);
-      ok(JSON.stringify(app.__sleeps) === JSON.stringify([250]), label + " pause: " + JSON.stringify(app.__sleeps));
-    } else if (mode === "success") {
-      ok(counter.n === 2, label + " call count: " + counter.n);
-      ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
-    } else {
-      ok(counter.n === 1, label + " call count: " + counter.n);
-      ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
-    }
+    ok(counter.n === 0, label + " sent a fragment: " + counter.n);
+    ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
   }
 }
 
 const pairRemark = "雜項$1,000收妥；別項$2,000未結";
 const pairSource = "Catatan: 雜項$1,000收妥; 別項$2,000未結";
-const pairSuccess = "Catatan: biaya lain $1,000 diterima; item lain $2,000 belum selesai";
 for (const mode of amountModes) {
   const counter = { n: 0 };
   const app = amountApp(mode, counter);
   const got = app.translateTaskCnToId(amountLine(pairRemark));
-  const want = mode === "success" ? pairSuccess : pairSource;
+  const want = pairSource;
   const label = "two amounts " + mode;
   ok(remarkOf(got) === want, label + ": " + got);
   ok(noBrokenAmount(got), label + " broke a number: " + got);
@@ -671,15 +659,8 @@ for (const mode of amountModes) {
   ok(halves[0].indexOf("$1,000") !== -1 && halves[0].indexOf("$2,000") === -1, label + " first segment: " + halves[0]);
   ok(halves[1].indexOf("$2,000") !== -1 && halves[1].indexOf("$1,000") === -1, label + " second segment: " + halves[1]);
   ok(got.indexOf("NT$") === -1, label + " added NT$: " + got);
-  if (mode === "quota") {
-    ok(counter.n === 1, label + " called the second segment: " + counter.n);
-    ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
-  } else if (mode === "generic") {
-    ok(counter.n === 4, label + " call count: " + counter.n);
-    ok(JSON.stringify(app.__sleeps) === JSON.stringify([250, 250]), label + " pause: " + JSON.stringify(app.__sleeps));
-  } else {
-    ok(counter.n === (mode === "success" ? 4 : 2), label + " call count: " + counter.n);
-  }
+  ok(counter.n === 0, label + " sent a fragment: " + counter.n);
+  ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
 }
 
 const quotaMessages = [
@@ -698,9 +679,8 @@ for (const message of quotaMessages) {
       throw new Error(message);
     },
   });
-  const got = app.translateTaskCnToId(amountLine(pairRemark));
-  ok(remarkOf(got) === pairSource, "quota path " + message + ": " + got);
-  ok(noBrokenAmount(got), "quota path spaced " + message + ": " + got);
+  const got = app.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單；請再確認");
+  ok(remarkOf(got) === "Catatan: 請改菜單; 請再確認", "quota path " + message + ": " + got);
   ok(counter.n === 1, "quota path calls " + message + ": " + counter.n);
   ok(app.__sleeps.length === 0, "quota path slept " + message + ": " + JSON.stringify(app.__sleeps));
 }
@@ -738,7 +718,7 @@ ok(
       throw new Error("Service invoked too many times: translate.");
     },
   });
-  app.translateTaskCnToId(amountLine(pairRemark));
+  app.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單");
   const afterTask = counter.n;
   const note = app.translateNoteCnToId("臨時改爐火");
   ok(note === "臨時改爐火", "C-column after quota keeps Chinese: " + note);
@@ -815,9 +795,9 @@ function assertTokenOnceInOwnSentence(label, body, token) {
 }
 
 const protectedShapes = [
-  { name: "$1,000", sentence: "雜項$1,000收妥", success: "biaya lain $1,000 diterima", source: "雜項$1,000收妥", token: "$1,000" },
-  { name: "NT$12,000", sentence: "雜項NT$12,000收妥", success: "biaya lain NT$12,000 diterima", source: "雜項NT$12,000收妥", token: "NT$12,000" },
-  { name: "$1,000.50", sentence: "雜項$1,000.50收妥", success: "biaya lain $1,000.50 diterima", source: "雜項$1,000.50收妥", token: "$1,000.50" },
+  { name: "$1,000", sentence: "雜項$1,000收妥", source: "雜項$1,000收妥", token: "$1,000" },
+  { name: "NT$12,000", sentence: "雜項NT$12,000收妥", source: "雜項NT$12,000收妥", token: "NT$12,000" },
+  { name: "$1,000.50", sentence: "雜項$1,000.50收妥", source: "雜項$1,000.50收妥", token: "$1,000.50" },
 ];
 const protectedModes = ["success", "empty", "identity", "generic", "quota", "lost", "renumbered", "duplicated"];
 const protectedEntries = ["B-column", "whole-line", "C-generic", "C-fixed-tail", "C-takeout-tail", "C-normal-tail"];
@@ -845,17 +825,7 @@ function runProtected(entry, mode, sentence) {
 }
 
 function expectedProtectedBody(entry, mode, shape) {
-  const core = mode === "success" ? shape.success : shape.source;
-  return (protectedPrefixes[entry] || "") + core;
-}
-
-function expectedProtectedCalls(entry, mode, segments, pieces) {
-  const each = pieces || 2;
-  if (mode === "generic") return { n: segments * 2, sleeps: Array(segments).fill(250) };
-  if (mode === "success") return { n: segments * each, sleeps: [] };
-  if (mode === "quota" && (entry === "B-column" || entry === "whole-line")) return { n: 1, sleeps: [] };
-  if (mode === "quota") return { n: segments, sleeps: [] };
-  return { n: segments, sleeps: [] };
+  return (protectedPrefixes[entry] || "") + shape.source;
 }
 
 for (const entry of protectedEntries) {
@@ -866,7 +836,7 @@ for (const entry of protectedEntries) {
       ok(got.body === expectedProtectedBody(entry, mode, shape), label + ": " + got.body);
       assertTokenOnceInOwnSentence(label, got.body, shape.token);
       assertNoRawAmountSent(label + " never sends raw amount", got.calls);
-      const expectCalls = expectedProtectedCalls(entry, mode, 1);
+      const expectCalls = { n: 0, sleeps: [] };
       ok(got.calls.length === expectCalls.n, label + " call count: " + got.calls.length);
       ok(JSON.stringify(got.app.__sleeps) === JSON.stringify(expectCalls.sleeps), label + " pause: " + JSON.stringify(got.app.__sleeps));
       if (entry === "C-fixed-tail") {
@@ -880,14 +850,12 @@ for (const entry of protectedEntries) {
 }
 
 const tripleSentence = "雜項$1,000收妥；別項NT$12,000未結；零頭$1,000.50收妥";
-const tripleSuccess = "biaya lain $1,000 diterima; item lain NT$12,000 belum selesai; sisa kecil $1,000.50 diterima";
 const tripleSource = "雜項$1,000收妥; 別項NT$12,000未結; 零頭$1,000.50收妥";
 for (const entry of protectedEntries) {
   for (const mode of protectedModes) {
     const label = "protected " + entry + " " + mode + " keeps three amounts in their sentences";
     const got = runProtected(entry, mode, tripleSentence);
-    const core = mode === "success" ? tripleSuccess : tripleSource;
-    const want = (protectedPrefixes[entry] || "") + core;
+    const want = (protectedPrefixes[entry] || "") + tripleSource;
     ok(got.body === want, label + ": " + got.body);
     const amountSentences = got.body.split("; ").map((part) => part.trim()).filter((part) => part.indexOf("$") !== -1);
     ok(amountSentences.length === 3, label + " sentence count: " + got.body);
@@ -896,12 +864,7 @@ for (const entry of protectedEntries) {
     ok(countExactToken(amountSentences[2], "$1,000.50") === 1 && countExactToken(amountSentences[2], "$1,000") === 0, label + " third: " + amountSentences[2]);
     ok(got.body.indexOf("Rp") === -1 && got.body.indexOf("$1.000") === -1 && got.body.indexOf("$1, 000") === -1, label + " rewrote an amount: " + got.body);
     assertNoRawAmountSent(label + " never sends raw amount", got.calls);
-    // B 欄同一則 cache：第三段的「收妥」沿用第一段，少一次呼叫。C 欄 cache 是 null，三段都各打兩次。
-    const expectCalls = entry === "whole-line"
-      ? (mode === "success" ? { n: 4, sleeps: [] } : mode === "generic" ? { n: 2, sleeps: [250] } : { n: 1, sleeps: [] })
-      : entry === "B-column" && mode === "success"
-        ? { n: 5, sleeps: [] }
-        : expectedProtectedCalls(entry, mode, 3, 2);
+    const expectCalls = { n: 0, sleeps: [] };
     ok(got.calls.length === expectCalls.n, label + " call count: " + got.calls.length);
     ok(JSON.stringify(got.app.__sleeps) === JSON.stringify(expectCalls.sleeps), label + " pause: " + JSON.stringify(got.app.__sleeps));
   }
@@ -939,6 +902,79 @@ ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：花�
 ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(newCalls));
 
 {
+  function remarkLine(remark) {
+    return "12:00 測試甲先生 (2) | 備註：" + remark;
+  }
+  function checkDict(label, remark, want) {
+    resetCalls();
+    const got = fixed.translateTaskCnToId(remarkLine(remark));
+    ok(remarkOf(got) === "Catatan: " + want, label + "\n  got: " + remarkOf(got));
+    ok(newCalls.length === 0, label + " calls: " + JSON.stringify(newCalls));
+  }
+  const wholeCalls = [];
+  const wholeApp = loadGs(modifiedRemind, {
+    translate(text) {
+      wholeCalls.push(String(text));
+      return "UTUH:" + String(text);
+    },
+  });
+  function checkSend(label, remark) {
+    wholeCalls.length = 0;
+    const got = wholeApp.translateTaskCnToId(remarkLine(remark));
+    ok(remarkOf(got) === "Catatan: UTUH:" + remark, label + "\n  got: " + remarkOf(got));
+    ok(JSON.stringify(wholeCalls) === JSON.stringify([remark]), label + " calls: " + JSON.stringify(wholeCalls));
+  }
+  checkSend("single char does not split 牛奶", "牛奶");
+  ok(remarkOf(wholeApp.translateTaskCnToId(remarkLine("牛奶"))).indexOf("daging sapi") === -1, "牛奶 became daging sapi");
+  checkSend("single char does not split 奶奶生日", "奶奶生日");
+  checkSend("single char does not split 不要蔥花", "不要蔥花");
+  checkSend("single char does not split 不要奶油", "不要奶油");
+  checkSend("single char does not split 不要雞皮", "不要雞皮");
+  checkSend("single char does not split 不要蝦仁", "不要蝦仁");
+  checkSend("single char does not split 自備蛋糕", "自備蛋糕");
+  checkSend("single char does not split 半隻土雞", "半隻土雞");
+  checkDict("single char X at segment end 不要雞", "不要雞", "tanpa ayam");
+  checkDict("single char X at segment end 對蝦過敏", "對蝦過敏", "alergi udang");
+  checkSend("不能吃雞皮 is not a partial negation", "不能吃雞皮");
+  ok(remarkOf(wholeApp.translateTaskCnToId(remarkLine("不能吃雞皮"))).indexOf("tidak") === -1, "不能吃雞皮 inverted the negation");
+  checkDict("N大 at segment end", "3大", "3 dewasa");
+  checkDict("N小 at segment end", "3小", "3 anak");
+  checkDict("N大 at segment end after a phrase", "靠窗3大", "dekat jendela 3 dewasa");
+  checkSend("N大 does not match 3大桌", "3大桌");
+  checkSend("N小 does not match 提早3小時到", "提早3小時到");
+  checkSend("N大 not at segment end 3大靠窗", "3大靠窗");
+  checkSend("mid-sentence dictionary does not fragment", "今晚不要辣的菜要先標記");
+  checkDict("allergy joins 對花生和蝦子過敏", "對花生和蝦子過敏", "alergi kacang dan udang");
+  checkDict("plan code phrase 不要A改成B", "不要5k1a改成6k1a", "ganti 5k1a menjadi 6k1a");
+  checkDict("plan code phrase 加點A一份", "加點5k1a一份", "tambah 5k1a 1 porsi");
+  checkDict("amount phrase 訂金X已付", "訂金$1,000已付", "uang muka $1,000 sudah dibayar");
+  checkDict("amount phrase 訂金X未付", "訂金$1,000未付", "uang muka $1,000 belum dibayar");
+  checkDict("amount phrase 尾款X", "尾款$2,000", "sisa pembayaran $2,000");
+  checkDict("amount phrase 找零X已付", "找零$1,000.50已付", "kembalian $1,000.50 sudah dibayar");
+  resetCalls();
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("加點5k1a"))) === "Catatan: 加點5k1a", "token-adjacent 加點 stays Chinese");
+  ok(newCalls.length === 0, "token-adjacent 加點 was sent: " + JSON.stringify(newCalls));
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("訂金$1,000請拍照"))) === "Catatan: 訂金$1,000請拍照", "uncovered amount phrase stays Chinese");
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("$1,000後"))) === "Catatan: $1,000後", "token-adjacent 後 stays Chinese");
+  const lineCalls = [];
+  const lineApp = loadGs(modifiedRemind, {
+    translate(text) {
+      lineCalls.push(String(text));
+      return "UTUH:" + String(text);
+    },
+  });
+  const paid = lineApp.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n訂金$1,000已付");
+  ok(paid.split("\n")[1] === "uang muka $1,000 sudah dibayar", "whole-line amount phrase: " + paid);
+  ok(lineCalls.length === 0, "whole-line amount phrase sent fragments: " + JSON.stringify(lineCalls));
+  const rpApp = loadGs(modifiedRemind, {
+    translate() {
+      return "Rp 1";
+    },
+  });
+  ok(remarkOf(rpApp.translateTaskCnToId(remarkLine("請改菜單"))) === "Catatan: 請改菜單", "whole segment Rp falls back");
+}
+
+{
   const calls = [];
   const app = loadGs(modifiedRemind, {
     translate(text) {
@@ -965,8 +1001,8 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
     },
   });
   const kept = amountWhole.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n費用$1,000，請拍照");
-  ok(amountCalls.every((text) => text.indexOf("$1,000") === -1), "maintenance amount is not sent: " + JSON.stringify(amountCalls));
-  ok(kept.split("\n")[1] === "biaya $1,000, mohon foto", "maintenance amount stays in the whole sentence: " + kept);
+  ok(amountCalls.length === 0, "maintenance amount is not sent: " + JSON.stringify(amountCalls));
+  ok(kept.split("\n")[1] === "費用$1,000, 請拍照", "maintenance amount stays in the whole sentence: " + kept);
 }
 
 resetCalls();
@@ -1011,7 +1047,7 @@ const busyCnLines = [
   "",
   "17:40 測試07 (5k1a) | 備註：5k1a",
   "",
-  "18:00 測試08先生 (6) | 備註：啤酂10箱要冰",
+  "18:00 測試08先生 (6) | 備註：啤酒10箱要冰",
   "",
   "18:10 測試09小姐 (4) | 備註：12點到",
   "",
