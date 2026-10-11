@@ -870,6 +870,26 @@ for (const entry of protectedEntries) {
   }
 }
 
+const verbLists = [
+  ["不能吃花生、蝦子", "tamu tidak bisa makan kacang dan udang"],
+  ["不要放香菜、花生", "jangan pakai daun ketumbar, jangan pakai kacang"],
+  ["不吃牛、雞蛋", "tamu tidak makan daging sapi dan telur"],
+  ["可以吃雞、花生", "tamu bisa makan ayam dan kacang"],
+];
+for (const entry of protectedEntries) {
+  for (const pair of verbLists) {
+    const label = "verb scope " + entry + " " + pair[0];
+    const got = runProtected(entry, "success", pair[0]);
+    const want = (protectedPrefixes[entry] || "") + pair[1];
+    ok(got.body === want, label + ": " + got.body);
+    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
+    if (pair[0].indexOf("可以吃") === 0) ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
+    if (pair[0].indexOf("不能吃") === 0) ok(sentence.indexOf(", udang") === -1, label + " dropped the second negation: " + sentence);
+    if (pair[0].indexOf("不要放") === 0) ok(sentence.indexOf(", kacang") === -1, label + " dropped the second jangan pakai: " + sentence);
+  }
+}
+
 const scopedNegation = [
   ["不要辣、花生", "tidak pedas, tanpa kacang"],
   ["不要辣、蝦子", "tidak pedas, tanpa udang"],
@@ -951,8 +971,7 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkSend("single char does not split 牛奶", "牛奶");
   ok(remarkOf(wholeApp.translateTaskCnToId(remarkLine("牛奶"))).indexOf("daging sapi") === -1, "牛奶 became daging sapi");
   checkSend("single char does not split 奶奶生日", "奶奶生日");
-  const scallion = checkChinese("single char does not split 不要蔥花", "不要蔥花");
-  ok(scallion === "Catatan: 不要蔥花", "不要蔥花 stayed Chinese: " + scallion);
+  checkDict("full word 不要蔥花", "不要蔥花", "tanpa daun bawang cincang");
   checkDict("full phrase 不要奶油", "不要奶油", "tanpa mentega");
   checkDict("full phrase 不要蝦仁", "不要蝦仁", "tanpa udang kupas");
   checkDict("full phrase 不要雞皮", "不要雞皮", "tanpa kulit ayam");
@@ -989,9 +1008,7 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkDict("trailing particle stripped 不要辣的", "不要辣的", "tidak pedas");
   checkDict("bare 元 stays original", "元", "元");
   checkDict("time word covers amount phrase", "今晚訂金$1,000已付", "malam ini uang muka $1,000 sudah dibayar");
-  const unscoped = checkChinese("unscoped allergy stays Chinese 花生、蒜過敏", "花生、蒜過敏");
-  ok(unscoped.indexOf("蒜") !== -1, "unscoped allergy dropped 蒜: " + unscoped);
-  ok(unscoped.indexOf("alergi") === -1, "unscoped allergy stitched a partial alergi: " + unscoped);
+  checkDict("allergy list includes 蒜", "花生、蒜過敏", "alergi kacang dan bawang putih");
   const between = checkChinese("unscoped allergy stays Chinese 花生靠窗過敏", "花生靠窗過敏");
   ok(between.indexOf("過敏") !== -1 && between.indexOf("alergi") === -1, "unscoped allergy stitched 花生靠窗過敏: " + between);
   checkSend("question 不要辣嗎 sends the whole segment", "不要辣嗎");
@@ -1000,9 +1017,7 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   const chairList = checkChinese("non-food 不要香菜、小孩椅 stays Chinese", "不要香菜、小孩椅");
   ok(chairList.indexOf("小孩椅") !== -1, "non-food negation dropped 小孩椅: " + chairList);
   ok(chairList.indexOf("kursi anak") === -1 && chairList.indexOf("daun ketumbar") === -1, "non-food negation translated a fragment: " + chairList);
-  const garlic = checkChinese("uncovered enumeration stays Chinese 不要香菜、蔥、蒜", "不要香菜、蔥、蒜");
-  ok(garlic.indexOf("蒜") !== -1, "uncovered enumeration dropped 蒜: " + garlic);
-  ok(garlic.indexOf("daun bawang") === -1, "uncovered enumeration translated a fragment: " + garlic);
+  checkDict("enumeration includes 蒜", "不要香菜、蔥、蒜", "tanpa daun ketumbar, tanpa daun bawang, tanpa bawang putih");
   checkDict("negation list keeps food exclusion 不要辣、花生", "不要辣、花生", "tidak pedas, tanpa kacang");
   checkDict("negation list keeps food exclusion 不要辣、蝦子", "不要辣、蝦子", "tidak pedas, tanpa udang");
   checkDict("negation list keeps food exclusion 不要油炸、花生", "不要油炸、花生", "jangan digoreng, tanpa kacang");
@@ -1015,6 +1030,34 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkDict("不吃X 不吃花生", "不吃花生", "tamu tidak makan kacang");
   const noEatSkin = checkChinese("不吃 unknown stays Chinese 不吃雞皮", "不吃雞皮");
   ok(noEatSkin === "Catatan: 不吃雞皮", "不吃雞皮 was guessed: " + noEatSkin);
+  checkDict("verb list 不能吃花生、蝦子", "不能吃花生、蝦子", "tamu tidak bisa makan kacang dan udang");
+  checkDict("verb list 不要放香菜、花生", "不要放香菜、花生", "jangan pakai daun ketumbar, jangan pakai kacang");
+  checkDict("verb list 不吃牛、雞蛋", "不吃牛、雞蛋", "tamu tidak makan daging sapi dan telur");
+  checkDict("verb list 可以吃雞、花生", "可以吃雞、花生", "tamu bisa makan ayam dan kacang");
+  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("可以吃雞、花生"))).indexOf("tidak") === -1, "可以吃 list added tidak");
+  checkDict("coverage 海鮮", "海鮮", "makanan laut");
+  checkDict("coverage 蒜", "蒜", "bawang putih");
+  checkDict("coverage 蔥花", "蔥花", "daun bawang cincang");
+  checkDict("coverage 蛋奶", "蛋奶", "telur dan susu");
+  checkDict("coverage 不要放辣", "不要放辣", "jangan pakai cabai");
+  checkDict("coverage 不要太鹹", "不要太鹹", "jangan terlalu asin");
+  checkDict("coverage 不吃辣", "不吃辣", "tamu tidak makan pedas");
+  checkDict("coverage 客人不要辣", "客人不要辣", "tamu minta tidak pedas");
+  checkDict("coverage 對海鮮過敏", "對海鮮過敏", "alergi makanan laut");
+  checkDict("coverage 花生、海鮮過敏", "花生、海鮮過敏", "alergi kacang dan makanan laut");
+  checkDict("coverage 不要蛋奶", "不要蛋奶", "tanpa telur dan susu");
+  const late = checkChinese("scope holds the whole remark 若客人遲到，不要保留座位", "若客人遲到，不要保留座位");
+  ok(late.indexOf("若客人遲到") !== -1 && late.indexOf("不要保留座位") !== -1, "late remark dropped a piece: " + late);
+  ok(late.indexOf("tidak") === -1 && late.indexOf("jika") === -1, "late remark translated a neighbour: " + late);
+  resetCalls();
+  const leak = fixed.translateNoteCnToId("若發現漏水，不要啟動，先通知店長");
+  ok(leak.indexOf("若發現漏水") !== -1 && leak.indexOf("不要啟動") !== -1 && leak.indexOf("先通知店長") !== -1, "C leak note dropped a piece: " + leak);
+  ok(leak.indexOf("Jika") === -1 && leak.indexOf("Beri") === -1, "C leak note translated a neighbour: " + leak);
+  ok(newCalls.length === 0, "C leak note calls: " + JSON.stringify(newCalls.map((c) => c.text)));
+  resetCalls();
+  const fridge = fixed.translateNoteCnToId("今晚冷凍庫維修，不要開冰箱門，明天早上廠商到");
+  ok(fridge.indexOf("今晚冷凍庫維修") !== -1 && fridge.indexOf("不要開冰箱門") !== -1 && fridge.indexOf("明天早上廠商到") !== -1, "C fridge note dropped a piece: " + fridge);
+  ok(newCalls.length === 0, "C fridge note calls: " + JSON.stringify(newCalls.map((c) => c.text)));
   checkDict("swap A換B 雞湯換筊白筍", "雞湯換筊白筍", "ganti sup ayam dengan rebung air (jiaobai)");
   checkDict("swap 換X 換筊白筍", "換筊白筍", "ganti dengan rebung air (jiaobai)");
   const swapMix = checkChinese("swap unknown stays Chinese 山藥雞湯米粉換筊白筍", "山藥雞湯米粉換筊白筍");
@@ -1068,6 +1111,20 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   const back = failed.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n若發現漏水，不要啟動，先通知店長");
   ok(back.split("\n")[1] === "若發現漏水, 不要啟動, 先通知店長", "maintenance failure falls back to the whole line: " + back);
   ok(failed.__sleeps.length === 1 && failed.__sleeps[0] === 250, "maintenance failure pauses once: " + JSON.stringify(failed.__sleeps));
+  const upkeepCalls = [];
+  const upkeep = loadGs(modifiedRemind, {
+    translate(text) {
+      upkeepCalls.push(String(text));
+      return "UTUH:" + String(text);
+    },
+  });
+  const filterLine = upkeep.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n下午換冷氣濾網");
+  ok(JSON.stringify(upkeepCalls) === JSON.stringify(["下午換冷氣濾網"]), "maintenance 換 sends the whole sentence: " + JSON.stringify(upkeepCalls));
+  ok(filterLine.split("\n")[1].indexOf("UTUH:下午換冷氣濾網") !== -1, "maintenance 換 stayed Chinese: " + filterLine);
+  upkeepCalls.length = 0;
+  const gasLine = upkeep.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n不要開火，等瓦斯行檢查完");
+  ok(JSON.stringify(upkeepCalls) === JSON.stringify(["不要開火，等瓦斯行檢查完"]), "maintenance leading 不要 sends the whole sentence: " + JSON.stringify(upkeepCalls));
+  ok(gasLine.split("\n")[1].indexOf("UTUH:") !== -1 && gasLine.split("\n")[1].indexOf("不要開火") !== -1, "maintenance leading 不要 stayed Chinese: " + gasLine);
   const amountCalls = [];
   const amountWhole = loadGs(modifiedRemind, {
     translate(text) {
