@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { HEADING_CASES, MIXED_DAY, PHRASEBOOK } from "./fixtures.mjs";
+import { BUSY_DAY, BUSY_DAY_CALLS, HEADING_CASES, MIXED_DAY, PHRASEBOOK } from "./fixtures.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const originalRemind = join(root, "original", "LineDailyRemind.gs");
@@ -24,17 +24,30 @@ function makeLanguageApp(calls) {
   return {
     translate(text, from, to) {
       calls.push({ text: String(text), from, to });
-      if (Object.prototype.hasOwnProperty.call(PHRASEBOOK, text)) return PHRASEBOOK[text];
-      return "ID:" + text;
+      const raw = String(text);
+      if (Object.prototype.hasOwnProperty.call(PHRASEBOOK, raw)) return PHRASEBOOK[raw];
+      const keys = Object.keys(PHRASEBOOK).sort((a, b) => b.length - a.length);
+      let out = raw;
+      for (const key of keys) {
+        if (out.indexOf(key) !== -1) out = out.split(key).join(PHRASEBOOK[key]);
+      }
+      return out === raw ? "ID:" + raw : out;
     },
   };
 }
 
 function loadGs(file, languageApp) {
+  const sleeps = [];
   const context = vm.createContext({
     LanguageApp: languageApp,
+    Utilities: {
+      sleep(ms) {
+        sleeps.push(ms);
+      },
+    },
     console,
   });
+  context.__sleeps = sleeps;
   vm.runInContext(readFileSync(file, "utf8"), context, { filename: file });
   return context;
 }
@@ -74,7 +87,7 @@ ok(modifiedSrc.indexOf(' (共 "') === -1, "modified heading builder still contai
 // --- NIT2: multi-segment remark ---
 resetCalls();
 const multiIn = "11:30 測試甲先生 (6) | 備註：花生過敏；不要辣 (小孩椅)";
-const multiWant = "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang；tidak pedas (kursi anak)";
+const multiWant = "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang; tidak pedas (kursi anak)";
 const multiGot = fixed.translateTaskCnToId(multiIn);
 ok(multiGot === multiWant, "multi-segment\n  got:  " + multiGot + "\n  want: " + multiWant);
 ok(
@@ -82,7 +95,8 @@ ok(
   "multi-segment calls: " + JSON.stringify(newCalls),
 );
 ok(newCalls.every((c) => c.from === "zh-TW" && c.to === "id"), "LanguageApp locale drifted");
-ok(multiGot.indexOf("；") !== -1 && multiGot.indexOf(" (") !== -1, "separators dropped: " + multiGot);
+ok(multiGot.indexOf("; ") !== -1 && multiGot.indexOf(" (") !== -1, "separators dropped: " + multiGot);
+ok(multiGot.indexOf("；") === -1 && multiGot.indexOf("、") === -1, "Chinese punctuation left in remark: " + multiGot);
 const multiTail = multiGot.split("Catatan: ")[1] || "";
 assertNoCjk("multi-segment tail", multiTail);
 
@@ -90,7 +104,7 @@ resetCalls();
 const listIn = "18:00 測試丁先生 (10) | 備註：不要香菜、少鹽";
 const listGot = fixed.translateTaskCnToId(listIn);
 ok(
-  listGot === "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar、sedikit garam",
+  listGot === "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar, sedikit garam",
   "enumeration remark: " + listGot,
 );
 ok(
@@ -102,13 +116,14 @@ resetCalls();
 const amountIn = "12:10 測試甲先生 (8) | 備註：預估金額 $2,000 (生日；不要葱)";
 const amountGot = fixed.translateTaskCnToId(amountIn);
 ok(
-  amountGot === "12:10 Bapak 測試甲 (8) | Catatan: Perkiraan biaya $2.000 (ulang tahun；tanpa daun bawang)",
+  amountGot === "12:10 Bapak 測試甲 (8) | Catatan: Perkiraan biaya $2.000 (ulang tahun; tanpa daun bawang)",
   "amount + segments: " + amountGot,
 );
 ok(
   JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(["生日", "不要葱"]),
   "amount calls should skip the already-replaced label: " + JSON.stringify(newCalls),
 );
+ok(newCalls.every((c) => c.text.indexOf("$") === -1 && c.text.indexOf("2,000") === -1), "amount leaked into LanguageApp: " + JSON.stringify(newCalls));
 
 // One segment failing must not drop the others or the separators.
 resetCalls();
@@ -120,7 +135,7 @@ const flaky = loadGs(modifiedRemind, {
 });
 const flakyGot = flaky.translateTaskCnToId(multiIn);
 ok(
-  flakyGot === "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang；不要辣 (kursi anak)",
+  flakyGot === "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang; 不要辣 (kursi anak)",
   "partial failure: " + flakyGot,
 );
 
@@ -135,7 +150,7 @@ const emptyGot = fixed.translateTaskCnToId("12:00 測試乙小姐 (4)");
 ok(emptyGot === "12:00 Ibu 測試乙 (4)", "empty remark: " + emptyGot);
 ok(newCalls.length === 0, "empty remark called LanguageApp: " + JSON.stringify(newCalls));
 const emptyLabelGot = fixed.translateTaskCnToId("12:00 測試乙小姐 (4) | 備註：");
-ok(emptyLabelGot === "12:00 Ibu 測試乙 (4) | Catatan: ", "empty catatan label: " + JSON.stringify(emptyLabelGot));
+ok(emptyLabelGot === "12:00 Ibu 測試乙 (4) | Catatan:", "empty catatan label: " + JSON.stringify(emptyLabelGot));
 ok(newCalls.length === 0, "empty catatan label called LanguageApp");
 
 // --- plan code / numbers only ---
@@ -150,7 +165,7 @@ ok(newCalls.length === 0, "digits-only remark called LanguageApp");
 resetCalls();
 const mixedCodeGot = fixed.translateTaskCnToId("11:10 測試丙 (5k1a) | 備註：5k1a；花生過敏");
 ok(
-  mixedCodeGot === "11:10 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a；alergi kacang",
+  mixedCodeGot === "11:10 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a; alergi kacang",
   "code beside Chinese: " + mixedCodeGot,
 );
 ok(
@@ -204,7 +219,7 @@ const indonesianWant = [
   "",
   "🍽️ Makan di tempat (total 3 meja)",
   "",
-  "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang；tidak pedas (kursi anak)",
+  "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang; tidak pedas (kursi anak)",
   "",
   "12:00 Ibu 測試乙 (4)",
   "",
@@ -216,7 +231,7 @@ const indonesianWant = [
   "",
   "🍽️ Makan di tempat (total 1 meja, 1 pesanan jumlah meja menunggu konfirmasi)",
   "",
-  "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar、sedikit garam",
+  "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar, sedikit garam",
   "",
   "19:00 Bapak/Ibu 測試戊 Jumlah orang menunggu konfirmasi",
   "",
@@ -240,6 +255,252 @@ ok(
   "mixed day LanguageApp calls: " + JSON.stringify(newCalls),
 );
 ok(chinese === sync.buildDigestText_(MIXED_DAY.day, MIXED_DAY.date, MIXED_DAY.time, MIXED_DAY.lunch, MIXED_DAY.dinner), "translator mutated the Chinese digest");
+
+function remarkOf(line) {
+  const at = line.indexOf("Catatan:");
+  return at === -1 ? "" : line.slice(at);
+}
+
+function assertPieceCalls(label, line, wantCalls, wantTail) {
+  resetCalls();
+  const got = fixed.translateTaskCnToId(line);
+  ok(remarkOf(got) === wantTail, label + "\n  got:  " + got + "\n  want: " + wantTail);
+  ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(wantCalls), label + " calls: " + JSON.stringify(newCalls));
+  ok(!/ayam2|2ekor|sup1|1porsi/.test(got), label + " glued qty: " + got);
+  return got;
+}
+
+const qtyGot = assertPieceCalls(
+  "qty inside Chinese",
+  "11:00 外帶01 | 備註：桶仔雞2隻、雞湯1份",
+  ["桶仔雞2隻", "雞湯1份"],
+  "Catatan: ayam tong 2 ekor, sup ayam 1 porsi",
+);
+const partyGot = assertPieceCalls(
+  "9大3小",
+  "11:30 測試04 (8) | 備註：9大3小",
+  ["9大3小"],
+  "Catatan: 9 dewasa 3 anak",
+);
+const beerGot = assertPieceCalls(
+  "qty mid-phrase",
+  "18:00 測試08先生 (6) | 備註：啤酂10箱要冰",
+  ["啤酂10箱要冰"],
+  "Catatan: bir 10 kotak harus dingin",
+);
+const arriveGot = assertPieceCalls(
+  "digits then Chinese",
+  "18:10 測試09小姐 (4) | 備註：12點到",
+  ["12點到"],
+  "Catatan: tiba pukul 12",
+);
+const fwGot = assertPieceCalls(
+  "full-width digits",
+  "17:20 外帶02 | 備註：２份",
+  ["２份"],
+  "Catatan: 2 porsi",
+);
+const semiGot = assertPieceCalls(
+  "half-width semicolon",
+  "11:12 測試甲先生 (2) | 備註：不要辣;少鹽",
+  ["不要辣", "少鹽"],
+  "Catatan: tidak pedas; sedikit garam",
+);
+const commaGot = assertPieceCalls(
+  "half-width comma",
+  "11:13 測試甲先生 (2) | 備註：不要香菜,少鹽",
+  ["不要香菜", "少鹽"],
+  "Catatan: tanpa daun ketumbar, sedikit garam",
+);
+const vipGot = assertPieceCalls(
+  "Chinese plus English",
+  "17:50 外帶03 | 備註：要VIP桌,不要香菜",
+  ["要VIP桌", "不要香菜"],
+  "Catatan: minta meja VIP, tanpa daun ketumbar",
+);
+const pipeGot = assertPieceCalls(
+  "pipe inside remark",
+  "11:30 測試甲先生 (6) | 備註：花生過敏 | 靠窗",
+  ["花生過敏 | 靠窗"],
+  "Catatan: alergi kacang | dekat jendela",
+);
+
+resetCalls();
+const codeInPhrase = fixed.translateTaskCnToId("18:20 測試甲先生 (4) | 備註：靠窗5.5k9a");
+ok(remarkOf(codeInPhrase) === "Catatan: dekat jendela 5.5k9a", "plan code phrase: " + codeInPhrase);
+ok(newCalls.length === 1 && newCalls[0].text.indexOf("5.5k9a") === -1, "plan code was sent raw: " + JSON.stringify(newCalls));
+ok(newCalls[0].text.indexOf("{{0}}") !== -1, "plan code placeholder missing: " + newCalls[0].text);
+ok(codeInPhrase.indexOf("5.5k9a") !== -1, "plan code not restored: " + codeInPhrase);
+
+resetCalls();
+const dropped = loadGs(modifiedRemind, {
+  translate(text) {
+    newCalls.push({ text: String(text), from: "zh-TW", to: "id" });
+    return "dekat jendela";
+  },
+});
+const droppedGot = dropped.translateTaskCnToId("18:20 測試甲先生 (4) | 備註：靠窗5.5k9a");
+ok(droppedGot.indexOf("dekat jendela") !== -1 && droppedGot.indexOf("5.5k9a") !== -1, "dropped placeholder still restores code: " + droppedGot);
+
+resetCalls();
+const newlineBody = fixed.translateRemarkBodyToId_("桶仔雞2隻\n雞湯1份", {});
+ok(newlineBody === "ayam tong 2 ekor\nsup ayam 1 porsi", "newline split: " + JSON.stringify(newlineBody));
+
+// Translator returns the Chinese unchanged, an empty string, or a trailing period.
+resetCalls();
+const unchangedApp = loadGs(modifiedRemind, {
+  translate(text) {
+    newCalls.push({ text: String(text) });
+    return text;
+  },
+});
+const unchangedGot = unchangedApp.translateTaskCnToId("11:30 測試04 (8) | 備註：9大3小");
+ok(remarkOf(unchangedGot) === "Catatan: 9大3小", "unchanged translation: " + unchangedGot);
+ok(newCalls.length === 1, "unchanged should call once: " + newCalls.length);
+
+resetCalls();
+const emptyApp = loadGs(modifiedRemind, {
+  translate(text) {
+    newCalls.push({ text: String(text) });
+    return "";
+  },
+});
+const emptyTransGot = emptyApp.translateTaskCnToId("11:30 測試04 (8) | 備註：9大3小");
+ok(remarkOf(emptyTransGot) === "Catatan: 9大3小", "empty translation must keep Chinese: " + emptyTransGot);
+ok(newCalls.length === 1, "empty translation should not retry: " + newCalls.length);
+ok(emptyApp.__sleeps.length === 0, "empty translation slept: " + JSON.stringify(emptyApp.__sleeps));
+
+resetCalls();
+const periodApp = loadGs(modifiedRemind, {
+  translate(text) {
+    newCalls.push({ text: String(text) });
+    return (PHRASEBOOK[text] || text) + ".";
+  },
+});
+const periodGot = periodApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
+ok(remarkOf(periodGot) === "Catatan: alergi kacang.", "trailing period stripped: " + periodGot);
+
+resetCalls();
+let retryN = 0;
+const retryApp = loadGs(modifiedRemind, {
+  translate(text) {
+    retryN += 1;
+    newCalls.push({ text: String(text) });
+    if (retryN === 1) throw new Error("busy");
+    return PHRASEBOOK[text] || ("ID:" + text);
+  },
+});
+const retryGot = retryApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
+ok(remarkOf(retryGot) === "Catatan: alergi kacang", "retry then success: " + retryGot);
+ok(retryN === 2, "retry call count: " + retryN);
+ok(JSON.stringify(retryApp.__sleeps) === JSON.stringify([250]), "retry pause: " + JSON.stringify(retryApp.__sleeps));
+
+resetCalls();
+let failN = 0;
+const failApp = loadGs(modifiedRemind, {
+  translate() {
+    failN += 1;
+    throw new Error("down");
+  },
+});
+const failGot = failApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
+ok(remarkOf(failGot) === "Catatan: 花生過敏", "final failure keeps Chinese: " + failGot);
+ok(failN === 2, "final failure should try twice: " + failN);
+ok(failApp.__sleeps.length === 1, "final failure should pause once");
+
+resetCalls();
+const noteFail = loadGs(modifiedRemind, {
+  translate() {
+    newCalls.push({ text: "note" });
+    throw new Error("down");
+  },
+});
+const hiddenNote = noteFail.translateNoteCnToId("臨時改爐火");
+ok(hiddenNote === "臨時改爐火", "note failure hid the warning: " + hiddenNote);
+ok(noteFail.__sleeps.length === 1, "note failure pause: " + JSON.stringify(noteFail.__sleeps));
+ok(noteFail.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！") === "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!", "known warning drifted");
+ok(noteFail.translateNoteCnToId("") === "Tidak ada keterangan", "empty note drifted");
+ok(noteFail.translateNoteCnToId("無") === "Tidak ada keterangan", "無 note drifted");
+
+// --- busy day: 9 dine-in + 3 takeout, cached call bound ---
+const busyCn = sync.buildDigestText_(BUSY_DAY.day, BUSY_DAY.date, BUSY_DAY.time, BUSY_DAY.lunch, BUSY_DAY.dinner);
+const busyCnLines = [
+  "[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]",
+  "☀️ 午餐",
+  "",
+  "🍽️ 內用 (共 5 桌)",
+  "",
+  "11:00 測試01先生 (4) | 備註：花生過敏；不要辣 (小孩椅)",
+  "",
+  "11:10 測試02先生 (2) | 備註：花生過敏",
+  "",
+  "11:20 測試03小姐 (3) | 備註：桶仔雞2隻、雞湯1份",
+  "",
+  "11:30 測試04 (8) | 備註：9大3小",
+  "",
+  "11:40 測試05先生 (5) | 備註：不要辣",
+  "",
+  "🌙 晚餐",
+  "",
+  "🍽️ 內用 (共 4 桌)",
+  "",
+  "17:30 測試06 (2)",
+  "",
+  "17:40 測試07 (5k1a) | 備註：5k1a",
+  "",
+  "18:00 測試08先生 (6) | 備註：啤酂10箱要冰",
+  "",
+  "18:10 測試09小姐 (4) | 備註：12點到",
+  "",
+  "🥡 外帶 (共 3 筆)",
+  "",
+  "17:00 外帶01 | 備註：桶仔雞2隻、雞湯1份",
+  "",
+  "17:20 外帶02 | 備註：２份",
+  "",
+  "17:50 外帶03 | 備註：要VIP桌,不要香菜",
+  "",
+  "(總計 內用 9 桌＋外帶 3 筆)",
+];
+const busyGotLines = busyCn.split("\n");
+ok(busyGotLines.length === busyCnLines.length, "busy Chinese line count " + busyGotLines.length + " != " + busyCnLines.length + "\n" + busyCn);
+for (let i = 0; i < busyCnLines.length; i++) {
+  ok(busyGotLines[i] === busyCnLines[i], "busy CN line " + i + "\n  got:  " + busyGotLines[i] + "\n  want: " + busyCnLines[i]);
+}
+
+const busyNote = "⚠️ 注意：包含 12 人大組訂位！";
+const busyId = "ID";
+const oldMsgLines = previous.buildDailyReminderMessage_(busyCn, busyId, busyNote, "NOTE").split("\n");
+const newMsgLines = fixed.buildDailyReminderMessage_(busyCn, busyId, busyNote, "NOTE").split("\n");
+ok(oldMsgLines.length === newMsgLines.length, "CN message line count drifted");
+for (let i = 0; i < oldMsgLines.length; i++) {
+  ok(oldMsgLines[i] === newMsgLines[i], "old-vs-new Chinese message line " + i + "\n  old: " + oldMsgLines[i] + "\n  new: " + newMsgLines[i]);
+}
+
+resetCalls();
+const busyIdText = fixed.translateTaskCnToId(busyCn);
+ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(BUSY_DAY_CALLS), "busy calls: " + JSON.stringify(newCalls.map((c) => c.text)));
+ok(newCalls.length <= BUSY_DAY_CALLS.length, "busy call bound exceeded: " + newCalls.length);
+ok(newCalls.length === 11, "busy unique call count: " + newCalls.length);
+const busyTails = busyIdText.split("\n").filter((line) => line.indexOf("Catatan:") !== -1).map(remarkOf);
+const busyTailWant = [
+  "Catatan: alergi kacang; tidak pedas (kursi anak)",
+  "Catatan: alergi kacang",
+  "Catatan: ayam tong 2 ekor, sup ayam 1 porsi",
+  "Catatan: 9 dewasa 3 anak",
+  "Catatan: tidak pedas",
+  "Catatan: 5k1a",
+  "Catatan: bir 10 kotak harus dingin",
+  "Catatan: tiba pukul 12",
+  "Catatan: ayam tong 2 ekor, sup ayam 1 porsi",
+  "Catatan: 2 porsi",
+  "Catatan: minta meja VIP, tanpa daun ketumbar",
+];
+ok(JSON.stringify(busyTails) === JSON.stringify(busyTailWant), "busy tails:\n" + busyTails.join("\n"));
+for (const tail of busyTails) {
+  if (tail === "Catatan: 5k1a") continue;
+  assertNoCjk("busy tail", tail);
+}
 
 // Before sample comes from the unmodified 09-27 translator plus the same stub.
 resetCalls();
@@ -266,5 +527,16 @@ console.log(beforeMulti);
 console.log("--- sample after ---");
 console.log(fixed.translateTaskCnToId("🍽️ 內用 (共 3 桌)\n🥡 外帶 (共 1 筆)"));
 console.log(multiGot);
-console.log("--- mixed day Indonesian ---");
-console.log(indonesian);
+console.log("--- qty / digits / pipe / plan code ---");
+console.log(qtyGot);
+console.log(partyGot);
+console.log(beerGot);
+console.log(arriveGot);
+console.log(fwGot);
+console.log(semiGot);
+console.log(commaGot);
+console.log(vipGot);
+console.log(pipeGot);
+console.log(codeInPhrase);
+console.log("--- busy day calls " + BUSY_DAY_CALLS.length + " ---");
+console.log(busyIdText);

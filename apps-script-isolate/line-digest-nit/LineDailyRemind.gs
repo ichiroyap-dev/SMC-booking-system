@@ -2,7 +2,7 @@
  * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
  * 中文總覽、讀表、寫表、LINE 發送都沒改。
  * 上線前要先把線上腳本拉下來，和 original/LineDailyRemind.gs 對過；線上可能已不同。
- * 備註分段（NIT2）還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
+ * 備註翻譯還要用測試用 Apps Script 的真實 LanguageApp 看過，才可以部署。
  */
 function checkAndSendDailyReminders() {
   // ======= 1. 系統安全性憑證設定 =======
@@ -215,6 +215,8 @@ function translateTaskCnToId(taskCn) {
   if (!taskCn) return "Tidak ada terjemahan";
   var lines = taskCn.split("\n");
   var translatedLines = [];
+  // 一次總覽翻譯共用快取，相同片段不重複呼叫 LanguageApp。
+  var translateCache = {};
   
   var daysMap = { 'Sun': 'Minggu', 'Mon': 'Senin', 'Tue': 'Selasa', 'Wed': 'Rabu', 'Thu': 'Kamis', 'Fri': 'Jumat', 'Sat': 'Sabtu' };
   var monthsMap = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
@@ -286,7 +288,8 @@ function translateTaskCnToId(taskCn) {
       var hadPipe = line.indexOf("|") !== -1;
       var parts = line.split("|");
       var frontPart = parts[0].trim();
-      var backPart = parts[1] || "";
+      // 備註裡的 | 是內容，不是欄位分隔。只拿 parts[1] 會把後面整段丟掉。
+      var backPart = parts.slice(1).join("|");
 
       var timePrefix = frontPart.match(/^\d{2}:\d{2}\s+/);
       var timePrefixStr = timePrefix ? timePrefix[0] : "";
@@ -303,26 +306,18 @@ function translateTaskCnToId(taskCn) {
       var translatedFront = timePrefixStr + titleID + nameAndCode;
 
       var translatedBack = backPart.trim();
-      translatedBack = translatedBack.replace("備註：", "Catatan: ");
-      translatedBack = translatedBack.replace("預估金額", "Perkiraan biaya");
+      translatedBack = translatedBack.replace(/備註：/g, "Catatan: ");
+      translatedBack = translatedBack.replace(/預估金額/g, "Perkiraan biaya");
       translatedBack = translatedBack.replace(/人數待確認/g, "Jumlah orang menunggu konfirmasi");
-      translatedBack = translatedBack.replace(/,(\d{3})/g, '.$1');
-
-      // NIT2：多段備註（； / 、 / 括號）若先把中文抽出、用空白黏成一句，
-      // LanguageApp 看不到分隔，replace 也對不到原文，中文會整段留下。
-      // 改為每一段連續中文各翻一次，分隔符、數字與方案代碼原樣留下。
-      translatedBack = translateChineseSegmentsToId_(translatedBack);
+      // 只在 ；;、，,（）() 與換行切開，數字和英文留在同一段。方案代碼與金額先占位。
+      translatedBack = translateRemarkBodyToId_(translatedBack, translateCache);
 
       if (!hadPipe) translatedLines.push(translatedFront);
       else translatedLines.push(translatedFront + " | " + translatedBack);
       continue;
     }
 
-    try {
-      translatedLines.push(LanguageApp.translate(line, 'zh-TW', 'id'));
-    } catch(e) {
-      translatedLines.push(line);
-    }
+    translatedLines.push(translatePieceCached_(translateCache, line));
   }
   return translatedLines.join("\n");
 }
@@ -344,28 +339,161 @@ function translateSessionHeadingLine_(line, idName) {
   return idName + " (total " + (tables ? tables[0] : "0") + " meja)";
 }
 
-function translateChineseSegmentsToId_(text) {
-  var src = String(text || "");
-  if (!/[\u4e00-\u9fff]/.test(src)) return src;
-  var re = /[\u4e00-\u9fff]+/g;
-  var out = "";
-  var last = 0;
-  var match;
-  while ((match = re.exec(src)) !== null) {
-    out += src.slice(last, match.index);
-    var segment = match[0];
-    var translated = segment;
-    try {
-      var got = LanguageApp.translate(segment, "zh-TW", "id");
-      if (got) translated = String(got);
-    } catch (e) {
-      translated = segment;
-    }
-    out += translated;
-    last = match.index + segment.length;
+var FROZEN_REMARK_LABELS_ = ["Jumlah orang menunggu konfirmasi", "Perkiraan biaya", "Catatan:"];
+
+function protectRemarkTokens_(text) {
+  var tokens = [];
+  function stash(match) {
+    var id = tokens.length;
+    tokens.push(match);
+    return "{{" + id + "}}";
   }
-  out += src.slice(last);
-  return out;
+  var src = String(text || "");
+  // 每次新建 regex，避免 /g 的 lastIndex 留到下一則備註。
+  src = src.replace(/\d+(?:\.\d+)?\s*[Kk]\s*[Xx]?\d*\s*[Aa]/g, stash);
+  src = src.replace(/(?:NT\s*)?[\$＄]\s*\d[\d,，.]*/g, stash);
+  src = src.replace(/\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?/g, stash);
+  return { text: src, tokens: tokens };
+}
+
+function formatProtectedTokenForId_(token) {
+  var raw = String(token || "");
+  if (/^\d+(?:\.\d+)?\s*[Kk]\s*[Xx]?\d*\s*[Aa]$/.test(raw)) return raw;
+  return raw.replace(/[,，](\d{3})/g, ".$1");
+}
+
+function restoreRemarkTokens_(text, tokens) {
+  var src = String(text || "");
+  var missing = [];
+  for (var i = 0; i < tokens.length; i++) {
+    var ph = "{{" + i + "}}";
+    var shown = formatProtectedTokenForId_(tokens[i]);
+    if (src.indexOf(ph) === -1) {
+      missing.push(shown);
+      continue;
+    }
+    var next = "";
+    var from = 0;
+    var idx = src.indexOf(ph);
+    while (idx !== -1) {
+      next += src.slice(from, idx);
+      var before = next.slice(-1);
+      var after = src.charAt(idx + ph.length);
+      var left = before && !/[\s([{\uFF08]/.test(before) ? " " : "";
+      var right = after && !/[\s)\]}\uFF09,.;；、：:!?！？。\n]/.test(after) ? " " : "";
+      next += left + shown + right;
+      from = idx + ph.length;
+      idx = src.indexOf(ph, from);
+    }
+    src = next + src.slice(from);
+  }
+  if (missing.length) src += " " + missing.join(" ");
+  return src;
+}
+
+function peelFrozenLabels_(core) {
+  var prefix = "";
+  var rest = String(core || "");
+  var guard = 0;
+  while (rest && guard < 6) {
+    guard++;
+    var trimmedLead = rest.replace(/^\s+/, "");
+    var leadWs = rest.substring(0, rest.length - trimmedLead.length);
+    var found = "";
+    for (var i = 0; i < FROZEN_REMARK_LABELS_.length; i++) {
+      if (trimmedLead.indexOf(FROZEN_REMARK_LABELS_[i]) === 0) {
+        found = FROZEN_REMARK_LABELS_[i];
+        break;
+      }
+    }
+    if (!found) break;
+    prefix += leadWs + found;
+    rest = trimmedLead.substring(found.length);
+    var ws = rest.match(/^\s+/);
+    if (ws) {
+      prefix += ws[0];
+      rest = rest.substring(ws[0].length);
+    } else if (rest) {
+      prefix += " ";
+    }
+  }
+  return { prefix: prefix, rest: rest };
+}
+
+function pauseBeforeTranslateRetry_() {
+  try {
+    Utilities.sleep(250);
+  } catch (e) {}
+}
+
+function translatePieceCached_(cache, piece) {
+  var key = String(piece);
+  if (cache && Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
+  var translated = key;
+  for (var attempt = 0; attempt < 2; attempt++) {
+    try {
+      var got = LanguageApp.translate(key, "zh-TW", "id");
+      if (got == null || String(got).trim() === "") {
+        translated = key;
+        break;
+      }
+      translated = String(got);
+      break;
+    } catch (e) {
+      translated = key;
+      if (attempt === 0) pauseBeforeTranslateRetry_();
+    }
+  }
+  if (cache) cache[key] = translated;
+  return translated;
+}
+
+function translateRemarkBodyToId_(text, cache) {
+  var src = String(text || "");
+  if (!src) return "";
+  var box = protectRemarkTokens_(src);
+  var parts = box.text.split(/([；;、，,（）()\n])/);
+  var out = [];
+  for (var i = 0; i < parts.length; i++) {
+    var part = parts[i];
+    if (!part) continue;
+    if (/^[；;、，,（）()\n]$/.test(part)) {
+      out.push(part);
+      continue;
+    }
+    var lead = (part.match(/^\s*/) || [""])[0];
+    var trail = (part.match(/\s*$/) || [""])[0];
+    var core = part.trim();
+    if (!core) {
+      out.push(part);
+      continue;
+    }
+    var peeled = peelFrozenLabels_(core);
+    if (!/[\u4e00-\u9fff]/.test(peeled.rest)) {
+      out.push(part);
+      continue;
+    }
+    out.push(lead + peeled.prefix + translatePieceCached_(cache, peeled.rest) + trail);
+  }
+  return normalizeIdPunctuation_(restoreRemarkTokens_(out.join(""), box.tokens));
+}
+
+function normalizeIdPunctuation_(text) {
+  var s = String(text || "");
+  s = s.replace(/；/g, ";");
+  s = s.replace(/[、，]/g, ",");
+  s = s.replace(/（/g, "(");
+  s = s.replace(/）/g, ")");
+  s = s.replace(/：/g, ": ");
+  s = s.replace(/。/g, ". ");
+  s = s.replace(/！/g, "! ");
+  s = s.replace(/？/g, "? ");
+  s = s.replace(/;(?!\s)/g, "; ");
+  s = s.replace(/,(?!\s|\d{3}(?:\D|$))/g, ", ");
+  s = s.replace(/([^\s(])\(/g, "$1 (");
+  s = s.replace(/\)([^\s),.;!?])/g, ") $1");
+  s = s.replace(/[ \t]{2,}/g, " ");
+  return s.replace(/^\s+|\s+$/g, "");
 }
 
 function translateTotalLine_(line) {
@@ -420,11 +548,10 @@ function translateNoteCnToId(noteCn) {
     return "✅ Reservasi hari ini normal (Total " + (tables ? tables[0] : "0") + " meja)";
   }
   
-  try {
-    return LanguageApp.translate(trans, 'zh-TW', 'id');
-  } catch (e) {
-    return "Tidak ada keterangan";
-  }
+  // 翻失敗、空結果或原樣退回時留下中文警示，不可改成「沒有說明」。
+  var translated = translatePieceCached_(null, trans);
+  if (!translated || !String(translated).trim() || translated === trans) return trans;
+  return normalizeIdPunctuation_(translated);
 }
 
 // LINE Messaging API 底層標準發送技術
