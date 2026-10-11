@@ -870,6 +870,24 @@ for (const entry of protectedEntries) {
   }
 }
 
+const scopedNegation = [
+  ["不要辣、花生", "tidak pedas, tanpa kacang"],
+  ["不要辣、蝦子", "tidak pedas, tanpa udang"],
+  ["不要油炸、花生", "jangan digoreng, tanpa kacang"],
+  ["不要辣、香菜", "tidak pedas, tanpa daun ketumbar"],
+  ["不要辣、靠窗", "tidak pedas, dekat jendela"],
+];
+for (const entry of protectedEntries) {
+  for (const pair of scopedNegation) {
+    const label = "negation scope " + entry + " " + pair[0];
+    const got = runProtected(entry, "success", pair[0]);
+    const want = (protectedPrefixes[entry] || "") + pair[1];
+    ok(got.body === want, label + ": " + got.body);
+    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
+    ok(got.body.indexOf("tidak pedas, kacang") === -1 && got.body.indexOf("jangan digoreng, kacang") === -1, label + " dropped the exclusion: " + got.body);
+  }
+}
+
 {
   const calls = [];
   const app = protectedApp("success", calls);
@@ -924,19 +942,27 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
     ok(remarkOf(got) === "Catatan: UTUH:" + remark, label + "\n  got: " + remarkOf(got));
     ok(JSON.stringify(wholeCalls) === JSON.stringify([remark]), label + " calls: " + JSON.stringify(wholeCalls));
   }
+  function checkChinese(label, remark) {
+    resetCalls();
+    const got = remarkOf(fixed.translateTaskCnToId(remarkLine(remark)));
+    ok(newCalls.length === 0, label + " calls: " + JSON.stringify(newCalls.map((c) => c.text)));
+    return got;
+  }
   checkSend("single char does not split 牛奶", "牛奶");
   ok(remarkOf(wholeApp.translateTaskCnToId(remarkLine("牛奶"))).indexOf("daging sapi") === -1, "牛奶 became daging sapi");
   checkSend("single char does not split 奶奶生日", "奶奶生日");
-  checkSend("single char does not split 不要蔥花", "不要蔥花");
-  checkSend("single char does not split 不要奶油", "不要奶油");
-  checkSend("single char does not split 不要雞皮", "不要雞皮");
-  checkSend("single char does not split 不要蝦仁", "不要蝦仁");
+  const scallion = checkChinese("single char does not split 不要蔥花", "不要蔥花");
+  ok(scallion === "Catatan: 不要蔥花", "不要蔥花 stayed Chinese: " + scallion);
+  checkDict("full phrase 不要奶油", "不要奶油", "tanpa mentega");
+  checkDict("full phrase 不要蝦仁", "不要蝦仁", "tanpa udang kupas");
+  checkDict("full phrase 不要雞皮", "不要雞皮", "tanpa kulit ayam");
+  checkDict("full phrase 不要冰", "不要冰", "tanpa es");
   checkSend("single char does not split 自備蛋糕", "自備蛋糕");
   checkSend("single char does not split 半隻土雞", "半隻土雞");
   checkDict("single char X at segment end 不要雞", "不要雞", "tanpa ayam");
   checkDict("single char X at segment end 對蝦過敏", "對蝦過敏", "alergi udang");
-  checkSend("不能吃雞皮 is not a partial negation", "不能吃雞皮");
-  ok(remarkOf(wholeApp.translateTaskCnToId(remarkLine("不能吃雞皮"))).indexOf("tidak") === -1, "不能吃雞皮 inverted the negation");
+  const chickenSkin = checkChinese("不能吃雞皮 is not a partial negation", "不能吃雞皮");
+  ok(chickenSkin === "Catatan: 不能吃雞皮" && chickenSkin.indexOf("tidak") === -1, "不能吃雞皮 inverted the negation: " + chickenSkin);
   checkDict("N大 at segment end", "3大", "3 dewasa");
   checkDict("N小 at segment end", "3小", "3 anak");
   checkDict("N大 at segment end after a phrase", "靠窗3大", "dekat jendela 3 dewasa");
@@ -947,7 +973,7 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkDict("allergy joins 對花生和蝦子過敏", "對花生和蝦子過敏", "alergi kacang dan udang");
   checkDict("enumeration allergy 對花生、蝦子過敏", "對花生、蝦子過敏", "alergi kacang dan udang");
   ok(remarkOf(fixed.translateTaskCnToId(remarkLine("對花生、蝦子過敏"))).indexOf("udang alergi") === -1, "對花生、蝦子過敏 reversed the allergy");
-  checkDict("enumeration negation 不要香菜、蔥", "不要香菜、蔥", "tanpa daun ketumbar, daun bawang");
+  checkDict("enumeration negation 不要香菜、蔥", "不要香菜、蔥", "tanpa daun ketumbar, tanpa daun bawang");
   checkDict("enumeration remark stays one segment 不要香菜、少鹽", "不要香菜、少鹽", "tanpa daun ketumbar, sedikit garam");
   checkDict("quantity list stays covered 桶仔雞2隻、雞湯1份", "桶仔雞2隻、雞湯1份", "ayam tong 2 ekor, sup ayam 1 porsi");
   checkDict("bare allergy 蝦子過敏", "蝦子過敏", "alergi udang");
@@ -963,27 +989,37 @@ ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(
   checkDict("trailing particle stripped 不要辣的", "不要辣的", "tidak pedas");
   checkDict("bare 元 stays original", "元", "元");
   checkDict("time word covers amount phrase", "今晚訂金$1,000已付", "malam ini uang muka $1,000 sudah dibayar");
-  function checkSendWhole(label, remark) {
-    wholeCalls.length = 0;
-    const got = wholeApp.translateTaskCnToId(remarkLine(remark));
-    ok(JSON.stringify(wholeCalls) === JSON.stringify([remark]), label + ": " + JSON.stringify(wholeCalls));
-    return got;
-  }
-  const unscoped = checkSendWhole("unscoped allergy sends the whole segment 花生、蒜過敏", "花生、蒜過敏");
-  ok(remarkOf(unscoped).indexOf("蒜") !== -1, "unscoped allergy dropped 蒜: " + unscoped);
-  ok(remarkOf(unscoped).indexOf("alergi") === -1, "unscoped allergy stitched a partial alergi: " + unscoped);
-  const between = checkSendWhole("unscoped allergy sends the whole segment 花生靠窗過敏", "花生靠窗過敏");
-  ok(remarkOf(between).indexOf("alergi") === -1, "unscoped allergy stitched 花生靠窗過敏: " + between);
+  const unscoped = checkChinese("unscoped allergy stays Chinese 花生、蒜過敏", "花生、蒜過敏");
+  ok(unscoped.indexOf("蒜") !== -1, "unscoped allergy dropped 蒜: " + unscoped);
+  ok(unscoped.indexOf("alergi") === -1, "unscoped allergy stitched a partial alergi: " + unscoped);
+  const between = checkChinese("unscoped allergy stays Chinese 花生靠窗過敏", "花生靠窗過敏");
+  ok(between.indexOf("過敏") !== -1 && between.indexOf("alergi") === -1, "unscoped allergy stitched 花生靠窗過敏: " + between);
   checkSend("question 不要辣嗎 sends the whole segment", "不要辣嗎");
-  checkSend("non-food 不要小孩椅 sends the whole segment", "不要小孩椅");
-  const chairList = checkSendWhole("non-food 不要香菜、小孩椅 sends the whole segment", "不要香菜、小孩椅");
-  ok(remarkOf(chairList).indexOf("小孩椅") !== -1, "non-food negation dropped 小孩椅: " + chairList);
-  ok(remarkOf(chairList).indexOf("kursi anak") === -1 && remarkOf(chairList).indexOf("daun ketumbar") === -1, "non-food negation translated a fragment: " + chairList);
-  wholeCalls.length = 0;
-  const garlic = wholeApp.translateTaskCnToId(remarkLine("不要香菜、蔥、蒜"));
-  ok(JSON.stringify(wholeCalls) === JSON.stringify(["不要香菜、蔥、蒜"]), "uncovered enumeration sends the whole segment: " + JSON.stringify(wholeCalls));
-  ok(remarkOf(garlic).indexOf("蒜") !== -1, "uncovered enumeration dropped 蒜: " + garlic);
-  ok(remarkOf(garlic).indexOf("daun bawang") === -1, "uncovered enumeration translated a fragment: " + garlic);
+  const noChair = checkChinese("non-food 不要小孩椅 stays Chinese", "不要小孩椅");
+  ok(noChair === "Catatan: 不要小孩椅" && noChair.indexOf("kursi anak") === -1, "不要小孩椅 was guessed: " + noChair);
+  const chairList = checkChinese("non-food 不要香菜、小孩椅 stays Chinese", "不要香菜、小孩椅");
+  ok(chairList.indexOf("小孩椅") !== -1, "non-food negation dropped 小孩椅: " + chairList);
+  ok(chairList.indexOf("kursi anak") === -1 && chairList.indexOf("daun ketumbar") === -1, "non-food negation translated a fragment: " + chairList);
+  const garlic = checkChinese("uncovered enumeration stays Chinese 不要香菜、蔥、蒜", "不要香菜、蔥、蒜");
+  ok(garlic.indexOf("蒜") !== -1, "uncovered enumeration dropped 蒜: " + garlic);
+  ok(garlic.indexOf("daun bawang") === -1, "uncovered enumeration translated a fragment: " + garlic);
+  checkDict("negation list keeps food exclusion 不要辣、花生", "不要辣、花生", "tidak pedas, tanpa kacang");
+  checkDict("negation list keeps food exclusion 不要辣、蝦子", "不要辣、蝦子", "tidak pedas, tanpa udang");
+  checkDict("negation list keeps food exclusion 不要油炸、花生", "不要油炸、花生", "jangan digoreng, tanpa kacang");
+  checkDict("negation list keeps food exclusion 不要辣、香菜", "不要辣、香菜", "tidak pedas, tanpa daun ketumbar");
+  checkDict("negation plus separate request 不要辣、靠窗", "不要辣、靠窗", "tidak pedas, dekat jendela");
+  checkDict("dish not spicy 桶仔雞不要辣", "桶仔雞不要辣", "ayam tong tidak pedas");
+  const roast = checkChinese("unknown dish not spicy stays Chinese 烤雞不要辣", "烤雞不要辣");
+  ok(roast === "Catatan: 烤雞不要辣" && roast.indexOf("tidak pedas") === -1 && roast.indexOf("bumbu") === -1, "烤雞不要辣 was guessed: " + roast);
+  checkDict("不吃X 不吃牛", "不吃牛", "tamu tidak makan daging sapi");
+  checkDict("不吃X 不吃花生", "不吃花生", "tamu tidak makan kacang");
+  const noEatSkin = checkChinese("不吃 unknown stays Chinese 不吃雞皮", "不吃雞皮");
+  ok(noEatSkin === "Catatan: 不吃雞皮", "不吃雞皮 was guessed: " + noEatSkin);
+  checkDict("swap A換B 雞湯換筊白筍", "雞湯換筊白筍", "ganti sup ayam dengan rebung air (jiaobai)");
+  checkDict("swap 換X 換筊白筍", "換筊白筍", "ganti dengan rebung air (jiaobai)");
+  const swapMix = checkChinese("swap unknown stays Chinese 山藥雞湯米粉換筊白筍", "山藥雞湯米粉換筊白筍");
+  ok(swapMix === "Catatan: 山藥雞湯米粉換筊白筍" && swapMix.indexOf("rebung") === -1, "compound swap was guessed: " + swapMix);
+  checkDict("paid tail stays on the last amount", "訂金$1,000、尾款$2,000已付", "uang muka $1,000, sisa pembayaran $2,000 sudah dibayar");
   checkDict("plan code phrase 不要A改成B", "不要5k1a改成6k1a", "ganti 5k1a menjadi 6k1a");
   checkDict("plan code phrase 加點A一份", "加點5k1a一份", "tambah 5k1a 1 porsi");
   checkDict("amount phrase 訂金X已付", "訂金$1,000已付", "uang muka $1,000 sudah dibayar");

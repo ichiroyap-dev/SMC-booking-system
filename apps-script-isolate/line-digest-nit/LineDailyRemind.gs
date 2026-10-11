@@ -6,12 +6,12 @@
  * 金額一律照中文原文（例如 $1,000、NT$12,000、$1,000.50），不改成 $1.000，也不自行加幣別。
  * 金額與方案代碼在送翻前切開，只在本機接回。不靠私用區記號，也不把 token 送進 LanguageApp。
  * 對照與句型必須吃完整段才用。吃不滿就整段送翻；旁邊有金額或方案代碼卻吃不滿，整段留中文，不送碎片。
- * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完；吃不完就整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。「嗎」是問句，不拿掉，整段送翻。只有「元」時留原文。
+ * 「、」不是分段符，留在段內當列舉（不要X、Y、Z、對X、Y過敏、X、Y過敏）。沒有「對」的過敏列舉要整串吃完。完整否定詞後面的食材各自帶 tanpa。否定或過敏範圍對不滿時整段留中文，不送 LanguageApp。「嗎」結尾的問句仍整段送翻。尾端的的了吧呢啊呀嘛哦喔在對照結果裡拿掉。只有「元」時留原文。
  * 雞、牛、蛋、奶、蝦、葱、蔥不作自由配對，只當 不要X／可以吃X／不能吃X／不要放X／對X過敏 的 X，而且 X 要收到該句型結尾。
  * 店務維護提醒整句翻一次，不按逗號切開。同一套對照也用在整行。失敗就整句留原文。
  * 一般錯誤暫停 250ms 再試一次。in a short time 暫停 1000ms 再試一次。
  * 「Service invoked too many times」且不是 in a short time：不暫停、不重試。
- * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，沒有整欄停止旗標；每個尚未被對照吃掉、而且沒有金額的整段仍可能各呼叫一次，不重試、不暫停。
+ * 這個停止只在 translateTaskCnToId 的 cache。C 欄傳 null，沒有整欄停止旗標；每個尚未被對照吃掉、沒有金額、而且不是沒對上的否定或過敏的整段仍可能各呼叫一次，不重試、不暫停。
  */
 function checkAndSendDailyReminders() {
   // ======= 1. 系統安全性憑證設定 =======
@@ -526,6 +526,10 @@ var REMARK_PHRASES_ = [
   ["不要蔥", "tanpa daun bawang", false],
   ["不要油炸", "jangan digoreng", false],
   ["不要辣", "tidak pedas", false],
+  ["不要奶油", "tanpa mentega", true],
+  ["不要蝦仁", "tanpa udang kupas", true],
+  ["不要雞皮", "tanpa kulit ayam", true],
+  ["不要冰", "tanpa es", true],
   ["小孩椅", "kursi anak", false],
   ["兒童椅", "kursi anak", true],
   ["少鹽", "sedikit garam", false],
@@ -577,6 +581,9 @@ function asciiDigits_(text) {
 var SINGLE_CHAR_X_ = { "雞": true, "牛": true, "蛋": true, "奶": true, "蝦": true, "葱": true, "蔥": true };
 
 // 食材與菜色。過敏列舉和「不要X、Y」只收這些。小孩椅、靠窗、時間詞不在這裡。
+// DISH_WORD_ 只給「X不要辣」。烤雞不在表內，整段留中文。
+var DISH_WORD_ = { "桶仔雞": true, "雞湯": true, "筊白筍": true, "米血": true, "素食": true };
+
 var FOOD_WORD_ = {
   "香菜": true,
   "花生": true,
@@ -733,13 +740,21 @@ function matchBareAllergy_(rest) {
   return { len: i + 2, id: "alergi " + parts.join(" ").replace(/\s{2,}/g, " ").trim() };
 }
 
+function negationPiece_(id, later) {
+  if (!later || id === "sedikit garam") return id;
+  return "tanpa " + id;
+}
+
 function negationRunAt_(text, index) {
+  // 第一個食材由呼叫端加 tanpa。後面的食材各自再加 tanpa。少鹽維持原詞。
   var parts = [];
   var i = index;
+  var later = false;
   while (i < text.length) {
     var item = readNegationItem_(text, i);
     if (item) {
-      parts.push(item.id);
+      parts.push(negationPiece_(item.id, later));
+      later = true;
       i += item.len;
       continue;
     }
@@ -751,7 +766,8 @@ function negationRunAt_(text, index) {
     if (ch === "或") parts.push("atau");
     else if (ch === "、") parts.push(",");
     else parts.push("dan");
-    parts.push(nxt.id);
+    parts.push(negationPiece_(nxt.id, true));
+    later = true;
     i += 1 + nxt.len;
   }
   return { len: i - index, id: parts.join(" ").replace(/\s+,/g, ",").replace(/\s{2,}/g, " ").trim() };
@@ -770,8 +786,102 @@ function matchNegation_(rest) {
   return null;
 }
 
+function isSeparateRequest_(text, index) {
+  var phrase = longestPhraseAt_(text, index);
+  if (!phrase || phrase.len < 2 || !phrase.id) return null;
+  var word = text.slice(index, index + phrase.len);
+  if (word === "小孩椅" || word === "兒童椅") return null;
+  if (FOOD_WORD_[word] || SINGLE_CHAR_X_[word]) return null;
+  return { len: phrase.len, id: phrase.id };
+}
+
+function matchFixedNegationList_(rest) {
+  // 完整否定詞後面：食材各自 tanpa，其他字典詞各自一則。小孩椅不在這裡猜。
+  var lead = longestPhraseAt_(rest, 0);
+  if (!lead || lead.len < 3 || rest.slice(0, 2) !== "不要" || rest.slice(0, 3) === "不要放") return null;
+  if (lead.len >= rest.length) return null;
+  var parts = [lead.id];
+  var i = lead.len;
+  while (i < rest.length) {
+    var ch = rest.charAt(i);
+    if (ch !== "、" && ch !== "和" && ch !== "與" && ch !== "及") return null;
+    i += 1;
+    if (rest.slice(i, i + 2) === "少鹽") {
+      parts.push("sedikit garam");
+      i += 2;
+      continue;
+    }
+    var food = readFoodItem_(rest, i);
+    if (food) {
+      parts.push("tanpa " + food.id);
+      i += food.len;
+      continue;
+    }
+    var other = isSeparateRequest_(rest, i);
+    if (!other) return null;
+    parts.push(other.id);
+    i += other.len;
+  }
+  if (i !== rest.length) return null;
+  return { len: rest.length, id: parts.join(", ") };
+}
+
+function matchDishNotSpicy_(rest) {
+  var i;
+  for (i = 0; i < REMARK_PHRASES_.length; i++) {
+    var zh = REMARK_PHRASES_[i][0];
+    if (!DISH_WORD_[zh]) continue;
+    if (rest === zh + "不要辣") return { len: rest.length, id: REMARK_PHRASES_[i][1] + " tidak pedas" };
+  }
+  return null;
+}
+
+function matchBuChi_(rest) {
+  if (rest.indexOf("不吃") !== 0) return null;
+  var run = negationRunAt_(rest, 2);
+  if (run.len > 0 && run.id && 2 + run.len === rest.length) {
+    return { len: rest.length, id: "tamu tidak makan " + run.id };
+  }
+  if (rest.length === 3) {
+    var one = singleCharXId_(rest.charAt(2));
+    if (one) return { len: rest.length, id: "tamu tidak makan " + one };
+  }
+  return null;
+}
+
+function readSwapItem_(text, index) {
+  var phrase = longestPhraseAt_(text, index);
+  if (!phrase || phrase.len < 2 || !phrase.id) return null;
+  return { len: phrase.len, id: phrase.id };
+}
+
+function matchSwap_(rest) {
+  if (rest.charAt(0) === "換") {
+    var only = readSwapItem_(rest, 1);
+    if (only && 1 + only.len === rest.length) return { len: rest.length, id: "ganti dengan " + only.id };
+    return null;
+  }
+  var left = readSwapItem_(rest, 0);
+  if (!left || rest.charAt(left.len) !== "換") return null;
+  var right = readSwapItem_(rest, left.len + 1);
+  if (!right || left.len + 1 + right.len !== rest.length) return null;
+  return { len: rest.length, id: "ganti " + left.id + " dengan " + right.id };
+}
+
+function uncertainScope_(text) {
+  // 問句整段送翻。沒吃滿的過敏、換菜，或句首的不要／不吃／不能吃／可以吃，留中文。
+  // 句中才出現的「不要」不是食材範圍，整句維護提醒仍照原樣送翻。
+  if (/嗎$/.test(text)) return false;
+  if (text.indexOf("過敏") !== -1) return true;
+  if (text.indexOf("換") !== -1) return true;
+  if (/^(?:不要|不吃|不能吃|可以吃)/.test(text)) return true;
+  if (/不要辣$/.test(text)) return true;
+  return false;
+}
+
 function negationListRejectsSegment_(text) {
-  // 不要後面出現小孩椅這類非食材，就不要用詞條把列舉拼起來。
+  // 範圍已經由完整否定詞吃滿的，不要再擋。小孩椅這類仍不拼。
+  if (matchFixedNegationList_(text)) return false;
   if (text.indexOf("不要") !== 0 || text.indexOf("不要放") === 0) return false;
   var i = 0;
   var lead = longestPhraseAt_(text, 0);
@@ -868,6 +978,14 @@ function longestPatternAt_(text, index) {
   if (closed) consider(closed.len, closed.id);
   var neg = matchNegation_(rest);
   if (neg) consider(neg.len, neg.id);
+  var fixedNeg = matchFixedNegationList_(rest);
+  if (fixedNeg) consider(fixedNeg.len, fixedNeg.id);
+  var dish = matchDishNotSpicy_(rest);
+  if (dish) consider(dish.len, dish.id);
+  var buchi = matchBuChi_(rest);
+  if (buchi) consider(buchi.len, buchi.id);
+  var swap = matchSwap_(rest);
+  if (swap) consider(swap.len, swap.id);
   var allergy = matchAllergy_(rest);
   if (allergy) consider(allergy.len, allergy.id);
   var bare = matchBareAllergy_(rest);
@@ -1067,7 +1185,8 @@ function translateOneSegment_(part, cache) {
     return lead + peeled.prefix + body + trail;
   }
   // 金額或方案代碼旁邊吃不滿：整段留原文，不把碎片送出去。
-  if (segmentHasToken_(peeled.rest)) return null;
+  // 否定、過敏、換菜對不滿：整段留中文，不送去猜。
+  if (segmentHasToken_(peeled.rest) || uncertainScope_(peeled.rest)) return null;
   if (cache && cache[QUOTA_FLAG_]) return null;
   var translated = translatePieceCached_(cache, peeled.rest);
   if (cache && cache[QUOTA_FLAG_]) return null;
@@ -1234,7 +1353,7 @@ function translateNoteCnToId(noteCn) {
   if (known && !known.tail) return known.fixed;
   if (known) return joinOperationalNote_(known.fixed, known.tail);
   // 翻失敗、空結果或原樣退回時留下中文警示，不可改成「沒有說明」。
-  // cache 傳 null，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉、而且沒有金額的整段仍可能各呼叫一次；不重試、不暫停。忙日驗收要算進這些呼叫。
+  // cache 傳 null，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉、沒有金額、而且不是沒對上的否定或過敏的整段仍可能各呼叫一次；不重試、不暫停。忙日驗收要算進這些呼叫。
   return translateRemarkBodyToId_(trans, null);
 }
 
