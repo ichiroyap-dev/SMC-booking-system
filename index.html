@@ -421,6 +421,7 @@
         .contact-link { color: #c2410c; text-decoration: underline; font-weight: bold; white-space: nowrap; }
         #booking-section,
         #menu,
+        #group-dining,
         #takeout,
         #cancel { scroll-margin-top: 16px; }
         .skip-link {
@@ -555,6 +556,9 @@
             text-underline-offset: 3px;
         }
         .hero-phone:hover { color: #fff8ed; }
+        /* 深色主視覺上的連結沿用電話的金色，避免一般橘色連結沉進背景。 */
+        .hero-copy .contact-link { color: #f8ce91; }
+        .hero-copy .contact-link:hover { color: #fff8ed; }
         .hero-photo {
             position: relative;
             min-height: 610px;
@@ -742,6 +746,9 @@
             background: linear-gradient(135deg, #f7f1e7 0%, #eee4d7 100%);
             border-color: rgba(119, 87, 57, 0.13);
         }
+        /* 暖底上原橘色小標／連結對比不足，改用表單裡已有的深橘棕。 */
+        .visit-section .section-kicker,
+        .visit-section .contact-link { color: #9a3412; }
         #location-section {
             background: linear-gradient(135deg, #faf8f3 0%, #f1eae0 100%);
             border-color: rgba(106, 85, 62, 0.12);
@@ -1002,7 +1009,7 @@
             </div>
             
             <div class="bg-stone-50 p-6 rounded-2xl border border-stone-100 text-center lg:text-left min-w-0">
-                <h3 class="text-xs font-bold text-stone-400 uppercase tracking-widest mb-4">歡迎預訂及詢問</h3>
+                <h3 class="text-xs font-bold text-stone-500 uppercase tracking-widest mb-4">歡迎預訂及詢問</h3>
                 <div class="space-y-3 text-sm">
                     <div class="flex flex-wrap items-center justify-center lg:justify-start">
                         <span class="mr-2 text-lg">📞</span> 市話：<a href="tel:0426887895" class="contact-link ml-1">04-26887895</a>
@@ -1099,7 +1106,7 @@
         </section>
 
         <!-- 團體聚餐：桌數、場合與預約方式（價位見上方菜單，不在此重列） -->
-        <section id="group-dining" class="glass-card p-8 mb-8" aria-labelledby="group-dining-title">
+        <section id="group-dining" class="visit-section glass-card p-8 mb-8" aria-labelledby="group-dining-title">
             <p class="section-kicker mb-2">GROUP DINING</p>
             <h2 id="group-dining-title" class="brand-font text-2xl text-stone-800 mb-2">團體聚餐・家庭聚會</h2>
             <p class="text-sm text-stone-600 leading-7 mb-6">適合家庭聚餐、同學會、公司聚餐與親友聚會。本店採預約制，請先訂位再出發。最多可容納 9 桌；每桌建議最多坐12位。</p>
@@ -1131,12 +1138,12 @@
                            class="flex-1 flex items-center space-x-4 bg-white p-4 rounded-2xl border border-stone-100 shadow-sm min-w-0 hover:border-orange-200">
                             <div class="bg-orange-50 p-3 rounded-full text-2xl flex-shrink-0" aria-hidden="true">🏆</div>
                             <div class="min-w-0 flex-1">
-                                <p class="text-xs text-stone-400 font-bold tracking-widest">Google 評價</p>
+                                <p class="text-xs text-stone-500 font-bold tracking-widest">Google 評價</p>
                                 <p class="text-stone-800 font-bold mt-1">查看 Google 評價</p>
                             </div>
                         </a>
                         <div class="flex-1 flex flex-col items-center justify-center gap-1 bg-white p-4 rounded-2xl border border-stone-100 shadow-sm overflow-hidden min-h-[84px]">
-                            <p class="text-xs text-stone-400 font-bold tracking-widest">Restaurant Guru 推薦</p>
+                            <p class="text-xs text-stone-500 font-bold tracking-widest">Restaurant Guru 推薦</p>
                             <a id="b-circledLeaves27" target="_blank" rel="noopener noreferrer" href="https://restaurantguru.com/水美土雞城-大東里" class="b-circledLeaves27--light b-circledLeaves27--2025 scale-90 transform origin-center">
                                 <span class="b-circledLeaves27__title">Recommended</span>
                                 <span class="b-circledLeaves27__separator"></span>
@@ -1456,7 +1463,7 @@
                         <p id="takeoutWeighNote" class="mt-2 hidden text-[11px] text-stone-500 leading-5">按斤品項為估重下單／到店實秤，預估金額僅供參考。</p>
                     </div>
                     <div>
-                        <label for="customItem" class="text-xs font-bold text-stone-400 uppercase tracking-widest ml-1">其他加點品項（選填）</label>
+                        <label for="customItem" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">其他加點品項（選填）</label>
                         <input type="text" id="customItem" placeholder="例如：炒青菜 x1, 白飯 x3" class="mt-1.5 block w-full bg-white border border-stone-200 rounded-xl p-3.5 text-sm outline-none focus:ring-2 focus:ring-orange-500 transition">
                     </div>
                 </div>
@@ -1475,7 +1482,7 @@
                 <details class="form-disclose" id="emailPanel">
                     <summary>填寫Email接收通知（選填）<span id="emailDiscloseHint" class="disclose-hint"></span></summary>
                     <div class="disclose-body">
-                        <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="text-stone-400 font-normal normal-case">(選填)</span></label>
+                        <label for="email" class="text-xs font-bold text-stone-500 uppercase tracking-widest ml-1">電子郵件 <span class="font-normal normal-case">(選填)</span></label>
                         <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="example@mail.com" class="mt-1.5 block w-full bg-stone-50 border border-stone-200 rounded-xl p-3.5 focus:ring-2 focus:ring-orange-500 outline-none transition">
                         <p class="mt-1.5 text-[11px] leading-5 text-stone-500">選填；僅用於收件／訂單通知，正式細節仍以電話確認。</p>
                     </div>
@@ -1550,8 +1557,8 @@
         </main>
 
         <!-- 頁尾區塊 -->
-        <footer class="mt-12 text-center text-stone-400 text-xs tracking-wide leading-relaxed space-y-2 pb-10">
-            <nav class="text-sm text-stone-500 mb-3" aria-label="頁尾">
+        <footer class="mt-12 text-center text-stone-600 text-xs tracking-wide leading-relaxed space-y-2 pb-10">
+            <nav class="text-sm text-stone-600 mb-3" aria-label="頁尾">
                 <a href="./" aria-current="page" class="hover:underline">首頁</a>
                 <span class="mx-2 text-stone-300">|</span>
                 <a href="#menu" class="hover:underline">菜單價格</a>
@@ -1562,7 +1569,7 @@
                 <span class="mx-2 text-stone-300">|</span>
                 <a href="#booking-section" class="hover:underline">線上預約</a>
             </nav>
-            <p class="font-medium text-stone-500">
+            <p class="font-medium text-stone-600">
                 水 美 土 雞 城 SweetMei Chicken Restaurant <span class="mx-1 text-stone-300">|</span> 
                 營業時間：中午 11:30 - 14:00 晚上 17:30 - 21:00（每週三公休）<span class="mx-1 text-stone-300">|</span> 
                 服務專線：<a href="tel:0426887895" class="hover:underline">04-26887895</a>
@@ -1580,7 +1587,7 @@
             <p>
                 統一編號：72376167 <span class="mx-1 text-stone-300">|</span> 
                 © 2026 水美土雞城. 版權所有。<br class="sm:hidden">
-                <span class="text-stone-400/70 italic block sm:inline sm:ml-1">※ 本表單收集之個人資料僅用於餐飲預約、聯絡確認及預約來源對帳</span>
+                <span class="italic block sm:inline sm:ml-1">※ 本表單收集之個人資料僅用於餐飲預約、聯絡確認及預約來源對帳</span>
             </p>
             <details id="privacy-notice" class="max-w-2xl mx-auto mt-5 rounded-xl border border-stone-300/70 bg-white/60 p-4 text-left text-stone-600 tracking-normal">
                 <summary class="cursor-pointer text-center font-bold text-stone-700 text-sm">個人資料蒐集告知</summary>
