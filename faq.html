@@ -204,6 +204,13 @@
             border-radius: 24px;
             box-shadow: 0 18px 42px rgba(71, 43, 20, 0.065);
         }
+        /* 首頁的蜜桃底，和白色問答卡分開；橘色頂線只留給首頁訂位表單。 */
+        .tone-peach {
+            background: linear-gradient(135deg, #faf1e5 0%, #f3e3d1 100%);
+            border-color: rgba(181, 102, 43, 0.22);
+        }
+        .tone-peach .section-kicker,
+        .tone-peach .contact-link { color: #9a3412; }
         .section-kicker {
             color: #b4511b;
             font-size: 0.75rem;
@@ -260,7 +267,7 @@
         }
         .skip-link:focus { top: 1rem; }
         .site-nav a { color: #5c4634; }
-        .site-nav a[aria-current="page"] { color: #b4511b; font-weight: 700; }
+        .site-nav a[aria-current="page"] { color: #9a3412; font-weight: 700; }
         /* 品牌 LOGO：logo.png（repo 根目錄，透明底橫式，公雞＋紅字「水美土雞城」）。
            若 logo.png 尚未上傳，onerror 會退回 favicon.png 公雞圖＋文字字標，不會出現破圖。 */
         .brand-lockup {
@@ -307,6 +314,9 @@
         .faq-item summary {
             cursor: pointer;
             list-style: none;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
             padding: 1.15rem 0.15rem;
             font-weight: 700;
             color: #3c2a1d;
@@ -314,7 +324,8 @@
         .faq-item summary::-webkit-details-marker { display: none; }
         .faq-item summary::after {
             content: '+';
-            float: right;
+            flex-shrink: 0;
+            margin-left: auto;
             color: #b4511b;
             font-weight: 700;
             font-size: 1.15rem;
@@ -322,13 +333,13 @@
         }
         .faq-item[open] summary::after { content: '−'; }
         .faq-item summary:focus-visible {
-            outline: 2px solid #ee650d;
+            outline: 2px solid #c2410c;
             outline-offset: 4px;
             border-radius: 8px;
         }
         .breadcrumb a { color: #75665a; }
         @media (max-width: 479px) {
-            body { padding-left: 12px; padding-right: 12px; padding-bottom: 24px; }
+            body.px-4 { padding-left: 12px; padding-right: 12px; padding-bottom: 24px; }
             .glass-card { border-radius: 18px; }
             .brand-logo { height: 48px; }
             .brand-lockup--fallback .brand-logo { width: 42px; height: 42px; border-radius: 11px; }
@@ -465,11 +476,11 @@
             </section>
         </article>
 
-        <aside class="glass-card p-6 md:p-8 mb-8" aria-labelledby="faq-cta-title">
+        <aside class="tone-peach glass-card p-6 md:p-8 mb-8" aria-labelledby="faq-cta-title">
             <h2 id="faq-cta-title" class="brand-font text-2xl text-stone-800 mb-3">準備好再上山吃飯</h2>
             <p class="text-stone-600 leading-7 mb-6">請先訂位再出發。臨時來店會先確認餐點與價錢，建議先來電詢問。未預約不保證供應烤雞。</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <a href="./#booking-section" class="inline-flex items-center justify-center min-h-12 rounded-xl bg-[#ee650d] hover:bg-[#cf5107] text-white font-bold py-3 px-5">內用訂位</a>
+                <a href="./#booking-section" class="inline-flex items-center justify-center min-h-12 rounded-xl bg-[#c2410c] hover:bg-[#9a3412] text-white font-bold py-3 px-5">內用訂位</a>
                 <a href="./#takeout" class="inline-flex items-center justify-center min-h-12 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 font-bold py-3 px-5">外帶預約</a>
                 <a href="tel:0426887895" class="inline-flex items-center justify-center min-h-12 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 font-bold py-3 px-5">電話詢問 04-26887895</a>
                 <a href="https://line.me/R/ti/p/@xwg4507a" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center min-h-12 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 font-bold py-3 px-5">LINE @xwg4507a</a>
@@ -490,15 +501,15 @@
         })();
     </script>
 
-    <footer class="max-w-3xl mx-auto mt-4 text-center text-stone-400 text-xs tracking-wide leading-relaxed space-y-2 pb-10">
-        <nav class="text-sm text-stone-500 mb-3" aria-label="頁尾">
+    <footer class="max-w-3xl mx-auto mt-4 text-center text-stone-600 text-xs tracking-wide leading-relaxed space-y-2 pb-10">
+        <nav class="text-sm text-stone-600 mb-3" aria-label="頁尾">
             <a href="./" class="hover:underline">首頁</a>
             <span class="mx-2 text-stone-300">|</span>
             <a href="faq.html" aria-current="page" class="hover:underline">常見問題</a>
             <span class="mx-2 text-stone-300">|</span>
             <a href="./#booking-section" class="hover:underline">線上預約</a>
         </nav>
-        <p class="font-medium text-stone-500">
+        <p class="font-medium text-stone-600">
             水 美 土 雞 城 SweetMei Chicken Restaurant <span class="mx-1 text-stone-300">|</span>
             營業時間：中午 11:30 - 14:00 晚上 17:30 - 21:00（每週三公休）<span class="mx-1 text-stone-300">|</span>
             服務專線：<a href="tel:0426887895" class="hover:underline">04-26887895</a>
