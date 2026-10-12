@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// Offline checks for the 2026-09-27 LINE digest Indonesian NITs.
-// Stubs LanguageApp. Does not read sheets, send LINE, or touch a live script.
+// Offline checks for the simplified LINE digest Indonesian.
+// Structural lines use fixed templates. Remarks stay source Chinese plus one notice.
+// Does not read sheets, send LINE, or touch a live script.
 // Usage: node apps-script-isolate/line-digest-nit/test-offline.mjs
 
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { BUSY_DAY, BUSY_DAY_CALLS, HEADING_CASES, MIXED_DAY, PHRASEBOOK } from "./fixtures.mjs";
+import { BUSY_DAY, HEADING_CASES, MIXED_DAY } from "./fixtures.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const originalRemind = join(root, "original", "LineDailyRemind.gs");
@@ -20,167 +21,143 @@ const ok = (cond, message) => {
   if (!cond) failures.push(message);
 };
 
-function makeLanguageApp(calls) {
-  return {
-    translate(text, from, to) {
-      calls.push({ text: String(text), from, to });
-      const raw = String(text);
-      if (Object.prototype.hasOwnProperty.call(PHRASEBOOK, raw)) return PHRASEBOOK[raw];
-      const keys = Object.keys(PHRASEBOOK).sort((a, b) => b.length - a.length);
-      let out = raw;
-      for (const key of keys) {
-        if (out.indexOf(key) !== -1) out = out.split(key).join(PHRASEBOOK[key]);
-      }
-      return out === raw ? "ID:" + raw : out;
-    },
-  };
-}
-
 function loadGs(file, languageApp) {
-  const sleeps = [];
   const context = vm.createContext({
     LanguageApp: languageApp,
-    Utilities: {
-      sleep(ms) {
-        sleeps.push(ms);
-      },
-    },
+    Utilities: { sleep() {} },
     console,
   });
-  context.__sleeps = sleeps;
   vm.runInContext(readFileSync(file, "utf8"), context, { filename: file });
   return context;
 }
 
-const newCalls = [];
-const oldCalls = [];
-const fixed = loadGs(modifiedRemind, makeLanguageApp(newCalls));
-const previous = loadGs(originalRemind, makeLanguageApp(oldCalls));
-const sync = loadGs(originalSync, makeLanguageApp([]));
+const calls = [];
+const fixed = loadGs(modifiedRemind, {
+  translate(text) {
+    calls.push(String(text));
+    throw new Error("LanguageApp must not be called: " + text);
+  },
+});
+const previous = loadGs(originalRemind, {
+  translate(text) {
+    calls.push("OLD:" + String(text));
+    return "ID:" + String(text).replace(/,(\d{3})/g, ".$1");
+  },
+});
+const sync = loadGs(originalSync, { translate() { return ""; } });
+const NOTICE = fixed.REMARK_CONFIRM_NOTICE_;
 
 function resetCalls() {
-  newCalls.length = 0;
-  oldCalls.length = 0;
+  calls.length = 0;
 }
 
-function assertNoCjk(label, text) {
-  ok(!CJK.test(text), label + " still has Chinese: " + text);
-  ok(text.indexOf("共") === -1, label + " still has 共: " + text);
+function remarkLine(body) {
+  return "12:00 測試甲先生 (4) | 備註：" + body;
 }
 
-// --- NIT1: headings and count lines ---
+function expectRemark(body) {
+  return "12:00 Bapak 測試甲 (4) | Catatan: " + body + " " + NOTICE;
+}
+
+function catatanBody(line) {
+  const mark = "Catatan: ";
+  const at = line.indexOf(mark);
+  if (at === -1) return null;
+  const rest = line.slice(at + mark.length);
+  const suffix = " " + NOTICE;
+  if (!rest.endsWith(suffix)) return rest;
+  return rest.slice(0, -suffix.length);
+}
+
 resetCalls();
 for (const [input, expected] of HEADING_CASES) {
   const got = fixed.translateTaskCnToId(input);
   ok(got === expected, "heading\n  in:  " + input + "\n  got: " + got + "\n  want:" + expected);
-  assertNoCjk("heading " + input, got);
+  ok(!CJK.test(got), "heading still has Chinese: " + got);
+  ok(got.indexOf("共") === -1, "heading still has 共: " + got);
 }
-ok(newCalls.length === 0, "headings must not call LanguageApp, calls=" + newCalls.length);
+ok(calls.length === 0, "headings called LanguageApp: " + JSON.stringify(calls));
 
-// Snapshot still has the leftover character, so this isolate is the fix.
 const originalSrc = readFileSync(originalRemind, "utf8");
-ok(originalSrc.indexOf('Bawa pulang (共 "') !== -1, "original snapshot missing leftover 共 in takeout heading");
 const modifiedSrc = readFileSync(modifiedRemind, "utf8");
+ok(originalSrc.indexOf('Bawa pulang (共 "') !== -1, "original snapshot missing leftover 共 in takeout heading");
 ok(modifiedSrc.indexOf('Bawa pulang (共 "') === -1, "modified takeout heading still contains 共");
 ok(modifiedSrc.indexOf(' (共 "') === -1, "modified heading builder still contains 共");
+ok(modifiedSrc.indexOf("LanguageApp.translate") === -1, "LanguageApp.translate is still in the candidate");
+ok(modifiedSrc.indexOf("REMARK_PHRASES_") === -1, "remark phrase table is still in the candidate");
+ok(modifiedSrc.indexOf("peelListTail_") === -1, "list-tail peeler is still in the candidate");
+ok(NOTICE === "(Mohon konfirmasi dulu ke penanggung jawab)", "notice string drifted: " + NOTICE);
 
-// --- NIT2: multi-segment remark ---
-resetCalls();
-const multiIn = "11:30 測試甲先生 (6) | 備註：花生過敏；不要辣 (小孩椅)";
-const multiWant = "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang; tidak pedas (kursi anak)";
-const multiGot = fixed.translateTaskCnToId(multiIn);
-ok(multiGot === multiWant, "multi-segment\n  got:  " + multiGot + "\n  want: " + multiWant);
-ok(
-  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify([]),
-  "multi-segment calls: " + JSON.stringify(newCalls),
-);
-ok(newCalls.every((c) => c.from === "zh-TW" && c.to === "id"), "LanguageApp locale drifted");
-ok(multiGot.indexOf("; ") !== -1 && multiGot.indexOf(" (") !== -1, "separators dropped: " + multiGot);
-ok(multiGot.indexOf("；") === -1 && multiGot.indexOf("、") === -1, "Chinese punctuation left in remark: " + multiGot);
-const multiTail = multiGot.split("Catatan: ")[1] || "";
-assertNoCjk("multi-segment tail", multiTail);
-
-resetCalls();
-const listIn = "18:00 測試丁先生 (10) | 備註：不要香菜、少鹽";
-const listGot = fixed.translateTaskCnToId(listIn);
-ok(
-  listGot === "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar, sedikit garam",
-  "enumeration remark: " + listGot,
-);
-ok(
-  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify([]),
-  "enumeration calls: " + JSON.stringify(newCalls),
-);
-
-resetCalls();
-const amountIn = "12:10 測試甲先生 (8) | 備註：預估金額 $2,000 (生日；不要葱)";
-const amountGot = fixed.translateTaskCnToId(amountIn);
-ok(
-  amountGot === "12:10 Bapak 測試甲 (8) | Catatan: Perkiraan biaya $2,000 (ulang tahun; tanpa daun bawang)",
-  "amount + segments: " + amountGot,
-);
-ok(
-  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify([]),
-  "amount calls should skip the already-replaced label: " + JSON.stringify(newCalls),
-);
-ok(newCalls.every((c) => c.text.indexOf("$") === -1 && c.text.indexOf("2,000") === -1), "amount leaked into LanguageApp: " + JSON.stringify(newCalls));
-
-// One segment failing must not drop the others or the separators.
-resetCalls();
-const flaky = loadGs(modifiedRemind, {
-  translate(text) {
-    if (text === "請改菜單") throw new Error("stub failure");
-    return PHRASEBOOK[text] || ("ID:" + text);
-  },
-});
-const flakyGot = flaky.translateTaskCnToId("11:30 測試甲先生 (6) | 備註：花生過敏；請改菜單 (小孩椅)");
-ok(
-  flakyGot === "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang; 請改菜單 (kursi anak)",
-  "partial failure: " + flakyGot,
-);
+const remarks = [
+  "不要辣、蒜?",
+  "不要蔥，香菜、牛肉、靠窗",
+  "不要蝦子，$500、芒果和香菜",
+  "對花生過敏、蝦子",
+  "花生過敏；不要辣 (小孩椅)",
+  "不要香菜、少鹽",
+  "$1,000",
+  "NT$12,000",
+  "$1,000.50",
+  "$500,2隻雞",
+  "預估金額 $2,000 (生日；不要葱)",
+  "訂金$1,000；尾款$2,000",
+  "花生過敏 | 靠窗",
+  "5k1a",
+  "12",
+  "費用$1,000，請拍照",
+];
+for (const body of remarks) {
+  resetCalls();
+  const got = fixed.translateTaskCnToId(remarkLine(body));
+  ok(got === expectRemark(body), "remark\n  got:  " + got + "\n  want: " + expectRemark(body));
+  ok(catatanBody(got) === body, "remark body changed: " + JSON.stringify(catatanBody(got)));
+  ok(got.indexOf("$1.000") === -1 && got.indexOf("$1.000.50") === -1, "amount rewritten: " + got);
+  ok(got.split(NOTICE).length === 2, "notice count: " + got);
+  ok(calls.length === 0, "remark called LanguageApp: " + JSON.stringify(calls));
+}
 
 resetCalls();
-const singleGot = fixed.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：花生過敏");
-ok(singleGot === "11:40 Bapak 測試甲 (6) | Catatan: alergi kacang", "single segment: " + singleGot);
-ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify([]), "single segment calls: " + JSON.stringify(newCalls));
-
-// --- empty remark: no LanguageApp ---
-resetCalls();
-const emptyGot = fixed.translateTaskCnToId("12:00 測試乙小姐 (4)");
-ok(emptyGot === "12:00 Ibu 測試乙 (4)", "empty remark: " + emptyGot);
-ok(newCalls.length === 0, "empty remark called LanguageApp: " + JSON.stringify(newCalls));
-const emptyLabelGot = fixed.translateTaskCnToId("12:00 測試乙小姐 (4) | 備註：");
-ok(emptyLabelGot === "12:00 Ibu 測試乙 (4) | Catatan:", "empty catatan label: " + JSON.stringify(emptyLabelGot));
-ok(newCalls.length === 0, "empty catatan label called LanguageApp");
-
-// --- plan code / numbers only ---
-resetCalls();
-const codeGot = fixed.translateTaskCnToId("11:00 測試丙 (5k1a) | 備註：5k1a");
-ok(codeGot === "11:00 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a", "plan code: " + codeGot);
-ok(newCalls.length === 0, "plan code was sent to LanguageApp: " + JSON.stringify(newCalls));
-const digitsGot = fixed.translateTaskCnToId("11:05 測試丙 | 備註：12");
-ok(digitsGot === "11:05 Bapak/Ibu 測試丙 | Catatan: 12", "digits only: " + digitsGot);
-ok(newCalls.length === 0, "digits-only remark called LanguageApp");
-
-resetCalls();
-const mixedCodeGot = fixed.translateTaskCnToId("11:10 測試丙 (5k1a) | 備註：5k1a；花生過敏");
+ok(fixed.translateTaskCnToId("12:00 測試乙小姐 (4)") === "12:00 Ibu 測試乙 (4)", "empty guest line drifted");
 ok(
-  mixedCodeGot === "11:10 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a; alergi kacang",
-  "code beside Chinese: " + mixedCodeGot,
+  fixed.translateTaskCnToId("12:00 測試乙小姐 (4) | 備註：") === "12:00 Ibu 測試乙 (4) | Catatan:",
+  "empty catatan drifted",
+);
+ok(fixed.translateTaskCnToId("19:00 測試戊 人數待確認") === "19:00 Bapak/Ibu 測試戊 Jumlah orang menunggu konfirmasi", "headcount label drifted");
+ok(fixed.translateTaskCnToId("11:00 測試丙 (5k1a)") === "11:00 Bapak/Ibu 測試丙 (5k1a)", "plan code on the name drifted");
+ok(fixed.translateTaskCnToId("11:00 外帶01 | 備註：桶仔雞2隻") === "11:00 Bapak/Ibu 外帶01 | Catatan: 桶仔雞2隻 " + NOTICE, "takeout remark drifted");
+ok(calls.length === 0, "structural guest lines called LanguageApp");
+
+resetCalls();
+const maintenance = "[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n清洗製冰機，下午三點前完成，並拍照回報\n費用$1,000，請拍照";
+const maintenanceGot = fixed.translateTaskCnToId(maintenance);
+ok(maintenanceGot.split("\n")[0] === "[Minggu 11 Oktober 2026 09:05 GMT+8] [Ringkasan Reservasi 11 Oktober 2026]", "maintenance header: " + maintenanceGot.split("\n")[0]);
+ok(maintenanceGot.split("\n")[1] === "清洗製冰機，下午三點前完成，並拍照回報 " + NOTICE, "maintenance line drifted: " + maintenanceGot.split("\n")[1]);
+ok(maintenanceGot.split("\n")[2] === "費用$1,000，請拍照 " + NOTICE, "maintenance amount drifted: " + maintenanceGot.split("\n")[2]);
+ok(maintenanceGot.indexOf("$1.000") === -1, "maintenance amount became $1.000");
+ok(calls.length === 0, "maintenance called LanguageApp");
+
+resetCalls();
+ok(fixed.translateNoteCnToId("") === "Tidak ada keterangan", "empty note drifted");
+ok(fixed.translateNoteCnToId("無") === "Tidak ada keterangan", "無 note drifted");
+ok(fixed.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！") === "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!", "group warning drifted");
+ok(fixed.translateNoteCnToId("🛵 純外帶日，無內用桌") === "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.", "takeout warning drifted");
+ok(fixed.translateNoteCnToId("✅ 今日預約正常 (共 5 桌)") === "✅ Reservasi hari ini normal (Total 5 meja)", "normal warning drifted");
+ok(fixed.translateNoteCnToId("臨時改爐火") === "臨時改爐火 " + NOTICE, "free C note drifted");
+ok(
+  fixed.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！；不要辣、蒜?") ===
+    "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!；不要辣、蒜? " + NOTICE,
+  "warning tail drifted",
 );
 ok(
-  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify([]),
-  "code must not be part of the LanguageApp text: " + JSON.stringify(newCalls),
+  fixed.translateNoteCnToId("🛵 純外帶日，無內用桌；訂金$1,000已付") ===
+    "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.；訂金$1,000已付 " + NOTICE,
+  "takeout tail amount drifted",
 );
+ok(fixed.translateNoteCnToId("若發現漏水，不要啟動，先通知店長").indexOf("$1.000") === -1, "note rewrote an amount");
+ok(fixed.translateNoteCnToId("若發現漏水，不要啟動，先通知店長") === "若發現漏水，不要啟動，先通知店長 " + NOTICE, "ops note drifted");
+ok(calls.length === 0, "notes called LanguageApp: " + JSON.stringify(calls));
 
-// --- mixed dine-in + takeout day, Chinese composer untouched ---
-const chinese = sync.buildDigestText_(
-  MIXED_DAY.day,
-  MIXED_DAY.date,
-  MIXED_DAY.time,
-  MIXED_DAY.lunch,
-  MIXED_DAY.dinner,
-);
+const chinese = sync.buildDigestText_(MIXED_DAY.day, MIXED_DAY.date, MIXED_DAY.time, MIXED_DAY.lunch, MIXED_DAY.dinner);
 const chineseWant = [
   "[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]",
   "☀️ 午餐",
@@ -219,19 +196,19 @@ const indonesianWant = [
   "",
   "🍽️ Makan di tempat (total 3 meja)",
   "",
-  "11:30 Bapak 測試甲 (6) | Catatan: alergi kacang; tidak pedas (kursi anak)",
+  "11:30 Bapak 測試甲 (6) | Catatan: 花生過敏；不要辣 (小孩椅) " + NOTICE,
   "",
   "12:00 Ibu 測試乙 (4)",
   "",
   "🥡 Bawa pulang (total 1 pesanan)",
   "",
-  "11:00 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a",
+  "11:00 Bapak/Ibu 測試丙 (5k1a) | Catatan: 5k1a " + NOTICE,
   "",
   "🌙 Makan Malam",
   "",
   "🍽️ Makan di tempat (total 1 meja, 1 pesanan jumlah meja menunggu konfirmasi)",
   "",
-  "18:00 Bapak 測試丁 (10) | Catatan: tanpa daun ketumbar, sedikit garam",
+  "18:00 Bapak 測試丁 (10) | Catatan: 不要香菜、少鹽 " + NOTICE,
   "",
   "19:00 Bapak/Ibu 測試戊 Jumlah orang menunggu konfirmasi",
   "",
@@ -243,1543 +220,42 @@ const indonesianWant = [
 ].join("\n");
 ok(indonesian === indonesianWant, "mixed day Indonesian drifted:\n" + indonesian);
 ok(indonesian.indexOf("共") === -1, "mixed day Indonesian still contains 共");
+ok(indonesian.indexOf("$1.000") === -1, "mixed day rewrote an amount");
 for (const line of indonesian.split("\n")) {
-  if (/Makan di tempat|Bawa pulang|Makan Siang|Makan Malam|^\(Total /.test(line)) {
-    assertNoCjk("mixed heading", line);
-  }
-  const catatanAt = line.indexOf("Catatan:");
-  if (catatanAt !== -1) assertNoCjk("mixed catatan", line.slice(catatanAt));
-}
-ok(
-  JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify([]),
-  "mixed day LanguageApp calls: " + JSON.stringify(newCalls),
-);
-ok(chinese === sync.buildDigestText_(MIXED_DAY.day, MIXED_DAY.date, MIXED_DAY.time, MIXED_DAY.lunch, MIXED_DAY.dinner), "translator mutated the Chinese digest");
-
-function remarkOf(line) {
-  const at = line.indexOf("Catatan:");
-  return at === -1 ? "" : line.slice(at);
-}
-
-function assertPieceCalls(label, line, wantCalls, wantTail) {
-  resetCalls();
-  const got = fixed.translateTaskCnToId(line);
-  ok(remarkOf(got) === wantTail, label + "\n  got:  " + got + "\n  want: " + wantTail);
-  ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(wantCalls), label + " calls: " + JSON.stringify(newCalls));
-  ok(!/ayam2|2ekor|sup1|1porsi/.test(got), label + " glued qty: " + got);
-  return got;
-}
-
-const qtyGot = assertPieceCalls(
-  "qty inside Chinese",
-  "11:00 外帶01 | 備註：桶仔雞2隻、雞湯1份",
-  [],
-  "Catatan: ayam tong 2 ekor, sup ayam 1 porsi",
-);
-const partyGot = assertPieceCalls(
-  "9大3小",
-  "11:30 測試04 (8) | 備註：9大3小",
-  [],
-  "Catatan: 9 dewasa 3 anak",
-);
-const beerGot = assertPieceCalls(
-  "qty mid-phrase",
-  "18:00 測試08先生 (6) | 備註：啤酒10箱要冰",
-  ["啤酒10箱要冰"],
-  "Catatan: bir 10 kotak harus dingin",
-);
-const arriveGot = assertPieceCalls(
-  "digits then Chinese",
-  "18:10 測試09小姐 (4) | 備註：12點到",
-  [],
-  "Catatan: tiba jam 12",
-);
-const fwGot = assertPieceCalls(
-  "full-width digits",
-  "17:20 外帶02 | 備註：２份",
-  [],
-  "Catatan: 2 porsi",
-);
-const semiGot = assertPieceCalls(
-  "half-width semicolon",
-  "11:12 測試甲先生 (2) | 備註：不要辣;少鹽",
-  [],
-  "Catatan: tidak pedas; sedikit garam",
-);
-const commaGot = assertPieceCalls(
-  "half-width comma",
-  "11:13 測試甲先生 (2) | 備註：不要香菜,少鹽",
-  [],
-  "Catatan: tanpa daun ketumbar, sedikit garam",
-);
-const vipGot = assertPieceCalls(
-  "Chinese plus English",
-  "17:50 外帶03 | 備註：要VIP桌,不要香菜",
-  [],
-  "Catatan: minta meja VIP, tanpa daun ketumbar",
-);
-const pipeGot = assertPieceCalls(
-  "pipe is a remark separator",
-  "11:30 測試甲先生 (6) | 備註：花生過敏 | 靠窗",
-  [],
-  "Catatan: alergi kacang | dekat jendela",
-);
-
-resetCalls();
-const codeInPhrase = fixed.translateTaskCnToId("18:20 測試甲先生 (4) | 備註：靠窗5.5k9a");
-ok(remarkOf(codeInPhrase) === "Catatan: dekat jendela 5.5k9a", "plan code phrase: " + codeInPhrase);
-ok(newCalls.length === 0, "plan code was sent raw: " + JSON.stringify(newCalls));
-ok(codeInPhrase.indexOf("\uE000") === -1, "plan code sentinel leaked: " + codeInPhrase);
-ok(codeInPhrase.indexOf("5.5k9a") !== -1, "plan code not restored: " + codeInPhrase);
-
-resetCalls();
-const dropped = loadGs(modifiedRemind, {
-  translate(text) {
-    newCalls.push({ text: String(text), from: "zh-TW", to: "id" });
-    return "";
-  },
-});
-const droppedGot = dropped.translateTaskCnToId("18:20 測試甲先生 (4) | 備註：雜註5.5k9a");
-ok(remarkOf(droppedGot) === "Catatan: 雜註5.5k9a", "failed piece keeps the original segment: " + droppedGot);
-ok(droppedGot.indexOf("dekat jendela") === -1, "failed piece appended a translation: " + droppedGot);
-ok(newCalls.every((c) => c.text.indexOf("5.5k9a") === -1), "plan code sent after cut: " + JSON.stringify(newCalls));
-
-resetCalls();
-const newlineBody = fixed.translateRemarkBodyToId_("桶仔雞2隻\n雞湯1份", {});
-ok(newlineBody === "ayam tong 2 ekor\nsup ayam 1 porsi", "newline split: " + JSON.stringify(newlineBody));
-
-// Translator returns the Chinese unchanged, an empty string, or a trailing period.
-resetCalls();
-const unchangedApp = loadGs(modifiedRemind, {
-  translate(text) {
-    newCalls.push({ text: String(text) });
-    return text;
-  },
-});
-const unchangedGot = unchangedApp.translateTaskCnToId("11:30 測試04 (8) | 備註：請改菜單");
-ok(remarkOf(unchangedGot) === "Catatan: 請改菜單", "unchanged translation: " + unchangedGot);
-ok(newCalls.length === 1, "unchanged should call once: " + newCalls.length);
-
-resetCalls();
-const emptyApp = loadGs(modifiedRemind, {
-  translate(text) {
-    newCalls.push({ text: String(text) });
-    return "";
-  },
-});
-const emptyTransGot = emptyApp.translateTaskCnToId("11:30 測試04 (8) | 備註：請改菜單");
-ok(remarkOf(emptyTransGot) === "Catatan: 請改菜單", "empty translation must keep Chinese: " + emptyTransGot);
-ok(newCalls.length === 1, "empty translation should not retry: " + newCalls.length);
-ok(emptyApp.__sleeps.length === 0, "empty translation slept: " + JSON.stringify(emptyApp.__sleeps));
-
-resetCalls();
-const periodApp = loadGs(modifiedRemind, {
-  translate(text) {
-    newCalls.push({ text: String(text) });
-    return "silakan ubah.";
-  },
-});
-const periodGot = periodApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單");
-ok(remarkOf(periodGot) === "Catatan: silakan ubah", "strip trailing period google added: " + periodGot);
-
-resetCalls();
-let retryN = 0;
-const retryApp = loadGs(modifiedRemind, {
-  translate(text) {
-    retryN += 1;
-    newCalls.push({ text: String(text) });
-    if (retryN === 1) throw new Error("busy");
-    return "silakan ubah";
-  },
-});
-const retryGot = retryApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單");
-ok(remarkOf(retryGot) === "Catatan: silakan ubah", "retry then success: " + retryGot);
-ok(retryN === 2, "retry call count: " + retryN);
-ok(JSON.stringify(retryApp.__sleeps) === JSON.stringify([250]), "retry pause: " + JSON.stringify(retryApp.__sleeps));
-
-resetCalls();
-let failN = 0;
-const failApp = loadGs(modifiedRemind, {
-  translate() {
-    failN += 1;
-    throw new Error("down");
-  },
-});
-const failGot = failApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單");
-ok(remarkOf(failGot) === "Catatan: 請改菜單", "final failure keeps Chinese: " + failGot);
-ok(failN === 2, "final failure should try twice: " + failN);
-ok(JSON.stringify(failApp.__sleeps) === JSON.stringify([250]), "generic error waits 250ms: " + JSON.stringify(failApp.__sleeps));
-
-resetCalls();
-const noteFail = loadGs(modifiedRemind, {
-  translate() {
-    newCalls.push({ text: "note" });
-    throw new Error("down");
-  },
-});
-const hiddenNote = noteFail.translateNoteCnToId("臨時改爐火");
-ok(hiddenNote === "臨時改爐火", "note failure hid the warning: " + hiddenNote);
-ok(noteFail.__sleeps.length === 1, "note failure pause: " + JSON.stringify(noteFail.__sleeps));
-ok(noteFail.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！") === "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!", "known warning drifted");
-ok(noteFail.translateNoteCnToId("") === "Tidak ada keterangan", "empty note drifted");
-ok(noteFail.translateNoteCnToId("無") === "Tidak ada keterangan", "無 note drifted");
-
-const PH = (id) => "\uE000" + id + "\uE001";
-
-resetCalls();
-const multiAmt = fixed.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：訂金$1,000；尾款$2,000");
-ok(remarkOf(multiAmt) === "Catatan: uang muka $1,000; sisa pembayaran $2,000", "multiple amounts kept in segment: " + multiAmt);
-ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify([]), "dictionary amounts are not sent: " + JSON.stringify(newCalls));
-ok(multiAmt.indexOf("$1,000 $2,000") === -1 && multiAmt.indexOf("$1.000") === -1, "amounts were appended or reformatted: " + multiAmt);
-
-resetCalls();
-const lostAmt = loadGs(modifiedRemind, {
-  translate(text) {
-    newCalls.push({ text: String(text) });
-    return "";
-  },
-});
-const lostAmtGot = lostAmt.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：雜項$1,000；別項$2,000");
-ok(remarkOf(lostAmtGot) === "Catatan: 雜項$1,000; 別項$2,000", "multiple amounts lost stay in original segments: " + lostAmtGot);
-ok(lostAmtGot.indexOf("biaya") === -1, "lost amounts kept a partial translation: " + lostAmtGot);
-ok(newCalls.every((c) => c.text.indexOf("$") === -1), "lost amounts sent the token: " + JSON.stringify(newCalls));
-ok(lostAmtGot.indexOf("$1.000") === -1 && lostAmtGot.indexOf("$2.000") === -1, "lost amounts were reformatted: " + lostAmtGot);
-ok(lostAmtGot.indexOf("$1, 000") === -1 && lostAmtGot.indexOf("$2, 000") === -1, "lost amounts were spaced inside the number: " + lostAmtGot);
-
-resetCalls();
-const multiCode = fixed.translateTaskCnToId("18:20 測試甲先生 (4) | 備註：靠窗5k1a；加桌5.5k9a");
-ok(remarkOf(multiCode) === "Catatan: dekat jendela 5k1a; tambah meja 5.5k9a", "multiple plan codes kept: " + multiCode);
-ok(newCalls.length === 0, "multiple plan codes call count: " + JSON.stringify(newCalls));
-ok(newCalls.every((c) => c.text.indexOf("5k1a") === -1 && c.text.indexOf("5.5k9a") === -1), "plan codes sent raw: " + JSON.stringify(newCalls));
-
-resetCalls();
-const lostCode = loadGs(modifiedRemind, {
-  translate(text) {
-    return String(text).replace(/\uE000\d+\uE001/g, "");
-  },
-});
-const lostCodeGot = lostCode.translateTaskCnToId("18:20 測試甲先生 (4) | 備註：雜註5k1a；雜註5.5k9a");
-ok(remarkOf(lostCodeGot) === "Catatan: 雜註5k1a; 雜註5.5k9a", "multiple plan codes lost: " + lostCodeGot);
-
-resetCalls();
-const mangled = loadGs(modifiedRemind, {
-  translate(text) {
-    newCalls.push({ text: String(text) });
-    if (String(text).indexOf("別項") !== -1) return "Rp 9";
-    return String(text).replace("雜項", "biaya lain");
-  },
-});
-const mangledGot = mangled.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：雜項$1,000；別項$2,000");
-ok(remarkOf(mangledGot) === "Catatan: 雜項$1,000; 別項$2,000", "token-adjacent fragments stay Chinese: " + mangledGot);
-ok(newCalls.length === 0, "token-adjacent fragments were sent: " + JSON.stringify(newCalls));
-ok(mangledGot.indexOf("\uE000") === -1, "mangled sentinel leaked: " + mangledGot);
-
-resetCalls();
-const duplicated = loadGs(modifiedRemind, {
-  translate(text) {
-    const raw = String(text);
-    if (raw.indexOf("別項") !== -1) return raw + raw;
-    return raw.replace("雜項", "biaya lain");
-  },
-});
-const duplicatedGot = duplicated.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：雜項$1,000；別項$2,000");
-ok(remarkOf(duplicatedGot) === "Catatan: 雜項$1,000; 別項$2,000", "duplicated piece does not duplicate the amount: " + duplicatedGot);
-ok((duplicatedGot.match(/\$2,000/g) || []).length === 1, "duplicated amount was repeated: " + duplicatedGot);
-ok(newCalls.length === 0, "duplicated amount sent a fragment: " + JSON.stringify(newCalls));
-ok(duplicatedGot.indexOf("$1,000 $2") === -1 && duplicatedGot.indexOf("$1.000") === -1, "duplicated token was appended or reformatted: " + duplicatedGot);
-
-const qtyAmountGot = assertPieceCalls(
-  "amount regex does not swallow quantity",
-  "11:00 外帶01 | 備註：$500,2隻雞",
-  ["2隻雞"],
-  "Catatan: $500, 2 ekor ayam",
-);
-ok(qtyAmountGot.indexOf("$500,2") === -1, "quantity stayed inside the amount: " + qtyAmountGot);
-
-resetCalls();
-const literalBrace = fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：見{{0}}；$1,000");
-ok(literalBrace.indexOf("{{0}}") !== -1, "literal {{0}} is not a placeholder: " + literalBrace);
-ok(literalBrace.indexOf("$1,000") !== -1 && literalBrace.indexOf("$1.000") === -1, "literal brace case changed the amount: " + literalBrace);
-ok(literalBrace.indexOf("{{$1") === -1 && literalBrace.indexOf("{{1") === -1, "literal {{0}} was overwritten: " + literalBrace);
-
-resetCalls();
-const sentinelApp = loadGs(modifiedRemind, {
-  translate(text) {
-    newCalls.push({ text: String(text) });
-    return String(text).replace("標記", "tanda");
-  },
-});
-const sentinelGot = sentinelApp.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：標記\uE000；$1,000");
-ok(remarkOf(sentinelGot) === "Catatan: 標記\uE000; $1,000", "source sentinel stays beside the amount: " + JSON.stringify(sentinelGot));
-ok(newCalls.length === 0, "sentinel segment sent a fragment: " + JSON.stringify(newCalls));
-
-const commaQtyGot = assertPieceCalls(
-  "comma before quantity is spaced",
-  "11:00 外帶01 | 備註：不要辣,300份",
-  [],
-  "Catatan: tidak pedas, 300 porsi",
-);
-ok(commaQtyGot.indexOf(",300") === -1, "comma glued to 300: " + commaQtyGot);
-
-const timeGot = assertPieceCalls(
-  "fullwidth time colon stays 12:30",
-  "18:10 測試09小姐 (4) | 備註：12：30到",
-  [],
-  "Catatan: tiba jam 12:30",
-);
-ok(timeGot.indexOf("12: 30") === -1 && timeGot.indexOf("12：30") === -1, "time colon was broken: " + timeGot);
-resetCalls();
-const bareTime = fixed.translateTaskCnToId("18:11 測試09小姐 (4) | 備註：12：30");
-ok(remarkOf(bareTime) === "Catatan: 12:30", "bare fullwidth time: " + bareTime);
-ok(newCalls.length === 0, "bare time called LanguageApp: " + JSON.stringify(newCalls));
-
-resetCalls();
-const slashGot = fixed.translateTaskCnToId("11:00 外帶01 | 備註：不要辣/少鹽");
-ok(newCalls.length === 0, "slash is not a separator: " + JSON.stringify(newCalls));
-ok(remarkOf(slashGot) === "Catatan: tidak pedas/sedikit garam", "slash remark: " + slashGot);
-
-resetCalls();
-const spaceGot = fixed.translateTaskCnToId("11:00 外帶01 | 備註：不要辣 少鹽");
-ok(newCalls.length === 0, "whitespace is not a separator: " + JSON.stringify(newCalls));
-ok(remarkOf(spaceGot) === "Catatan: tidak pedas sedikit garam", "spaced remark: " + spaceGot);
-
-resetCalls();
-let quotaN = 0;
-const quotaApp = loadGs(modifiedRemind, {
-  translate() {
-    quotaN += 1;
-    throw new Error("Service invoked too many times for one day: translate");
-  },
-});
-const quotaGot = quotaApp.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：請改菜單；請再確認");
-ok(remarkOf(quotaGot) === "Catatan: 請改菜單; 請再確認", "daily quota skips retry: " + quotaGot);
-ok(quotaN === 1, "daily quota should not call the second segment or retry: " + quotaN);
-ok(quotaApp.__sleeps.length === 0, "daily quota slept: " + JSON.stringify(quotaApp.__sleeps));
-
-resetCalls();
-let shortN = 0;
-const shortApp = loadGs(modifiedRemind, {
-  translate() {
-    shortN += 1;
-    throw new Error("Service invoked too many times in a short time: translate");
-  },
-});
-const shortGot = shortApp.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單");
-ok(remarkOf(shortGot) === "Catatan: 請改菜單", "short-time limit still falls back after retry: " + shortGot);
-ok(shortN === 2, "short-time limit should retry once: " + shortN);
-ok(JSON.stringify(shortApp.__sleeps) === JSON.stringify([1000]), "short-time waits 1000ms: " + JSON.stringify(shortApp.__sleeps));
-
-function noBrokenAmount(text) {
-  return (
-    text.indexOf("$1, 000") === -1 &&
-    text.indexOf("$2, 000") === -1 &&
-    text.indexOf("NT$12, 000") === -1 &&
-    text.indexOf("$1, 000.50") === -1 &&
-    text.indexOf("$1.000") === -1 &&
-    text.indexOf("$2.000") === -1 &&
-    text.indexOf("$1.000.50") === -1
-  );
-}
-
-function amountLine(remark) {
-  return "12:00 測試甲先生 (4) | 備註：" + remark;
-}
-
-function amountApp(mode, counter) {
-  return loadGs(modifiedRemind, {
-    translate(text) {
-      counter.n += 1;
-      const raw = String(text);
-      if (mode === "empty") return "";
-      if (mode === "identity") return raw;
-      if (mode === "generic") throw new Error("down");
-      if (mode === "quota") throw new Error("Service invoked too many times: translate.");
-      if (mode === "lost") return "";
-      if (mode === "renumbered") return raw.replace(/\uE000(\d+)\uE001/g, "\uE0009\uE001");
-      if (mode === "duplicated") return raw.replace(/\uE000\d+\uE001/g, (ph) => ph + ph);
-      return raw
-        .replace(/雜項/g, "biaya lain")
-        .replace(/別項/g, "item lain")
-        .replace(/收妥/g, "diterima")
-        .replace(/未結/g, "belum selesai");
-    },
-  });
-}
-
-const amountShapes = [
-  {
-    name: "$1,000",
-    remark: "雜項$1,000收妥",
-    source: "Catatan: 雜項$1,000收妥",
-    forbidNt: true,
-  },
-  {
-    name: "NT$12,000",
-    remark: "雜項NT$12,000收妥",
-    source: "Catatan: 雜項NT$12,000收妥",
-    forbidNt: false,
-  },
-  {
-    name: "$1,000.50",
-    remark: "雜項$1,000.50收妥",
-    source: "Catatan: 雜項$1,000.50收妥",
-    forbidNt: true,
-  },
-];
-
-const amountModes = ["success", "empty", "identity", "generic", "quota", "lost", "renumbered", "duplicated"];
-for (const shape of amountShapes) {
-  for (const mode of amountModes) {
-    const counter = { n: 0 };
-    const app = amountApp(mode, counter);
-    const got = app.translateTaskCnToId(amountLine(shape.remark));
-    const want = shape.source;
-    const label = "amount " + mode + " keeps " + shape.name;
-    ok(remarkOf(got) === want, label + ": " + got);
-    ok(noBrokenAmount(got), label + " broke the number: " + got);
-    ok(got.indexOf(shape.remark.indexOf("NT$") === 0 ? "NT$12,000" : shape.remark.slice(0, shape.remark.search(/[\u4e00-\u9fff]/))) !== -1, label + " dropped the source token: " + got);
-    if (shape.forbidNt) ok(got.indexOf("NT$") === -1, label + " added NT$: " + got);
-    ok(counter.n === 0, label + " sent a fragment: " + counter.n);
-    ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
+  if (/Makan di tempat|Bawa pulang|Makan Siang|Makan Malam|^\(Total |^\[Minggu /.test(line)) {
+    ok(!CJK.test(line), "heading still has Chinese: " + line);
   }
 }
+ok(calls.length === 0, "mixed day called LanguageApp");
 
-const pairRemark = "雜項$1,000收妥；別項$2,000未結";
-const pairSource = "Catatan: 雜項$1,000收妥; 別項$2,000未結";
-for (const mode of amountModes) {
-  const counter = { n: 0 };
-  const app = amountApp(mode, counter);
-  const got = app.translateTaskCnToId(amountLine(pairRemark));
-  const want = pairSource;
-  const label = "two amounts " + mode;
-  ok(remarkOf(got) === want, label + ": " + got);
-  ok(noBrokenAmount(got), label + " broke a number: " + got);
-  const halves = (remarkOf(got).replace(/^Catatan:\s*/, "")).split("; ");
-  ok(halves.length === 2, label + " segment count: " + remarkOf(got));
-  ok(halves[0].indexOf("$1,000") !== -1 && halves[0].indexOf("$2,000") === -1, label + " first segment: " + halves[0]);
-  ok(halves[1].indexOf("$2,000") !== -1 && halves[1].indexOf("$1,000") === -1, label + " second segment: " + halves[1]);
-  ok(got.indexOf("NT$") === -1, label + " added NT$: " + got);
-  ok(counter.n === 0, label + " sent a fragment: " + counter.n);
-  ok(app.__sleeps.length === 0, label + " slept: " + JSON.stringify(app.__sleeps));
-}
-
-const quotaMessages = [
-  "Service invoked too many times: translate.",
-  "Exception: Service invoked too many times: translate.",
-  "Service invoked too many times: Calendar.",
-  "Service invoked too many times for one day: translate",
-];
-for (const message of quotaMessages) {
-  ok(fixed.isDailyTranslateQuotaError_(new Error(message)) === true, "daily quota matches " + message);
-  ok(fixed.isShortTimeLimitError_(new Error(message)) === false, "short-time false for " + message);
-  const counter = { n: 0 };
-  const app = loadGs(modifiedRemind, {
-    translate() {
-      counter.n += 1;
-      throw new Error(message);
-    },
-  });
-  const got = app.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單；請再確認");
-  ok(remarkOf(got) === "Catatan: 請改菜單; 請再確認", "quota path " + message + ": " + got);
-  ok(counter.n === 1, "quota path calls " + message + ": " + counter.n);
-  ok(app.__sleeps.length === 0, "quota path slept " + message + ": " + JSON.stringify(app.__sleeps));
-}
-
-const notQuota = ["quota exceeded", "每日配額", "配額不足", "daily quota"];
-for (const message of notQuota) {
-  ok(fixed.isDailyTranslateQuotaError_(new Error(message)) === false, "not daily quota: " + message);
-  const counter = { n: 0 };
-  const app = loadGs(modifiedRemind, {
-    translate() {
-      counter.n += 1;
-      throw new Error(message);
-    },
-  });
-  const got = app.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單");
-  ok(remarkOf(got) === "Catatan: 請改菜單", "generic fallback for " + message + ": " + got);
-  ok(counter.n === 2, "generic retry for " + message + ": " + counter.n);
-  ok(JSON.stringify(app.__sleeps) === JSON.stringify([250]), "generic 250ms for " + message + ": " + JSON.stringify(app.__sleeps));
-}
-
-ok(
-  fixed.isDailyTranslateQuotaError_(new Error("Service invoked too many times in a short time: translate.")) === false,
-  "short-time is not daily quota",
-);
-ok(
-  fixed.isShortTimeLimitError_(new Error("Service invoked too many times in a short time: translate.")) === true,
-  "short-time detector",
-);
-
-{
-  const counter = { n: 0 };
-  const app = loadGs(modifiedRemind, {
-    translate() {
-      counter.n += 1;
-      throw new Error("Service invoked too many times: translate.");
-    },
-  });
-  app.translateTaskCnToId("11:40 測試甲先生 (6) | 備註：請改菜單");
-  const afterTask = counter.n;
-  const note = app.translateNoteCnToId("臨時改爐火");
-  ok(note === "臨時改爐火", "C-column after quota keeps Chinese: " + note);
-  ok(counter.n === afterTask + 1, "C-column null cache may call once after task quota: " + counter.n);
-  ok(app.__sleeps.length === 0, "C-column quota did not sleep: " + JSON.stringify(app.__sleeps));
-}
-
-function rewriteLeakedAmounts(text) {
-  return String(text)
-    .replace(/NT\s*\$/g, "Rp")
-    .replace(/\$/g, "Rp")
-    .replace(/(\d),(\d{3})/g, "$1.$2");
-}
-
-function applyAmountWords(text) {
-  return String(text)
-    .replace(/雜項/g, "biaya lain")
-    .replace(/別項/g, "item lain")
-    .replace(/零頭/g, "sisa kecil")
-    .replace(/收妥/g, "diterima")
-    .replace(/未結/g, "belum selesai");
-}
-
-function protectedApp(mode, calls) {
-  return loadGs(modifiedRemind, {
-    translate(text) {
-      const raw = String(text);
-      calls.push(raw);
-      if (mode === "empty") return "";
-      if (mode === "identity") return raw;
-      if (mode === "generic") throw new Error("down");
-      if (mode === "quota") throw new Error("Service invoked too many times: translate.");
-      if (mode === "lost") return "";
-      if (mode === "renumbered") return raw;
-      if (mode === "duplicated") return "Rp " + raw;
-      return applyAmountWords(raw);
-    },
-  });
-}
-
-function countExactToken(text, token) {
-  let n = 0;
-  let from = 0;
-  while (from <= text.length) {
-    const at = text.indexOf(token, from);
-    if (at === -1) return n;
-    if (token === "$1,000" && text.charAt(at + token.length) === ".") {
-      from = at + token.length;
-      continue;
-    }
-    n += 1;
-    from = at + token.length;
-  }
-  return n;
-}
-
-function assertNoRawAmountSent(label, calls) {
-  ok(
-    calls.every((text) => text.indexOf("$") === -1 && text.indexOf("NT$") === -1),
-    label + " sent raw amount: " + JSON.stringify(calls),
-  );
-}
-
-function assertTokenOnceInOwnSentence(label, body, token) {
-  ok(countExactToken(body, token) === 1, label + " token count: " + body);
-  ok(
-    body.indexOf("$1, 000") === -1 && body.indexOf("NT$12, 000") === -1 && body.indexOf("$1, 000.50") === -1 && body.indexOf("$1.000") === -1,
-    label + " broke the number: " + body,
-  );
-  ok(body.indexOf("Rp") === -1, label + " rewrite stub changed the amount: " + body);
-  if (token.indexOf("NT$") !== 0) ok(body.indexOf("NT$") === -1, label + " added NT$: " + body);
-  const owners = body.split("; ").map((part) => part.trim()).filter((part) => countExactToken(part, token) > 0);
-  ok(owners.length === 1 && countExactToken(owners[0], token) === 1, label + " sentence: " + body);
-}
-
-const protectedShapes = [
-  { name: "$1,000", sentence: "雜項$1,000收妥", source: "雜項$1,000收妥", token: "$1,000" },
-  { name: "NT$12,000", sentence: "雜項NT$12,000收妥", source: "雜項NT$12,000收妥", token: "NT$12,000" },
-  { name: "$1,000.50", sentence: "雜項$1,000.50收妥", source: "雜項$1,000.50收妥", token: "$1,000.50" },
-];
-const protectedModes = ["success", "empty", "identity", "generic", "quota", "lost", "renumbered", "duplicated"];
-const protectedEntries = ["B-column", "whole-line", "C-generic", "C-fixed-tail", "C-takeout-tail", "C-normal-tail"];
-const protectedPrefixes = {
-  "C-fixed-tail": "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!; ",
-  "C-takeout-tail": "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.; ",
-  "C-normal-tail": "✅ Reservasi hari ini normal (Total 5 meja); ",
-};
-
-function runProtected(entry, mode, sentence) {
-  const calls = [];
-  const app = protectedApp(mode, calls);
-  if (entry === "B-column") {
-    return { body: remarkOf(app.translateTaskCnToId("12:00 測試甲先生 (4) | 備註：" + sentence)).replace(/^Catatan:\s*/, ""), calls, app };
-  }
-  if (entry === "whole-line") {
-    const lines = app.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n" + sentence).split("\n");
-    ok(lines[0].indexOf("Ringkasan") !== -1 && lines[0].indexOf("$") === -1, "whole-line header stayed separate: " + lines[0]);
-    return { body: lines.slice(1).join("\n"), calls, app };
-  }
-  if (entry === "C-generic") return { body: app.translateNoteCnToId(sentence), calls, app };
-  if (entry === "C-takeout-tail") return { body: app.translateNoteCnToId("🛵 純外帶日，無內用桌；" + sentence), calls, app };
-  if (entry === "C-normal-tail") return { body: app.translateNoteCnToId("✅ 今日預約正常 (共 5 桌)；" + sentence), calls, app };
-  return { body: app.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！；" + sentence), calls, app };
-}
-
-function expectedProtectedBody(entry, mode, shape) {
-  return (protectedPrefixes[entry] || "") + shape.source;
-}
-
-for (const entry of protectedEntries) {
-  for (const shape of protectedShapes) {
-    for (const mode of protectedModes) {
-      const label = "protected " + entry + " " + mode + " keeps " + shape.name;
-      const got = runProtected(entry, mode, shape.sentence);
-      ok(got.body === expectedProtectedBody(entry, mode, shape), label + ": " + got.body);
-      assertTokenOnceInOwnSentence(label, got.body, shape.token);
-      assertNoRawAmountSent(label + " never sends raw amount", got.calls);
-      const expectCalls = { n: 0, sleeps: [] };
-      ok(got.calls.length === expectCalls.n, label + " call count: " + got.calls.length);
-      ok(JSON.stringify(got.app.__sleeps) === JSON.stringify(expectCalls.sleeps), label + " pause: " + JSON.stringify(got.app.__sleeps));
-      if (entry === "C-fixed-tail") {
-        ok(got.body.indexOf("12 orang") !== -1 && got.body.indexOf("1000 orang") === -1, label + " used the amount as the group size: " + got.body);
-      }
-      if (entry === "C-normal-tail") {
-        ok(got.body.indexOf("5 meja") !== -1 && got.body.indexOf("1000 meja") === -1, label + " used the amount as the table count: " + got.body);
-      }
-    }
-  }
-}
-
-const tripleSentence = "雜項$1,000收妥；別項NT$12,000未結；零頭$1,000.50收妥";
-const tripleSource = "雜項$1,000收妥; 別項NT$12,000未結; 零頭$1,000.50收妥";
-for (const entry of protectedEntries) {
-  for (const mode of protectedModes) {
-    const label = "protected " + entry + " " + mode + " keeps three amounts in their sentences";
-    const got = runProtected(entry, mode, tripleSentence);
-    const want = (protectedPrefixes[entry] || "") + tripleSource;
-    ok(got.body === want, label + ": " + got.body);
-    const amountSentences = got.body.split("; ").map((part) => part.trim()).filter((part) => part.indexOf("$") !== -1);
-    ok(amountSentences.length === 3, label + " sentence count: " + got.body);
-    ok(countExactToken(amountSentences[0], "$1,000") === 1 && amountSentences[0].indexOf("NT$") === -1 && amountSentences[0].indexOf("$1,000.50") === -1, label + " first: " + amountSentences[0]);
-    ok(countExactToken(amountSentences[1], "NT$12,000") === 1 && amountSentences[1].indexOf("$1,000") === -1, label + " second: " + amountSentences[1]);
-    ok(countExactToken(amountSentences[2], "$1,000.50") === 1 && countExactToken(amountSentences[2], "$1,000") === 0, label + " third: " + amountSentences[2]);
-    ok(got.body.indexOf("Rp") === -1 && got.body.indexOf("$1.000") === -1 && got.body.indexOf("$1, 000") === -1, label + " rewrote an amount: " + got.body);
-    assertNoRawAmountSent(label + " never sends raw amount", got.calls);
-    const expectCalls = { n: 0, sleeps: [] };
-    ok(got.calls.length === expectCalls.n, label + " call count: " + got.calls.length);
-    ok(JSON.stringify(got.app.__sleeps) === JSON.stringify(expectCalls.sleeps), label + " pause: " + JSON.stringify(got.app.__sleeps));
-  }
-}
-
-const verbLists = [
-  ["不能吃花生、蝦子", "tamu tidak bisa makan kacang dan udang"],
-  ["不要放香菜、花生", "jangan pakai daun ketumbar, jangan pakai kacang"],
-  ["不吃牛、雞蛋", "tamu tidak makan daging sapi dan telur"],
-  ["可以吃雞、花生", "tamu bisa makan ayam dan kacang"],
-];
-for (const entry of protectedEntries) {
-  for (const pair of verbLists) {
-    const label = "verb scope " + entry + " " + pair[0];
-    const got = runProtected(entry, "success", pair[0]);
-    const want = (protectedPrefixes[entry] || "") + pair[1];
-    ok(got.body === want, label + ": " + got.body);
-    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-    if (pair[0].indexOf("可以吃") === 0) ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
-    if (pair[0].indexOf("不能吃") === 0) ok(sentence.indexOf(", udang") === -1, label + " dropped the second negation: " + sentence);
-    if (pair[0].indexOf("不要放") === 0) ok(sentence.indexOf(", kacang") === -1, label + " dropped the second jangan pakai: " + sentence);
-  }
-}
-
-const scopedNegation = [
-  ["不要辣、花生", "tidak pedas, tanpa kacang"],
-  ["不要辣、蝦子", "tidak pedas, tanpa udang"],
-  ["不要油炸、花生", "jangan digoreng, tanpa kacang"],
-  ["不要辣、香菜", "tidak pedas, tanpa daun ketumbar"],
-  ["不要辣、靠窗", "tidak pedas, dekat jendela"],
-];
-for (const entry of protectedEntries) {
-  for (const pair of scopedNegation) {
-    const label = "negation scope " + entry + " " + pair[0];
-    const got = runProtected(entry, "success", pair[0]);
-    const want = (protectedPrefixes[entry] || "") + pair[1];
-    ok(got.body === want, label + ": " + got.body);
-    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-    ok(got.body.indexOf("tidak pedas, kacang") === -1 && got.body.indexOf("jangan digoreng, kacang") === -1, label + " dropped the exclusion: " + got.body);
-  }
-}
-
-const generativeHeads = [
-  { name: "不要", kind: "tanpa" },
-  { name: "不要放", kind: "repeat" },
-  { name: "不能吃", kind: "dan-neg" },
-  { name: "不吃", kind: "dan-eat" },
-  { name: "可以吃", kind: "dan-ok" },
-  { name: "對", kind: "allergy" },
-  { name: "不要辣", kind: "fixed", gloss: "tidak pedas" },
-  { name: "不要放辣", kind: "fixed", gloss: "jangan pakai cabai" },
-  { name: "不吃辣", kind: "fixed", gloss: "tamu tidak makan pedas" },
-  { name: "客人不要辣", kind: "fixed", gloss: "tamu minta tidak pedas" },
-  { name: "不要太鹹", kind: "fixed", gloss: "jangan terlalu asin" },
-  { name: "不要油炸", kind: "fixed", gloss: "jangan digoreng" },
-];
-const generativeShapes = ["food", "foodFood", "foodNonfood", "nonfood", "unknown"];
-
-function polarityOf(kind, ids) {
-  if (kind === "tanpa") return ids.map((id) => "tanpa " + id).join(", ");
-  if (kind === "repeat") return ids.map((id) => "jangan pakai " + id).join(", ");
-  if (kind === "dan-neg") return "tamu tidak bisa makan " + ids.join(" dan ");
-  if (kind === "dan-eat") return "tamu tidak makan " + ids.join(" dan ");
-  return "tamu bisa makan " + ids.join(" dan ");
-}
-
-function generativeCase(head, shape) {
-  if (head.kind === "allergy") {
-    if (shape === "food") return { src: "對花生過敏", id: "alergi kacang" };
-    if (shape === "foodFood") return { src: "對花生、蝦子過敏", id: "alergi kacang dan udang" };
-    if (shape === "foodNonfood") return { src: "對花生、少鹽過敏", id: "alergi kacang, sedikit garam", forbid: ["alergi sedikit", "tanpa "] };
-    if (shape === "nonfood") return { src: "對少鹽過敏", chinese: true, keep: ["少鹽", "過敏"], forbid: ["alergi", "sedikit garam"] };
-    return { src: "對芒果過敏", chinese: true, keep: ["芒果", "過敏"], forbid: ["alergi"] };
-  }
-  if (head.kind === "fixed") {
-    if (shape === "food") return { src: head.name + "、花生", id: head.gloss + ", tanpa kacang", forbid: [", kacang"] };
-    if (shape === "foodFood") return { src: head.name + "、花生、蝦子", id: head.gloss + ", tanpa kacang, tanpa udang", forbid: [", kacang", ", udang"] };
-    if (shape === "foodNonfood") return { src: head.name + "、花生、少鹽", id: head.gloss + ", tanpa kacang, sedikit garam", forbid: ["tanpa sedikit", "jangan pakai sedikit", ", kacang"] };
-    if (shape === "nonfood") return { src: head.name + "、少鹽", id: head.gloss + ", sedikit garam", forbid: ["tanpa sedikit", "jangan pakai sedikit", "makan sedikit"] };
-    return { src: head.name + "、芒果", chinese: true, hold: true, keep: [head.name, "芒果"], forbid: [head.gloss, "tanpa "] };
-  }
-  if (shape === "food") return { src: head.name + "花生", id: polarityOf(head.kind, ["kacang"]) };
-  if (shape === "foodFood") return { src: head.name + "花生、蝦子", id: polarityOf(head.kind, ["kacang", "udang"]) };
-  if (shape === "foodNonfood") {
-    return {
-      src: head.name + "花生、少鹽",
-      id: polarityOf(head.kind, ["kacang"]) + ", sedikit garam",
-      forbid: ["tanpa sedikit", "jangan pakai sedikit", "makan sedikit", "dan sedikit"],
-    };
-  }
-  if (shape === "nonfood") return { src: head.name + "少鹽", chinese: true, keep: [head.name, "少鹽"], forbid: ["sedikit garam", "jangan pakai", "tanpa ", "bisa makan"] };
-  return { src: head.name + "芒果", chinese: true, keep: [head.name, "芒果"], forbid: ["jangan pakai", "tanpa ", "bisa makan"] };
-}
-
-function wholeLineSendsUncovered(src) {
-  if (src.indexOf("過敏") !== -1) return false;
-  if (/不要辣$/.test(src)) return false;
-  return true;
-}
-
-let generativeCount = 0;
-for (const head of generativeHeads) {
-  for (const shape of generativeShapes) {
-    const spec = generativeCase(head, shape);
-    for (const entry of protectedEntries) {
-      generativeCount += 1;
-      const label = "generative " + entry + " " + head.name + " " + shape;
-      const got = runProtected(entry, "success", spec.src);
-      const prefix = protectedPrefixes[entry] || "";
-      const sentence = got.body.slice(prefix.length);
-      if (spec.chinese && entry === "whole-line" && !spec.hold && wholeLineSendsUncovered(spec.src)) {
-        ok(got.calls.length === 1 && got.calls[0] === spec.src, label + " whole-line fragment: " + JSON.stringify(got.calls));
-      } else {
-        ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-      }
-      if (!spec.chinese) {
-        ok(sentence === spec.id, label + "\n  got: " + sentence);
-        if (head.kind === "dan-ok") ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
-      } else {
-        for (const piece of spec.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
-      }
-      for (const bad of spec.forbid || []) ok(sentence.indexOf(bad) === -1, label + " applied the head to a non-food: " + sentence);
-    }
-  }
-}
-const polarityFoodGloss = { "花生": "kacang", "蝦子": "udang", "香菜": "daun ketumbar" };
-const polarityNonfood = "少鹽";
-
-function polarityItems(foods, pos) {
-  const items = foods.slice();
-  items.splice(pos, 0, polarityNonfood);
-  return items;
-}
-
-function polarityClause(kind, ids, restart) {
-  if (kind === "tanpa" || kind === "fixed") return ids.map((id) => "tanpa " + id).join(", ");
-  if (kind === "repeat") return ids.map((id) => "jangan pakai " + id).join(", ");
-  if (kind === "allergy") return "alergi " + ids.join(" dan ");
-  const gloss = kind === "dan-neg"
-    ? (restart ? "tidak bisa makan " : "tamu tidak bisa makan ")
-    : kind === "dan-eat"
-      ? (restart ? "tidak makan " : "tamu tidak makan ")
-      : (restart ? "bisa makan " : "tamu bisa makan ");
-  return gloss + ids.join(" dan ");
-}
-
-function polaritySource(head, zhItems) {
-  if (head.kind === "allergy") return "對" + zhItems.join("、") + "過敏";
-  if (head.kind === "fixed") return head.name + "、" + zhItems.join("、");
-  return head.name + zhItems.join("、");
-}
-
-function polarityExpected(head, zhItems) {
-  const parts = [];
-  if (head.kind === "fixed") parts.push(head.gloss);
-  let seen = parts.length > 0;
-  let run = [];
-  function flushFood() {
-    if (!run.length) return;
-    parts.push(polarityClause(head.kind, run, seen));
-    seen = true;
-    run = [];
-  }
-  for (const zh of zhItems) {
-    if (polarityFoodGloss[zh]) run.push(polarityFoodGloss[zh]);
-    else {
-      flushFood();
-      parts.push("sedikit garam");
-      seen = true;
-    }
-  }
-  flushFood();
-  return parts.join(", ");
-}
-
-function foodHasPolarity(head, clause, id) {
-  if (head.kind === "tanpa" || head.kind === "fixed") return clause.indexOf("tanpa " + id) !== -1;
-  if (head.kind === "repeat") return clause.indexOf("jangan pakai " + id) !== -1;
-  if (head.kind === "allergy") return clause.indexOf("alergi ") === 0 && clause.indexOf(id) !== -1;
-  const verbs = head.kind === "dan-neg"
-    ? ["tamu tidak bisa makan ", "tidak bisa makan "]
-    : head.kind === "dan-eat"
-      ? ["tamu tidak makan ", "tidak makan "]
-      : ["tamu bisa makan ", "bisa makan "];
-  return verbs.some((verb) => clause.indexOf(verb) === 0) && clause.indexOf(id) !== -1;
-}
-
-function foodFollowsNonfood(zhItems) {
-  let crossed = false;
-  for (const zh of zhItems) {
-    if (!polarityFoodGloss[zh]) crossed = true;
-    else if (crossed) return true;
-  }
-  return false;
-}
-
-const polarityLayouts = [
-  { name: "3", foods: ["花生", "蝦子"], positions: [0, 1, 2] },
-  { name: "4", foods: ["花生", "蝦子", "香菜"], positions: [0, 1, 2, 3] },
-];
-for (const head of generativeHeads) {
-  for (const layout of polarityLayouts) {
-    for (const pos of layout.positions) {
-      const zhItems = polarityItems(layout.foods, pos);
-      const positiveHeld = head.kind === "dan-ok" && foodFollowsNonfood(zhItems);
-      const spec = positiveHeld
-        ? {
-            src: polaritySource(head, zhItems),
-            chinese: true,
-            keep: [head.name].concat(zhItems),
-            forbid: ["bisa makan", "sedikit garam", "tanpa ", "jangan pakai"],
-            foodIds: [],
-          }
-        : {
-            src: polaritySource(head, zhItems),
-            id: polarityExpected(head, zhItems),
-            foodIds: zhItems.filter((zh) => polarityFoodGloss[zh]).map((zh) => polarityFoodGloss[zh]),
-            forbid: ["tanpa sedikit", "jangan pakai sedikit", "makan sedikit", "alergi sedikit", "dan sedikit"],
-          };
-      for (const entry of protectedEntries) {
-        generativeCount += 1;
-        const label = "generative " + entry + " " + head.name + " " + layout.name + "@" + pos;
-        const got = runProtected(entry, "success", spec.src);
-        const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-        ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-        if (spec.chinese) {
-          for (const piece of spec.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
-        } else {
-          ok(sentence === spec.id, label + "\n  got: " + sentence);
-          if (head.kind === "dan-ok") ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
-          const clauses = sentence.split(", ");
-          for (const id of spec.foodIds) {
-            ok(clauses.some((clause) => foodHasPolarity(head, clause, id)), label + " lost polarity on " + id + ": " + sentence);
-          }
-        }
-        for (const bad of spec.forbid) ok(sentence.indexOf(bad) === -1, label + " applied the head to a non-food: " + sentence);
-      }
-    }
-  }
-}
-
-const subHeadSpecs = [
-  { zh: "不能吃花生", kind: "dan-neg", own: ["kacang"], leading: "" },
-  { zh: "不吃牛", kind: "dan-eat", own: ["daging sapi"], leading: "" },
-  { zh: "不要香菜", kind: "fixed", own: [], leading: "tanpa daun ketumbar" },
-  { zh: "不要放蔥", kind: "repeat", own: ["daun bawang"], leading: "" },
-  { zh: "可以吃雞", kind: "dan-ok", own: ["ayam"], leading: "" },
-  { zh: "花生過敏", kind: "allergy", own: ["kacang"], leading: "" },
-];
-const subHeadSkeleton = ["蝦子", "香菜"];
-const subHeadOuter = generativeHeads.filter((head) => head.kind !== "allergy");
-
-function subHeadItems(sub, pos) {
-  const items = subHeadSkeleton.slice();
-  items.splice(pos, 0, sub.zh);
-  return items;
-}
-
-function subHeadExpected(head, items, sub) {
-  const parts = [];
-  let scope = head.kind === "fixed" ? "fixed" : head.kind;
-  let seen = false;
-  if (head.kind === "fixed") {
-    parts.push(head.gloss);
-    seen = true;
-  }
-  let run = [];
-  let runNew = false;
-  function flush() {
-    if (!run.length) return;
-    parts.push(polarityClause(scope, run, seen && !runNew));
-    seen = true;
-    run = [];
-    runNew = false;
-  }
-  for (const zh of items) {
-    if (zh === sub.zh) {
-      flush();
-      scope = sub.kind;
-      if (sub.leading) {
-        parts.push(sub.leading);
-        seen = true;
-      }
-      if (sub.own.length) {
-        run = sub.own.slice();
-        runNew = true;
-      }
-      continue;
-    }
-    run.push(polarityFoodGloss[zh]);
-  }
-  flush();
-  return parts.join(", ");
-}
-
-function nearestFoodScopes(head, items, sub) {
-  let scope = head.kind === "fixed" ? "fixed" : head.kind;
-  const found = [];
-  for (const zh of items) {
-    if (zh === sub.zh) {
-      scope = sub.kind;
-      for (const id of sub.own) found.push({ id: id, scope: scope });
-      continue;
-    }
-    found.push({ id: polarityFoodGloss[zh], scope: scope });
-  }
-  return found;
-}
-
-function foodFollowsClosedAllergy(items, sub) {
-  if (sub.kind !== "allergy") return false;
-  const at = items.indexOf(sub.zh);
-  return items.slice(at + 1).some((zh) => polarityFoodGloss[zh]);
-}
-
-for (const head of subHeadOuter) {
-  for (const sub of subHeadSpecs) {
-    for (const pos of [0, 1, 2]) {
-      const zhItems = subHeadItems(sub, pos);
-      const closedHold = foodFollowsClosedAllergy(zhItems, sub);
-      const spec = closedHold
-        ? {
-            src: polaritySource(head, zhItems),
-            chinese: true,
-            keep: [head.name].concat(zhItems),
-            forbid: ["alergi", "kacang", "udang", "daun ketumbar", "daging sapi", "daun bawang", "ayam", "tanpa ", "jangan", "bisa makan", "tidak"],
-          }
-        : {
-            src: polaritySource(head, zhItems),
-            id: subHeadExpected(head, zhItems, sub),
-            foods: nearestFoodScopes(head, zhItems, sub),
-          };
-      for (const entry of protectedEntries) {
-        generativeCount += 1;
-        const label = "generative subhead " + entry + " " + head.name + " " + sub.zh + "@" + pos;
-        const got = runProtected(entry, "success", spec.src);
-        const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-        ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-        if (spec.chinese) {
-          for (const piece of spec.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
-          for (const bad of spec.forbid) ok(sentence.indexOf(bad) === -1, label + " pulled a later food into the allergy: " + sentence);
-        } else {
-          ok(sentence === spec.id, label + "\n  got: " + sentence);
-          const clauses = sentence.split(", ");
-          for (const food of spec.foods) {
-            const scopeHead = { kind: food.scope };
-            ok(clauses.some((clause) => foodHasPolarity(scopeHead, clause, food.id)), label + " nearest head missed " + food.id + ": " + sentence);
-            if (food.scope === "dan-ok") {
-              ok(clauses.some((clause) => (clause.indexOf("tamu bisa makan ") === 0 || clause.indexOf("bisa makan ") === 0) && clause.indexOf(food.id) !== -1 && clause.indexOf("tidak") === -1), label + " positive drifted " + food.id + ": " + sentence);
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-const positiveHoldSources = [
-  "可以吃花生、少鹽、蝦子",
-  "可以吃雞蛋、靠窗、香菜",
-  "可以吃花生、生日、蝦子",
-  "不要辣、可以吃雞、少鹽、花生",
-];
-for (const src of positiveHoldSources) {
-  for (const entry of protectedEntries) {
-    generativeCount += 1;
-    const label = "generative positive-hold " + entry + " " + src;
-    const got = runProtected(entry, "success", src);
-    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-    ok(sentence.indexOf("bisa makan") === -1, label + " carried positive polarity: " + sentence);
-    ok(sentence.indexOf("sedikit garam") === -1 && sentence.indexOf("dekat jendela") === -1 && sentence.indexOf("ulang tahun") === -1, label + " translated across the break: " + sentence);
-    for (const piece of src.split("、")) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
-  }
-}
-
-const punctMarks = ["", "。", ".", "!", "！", "的", "?", "嗎"];
-const punctSeps = ["、", "，", ","];
-const chinesePolarityForbid = ["kacang", "telur", "udang", "tanpa ", "jangan", "alergi", "bisa makan", "tidak pedas", "tidak makan", "tidak bisa"];
-
-function punctSuffix(mark) {
-  if (mark === "。" || mark === ".") return ".";
-  if (mark === "！" || mark === "!") return "!";
-  return "";
-}
-
-function punctMatrixSource(head, sep, mark) {
-  if (head.kind === "allergy") return "對花生" + sep + "雞蛋過敏" + mark;
-  if (head.kind === "fixed") return head.name + sep + "花生" + sep + "雞蛋" + mark;
-  return head.name + "花生" + sep + "雞蛋" + mark;
-}
-
-function punctMatrixId(head, mark) {
-  const base = head.kind === "allergy"
-    ? "alergi kacang dan telur"
-    : head.kind === "fixed"
-      ? head.gloss + ", tanpa kacang, tanpa telur"
-      : polarityOf(head.kind, ["kacang", "telur"]);
-  return base + punctSuffix(mark);
-}
-
-for (const head of generativeHeads) {
-  for (const sep of punctSeps) {
-    for (const mark of punctMarks) {
-      const src = punctMatrixSource(head, sep, mark);
-      const question = mark === "?" || mark === "嗎";
-      const translated = sep === "、" && !question;
-      const questionKept = mark === "?" && sep === "、";
-      for (const entry of protectedEntries) {
-        generativeCount += 1;
-        const label = "generative punct " + entry + " " + head.name + " sep " + sep + " mark " + (mark || "none");
-        const got = runProtected(entry, "success", src);
-        const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-        const asked = questionKept ? punctMatrixId(head, "") + "?" : "";
-        if (translated || (questionKept && sentence === asked)) {
-          ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-          ok(sentence === (translated ? punctMatrixId(head, mark) : asked), label + "\n  got: " + sentence);
-          const clauses = sentence.split(", ");
-          for (const id of ["kacang", "telur"]) {
-            ok(clauses.some((clause) => foodHasPolarity(head, clause, id)), label + " lost polarity on " + id + ": " + sentence);
-          }
-          if (head.kind === "dan-ok") ok(sentence.indexOf("tidak") === -1, label + " added tidak: " + sentence);
-          if (questionKept) ok(sentence.slice(-1) === "?", label + " dropped the question mark: " + sentence);
-        } else {
-          const pieces = ["花生", "雞蛋"];
-          if (head.kind === "allergy") pieces.push("對", "過敏");
-          else pieces.push(head.name);
-          for (const piece of pieces) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
-          for (const bad of chinesePolarityForbid) ok(sentence.indexOf(bad) === -1, label + " guessed " + bad + ": " + sentence);
-          const wholeCall = got.calls.length === 1 && got.calls[0] === src;
-          ok(got.calls.length === 0 || wholeCall, label + " calls: " + JSON.stringify(got.calls));
-          if (mark === "嗎") ok(sentence.indexOf("嗎") !== -1, label + " dropped 嗎: " + sentence);
-          if (mark === "?") ok(sentence.indexOf("?") !== -1, label + " dropped the question mark: " + sentence);
-        }
-      }
-    }
-  }
-}
-ok(
-  generativeCount === generativeHeads.length * (generativeShapes.length + 3 + 4) * protectedEntries.length
-    + subHeadOuter.length * subHeadSpecs.length * 3 * protectedEntries.length
-    + positiveHoldSources.length * protectedEntries.length
-    + generativeHeads.length * punctSeps.length * punctMarks.length * protectedEntries.length,
-  "generative list grammar count " + generativeCount,
-);
-
-const namedListBugs = [
-  ["不要放蔥、少鹽", "jangan pakai daun bawang, sedikit garam", ["jangan pakai sedikit"]],
-  ["不要放蔥、不要辣", "jangan pakai daun bawang, tidak pedas", ["jangan pakai tidak"]],
-  ["不要放香菜、靠窗", "jangan pakai daun ketumbar, dekat jendela", ["jangan pakai dekat"]],
-  ["不要放香菜、小孩椅", "jangan pakai daun ketumbar, kursi anak", ["jangan pakai kursi"]],
-  ["不要放香菜、生日", "jangan pakai daun ketumbar, ulang tahun", ["jangan pakai ulang"]],
-  ["不能吃花生、不要辣", "tamu tidak bisa makan kacang, tidak pedas", ["dan tidak"]],
-  ["不能吃蝦、少鹽", "tamu tidak bisa makan udang, sedikit garam", ["dan sedikit"]],
-  ["不能吃花生、已付", "tamu tidak bisa makan kacang, sudah dibayar", ["dan sudah"]],
-  ["不能吃牛、靠窗", "tamu tidak bisa makan daging sapi, dekat jendela", ["dan dekat"]],
-  ["可以吃雞、花生過敏", "tamu bisa makan ayam, alergi kacang", ["dan alergi"]],
-  ["可以吃雞、不要辣", "tamu bisa makan ayam, tidak pedas", ["dan tidak"]],
-  ["不要放辣、香菜", "jangan pakai cabai, tanpa daun ketumbar", [", daun ketumbar"]],
-  ["不要放辣、花生", "jangan pakai cabai, tanpa kacang", [", kacang"]],
-  ["客人不要辣、花生", "tamu minta tidak pedas, tanpa kacang", [", kacang"]],
-  ["不吃辣、花生", "tamu tidak makan pedas, tanpa kacang", [", kacang"]],
-  ["不要油炸、少鹽、香菜", "jangan digoreng, sedikit garam, tanpa daun ketumbar", [", daun ketumbar", "tanpa sedikit"]],
-  ["不要香菜、少鹽、花生", "tanpa daun ketumbar, sedikit garam, tanpa kacang", [", kacang", "tanpa sedikit"]],
-  ["不能吃花生、靠窗、香菜", "tamu tidak bisa makan kacang, dekat jendela, tidak bisa makan daun ketumbar", ["dan dekat", ", daun ketumbar"]],
-  ["不要辣、花生、少鹽、蝦子", "tidak pedas, tanpa kacang, sedikit garam, tanpa udang", [", udang", "tanpa sedikit"]],
-  ["不要放花生、少鹽、香菜", "jangan pakai kacang, sedikit garam, jangan pakai daun ketumbar", ["jangan pakai sedikit", ", daun ketumbar"]],
-  ["不吃辣、少鹽、花生", "tamu tidak makan pedas, sedikit garam, tanpa kacang", [", kacang", "makan sedikit"]],
-  ["不要辣不要香菜", "tidak pedas, tanpa daun ketumbar", ["tidak pedas tanpa", "tidak pedastanpa"]],
-  ["可以吃雞、不能吃花生、蝦子", "tamu bisa makan ayam, tamu tidak bisa makan kacang dan udang", ["tamu bisa makan kacang", "tamu bisa makan udang", ", bisa makan"]],
-  ["可以吃雞、不吃牛、雞蛋", "tamu bisa makan ayam, tamu tidak makan daging sapi dan telur", ["bisa makan telur", "bisa makan daging"]],
-  ["可以吃雞、不要香菜、花生", "tamu bisa makan ayam, tanpa daun ketumbar, tanpa kacang", ["bisa makan kacang", "bisa makan daun"]],
-  ["可以吃雞、不要放蔥、香菜", "tamu bisa makan ayam, jangan pakai daun bawang, jangan pakai daun ketumbar", ["bisa makan daun", "bisa makan bawang"]],
-  ["不要辣、花生過敏、少鹽", "tidak pedas, alergi kacang, sedikit garam", ["alergi daun", "tanpa sedikit"]],
-  ["不要辣、可以吃雞、花生", "tidak pedas, tamu bisa makan ayam dan kacang", ["tanpa kacang", "tanpa ayam"]],
-  ["不要雞蛋、可以吃雞、雞蛋", "tanpa telur, tamu bisa makan ayam dan telur", ["tanpa telur, tamu bisa makan ayam, tanpa"]],
-];
-for (const entry of protectedEntries) {
-  for (const row of namedListBugs) {
-    const label = "list bug " + entry + " " + row[0];
-    const got = runProtected(entry, "success", row[0]);
-    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-    ok(sentence === row[1], label + "\n  got: " + sentence);
-    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-    for (const bad of row[2]) ok(sentence.indexOf(bad) === -1, label + " double scope: " + sentence);
-  }
-}
-
-const allergyClosedHolds = [
-  "不要辣、花生過敏、香菜",
-  "可以吃雞、花生過敏、蝦子",
-  "不要辣、花生過敏、少鹽、香菜",
-];
-for (const entry of protectedEntries) {
-  for (const src of allergyClosedHolds) {
-    const label = "closed allergy " + entry + " " + src;
-    const got = runProtected(entry, "success", src);
-    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-    for (const piece of src.split("、")) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
-    for (const bad of ["alergi", "kacang", "udang", "daun ketumbar", "ayam", "tanpa", "bisa makan", "pedas", "sedikit garam"]) {
-      ok(sentence.indexOf(bad) === -1, label + " pulled a later food into the allergy: " + sentence);
-    }
-  }
-}
-
-const sharedCommaCases = [
-  { left: "不要辣", right: "花生", dunId: "tidak pedas, tanpa kacang", head: { kind: "fixed" }, ids: ["kacang"], keep: ["不要辣", "花生"], forbid: ["kacang", "pedas", "tanpa"] },
-  { left: "不能吃花生", right: "蝦子", dunId: "tamu tidak bisa makan kacang dan udang", head: { kind: "dan-neg" }, ids: ["kacang", "udang"], keep: ["不能吃", "花生", "蝦子"], forbid: ["kacang", "udang", "makan"] },
-  { left: "花生", right: "蝦子過敏", dunId: "alergi kacang dan udang", head: { kind: "allergy" }, ids: ["kacang", "udang"], keep: ["花生", "蝦子", "過敏"], forbid: ["kacang", "udang", "alergi"] },
-];
-for (const entry of protectedEntries) {
-  for (const row of sharedCommaCases) {
-    for (const sep of ["、", "，", ","]) {
-      const src = row.left + sep + row.right;
-      const label = "shared comma " + entry + " " + src;
-      const got = runProtected(entry, "success", src);
-      const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-      ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-      if (sep === "、") {
-        ok(sentence === row.dunId, label + "\n  got: " + sentence);
-        const clauses = sentence.split(", ");
-        for (const id of row.ids) {
-          ok(clauses.some((clause) => foodHasPolarity(row.head, clause, id)), label + " lost polarity on " + id + ": " + sentence);
-        }
-      } else {
-        for (const piece of row.keep) ok(sentence.indexOf(piece) !== -1, label + " dropped " + piece + ": " + sentence);
-        for (const bad of row.forbid) ok(sentence.indexOf(bad) === -1, label + " guessed shared scope: " + sentence);
-      }
-    }
-  }
-}
-
-const phrasePunct = [
-  ["不要辣。", "tidak pedas."],
-  ["不要辣.", "tidak pedas."],
-  ["不要辣!", "tidak pedas!"],
-  ["不要辣！", "tidak pedas!"],
-  ["不要辣的", "tidak pedas"],
-  ["不吃辣。", "tamu tidak makan pedas."],
-  ["不吃辣的", "tamu tidak makan pedas"],
-  ["不要放辣。", "jangan pakai cabai."],
-  ["客人不要辣。", "tamu minta tidak pedas."],
-  ["不要辣，靠窗", "tidak pedas, dekat jendela"],
-  ["不要辣，不要香菜", "tidak pedas, tanpa daun ketumbar"],
-];
-for (const entry of protectedEntries) {
-  for (const row of phrasePunct) {
-    const label = "phrase punct " + entry + " " + row[0];
-    const got = runProtected(entry, "success", row[0]);
-    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-    ok(sentence === row[1], label + "\n  got: " + sentence);
-    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-  }
-}
-
-const semicolonItems = [
-  ["山藥雞湯米粉換筊白筍；12：30到", "山藥雞湯米粉換筊白筍; tiba jam 12:30"],
-  ["12點到；對芒果過敏", "tiba jam 12; 對芒果過敏"],
-  ["花生過敏；客人說不要辣", "alergi kacang; 客人說不要辣"],
-  ["尾款NT$12,000元；不要找零", "sisa pembayaran NT$12,000; 不要找零"],
-  ["花生過敏；若客人遲到，不要保留座位", "alergi kacang; 若客人遲到, 不要保留座位"],
-  ["不要辣、花生、雞蛋。；靠窗", "tidak pedas, tanpa kacang, tanpa telur. ; dekat jendela"],
-];
-for (const entry of protectedEntries) {
-  if (entry === "whole-line") continue;
-  for (const row of semicolonItems) {
-    const label = "semicolon item " + entry + " " + row[0];
-    const got = runProtected(entry, "success", row[0]);
-    const sentence = got.body.slice((protectedPrefixes[entry] || "").length);
-    ok(sentence === row[1], label + "\n  got: " + sentence);
-    ok(got.calls.length === 0, label + " calls: " + JSON.stringify(got.calls));
-  }
-}
-{
-  const kept = runProtected("whole-line", "success", "山藥雞湯米粉換筊白筍；12：30到");
-  ok(kept.calls.length === 1 && kept.calls[0] === "山藥雞湯米粉換筊白筍；12:30到", "maintenance line does not split the F-1 sample: " + JSON.stringify(kept.calls));
-}
-
-{
-  const calls = [];
-  const app = protectedApp("success", calls);
-  ok(app.translateNoteCnToId("⚠️ 注意：包含 12 人大組訂位！") === "⚠️ Perhatian: Termasuk reservasi grup besar 12 orang!", "exact group warning drifted");
-  ok(app.translateNoteCnToId("🛵 純外帶日，無內用桌") === "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.", "exact takeout warning drifted");
-  ok(app.translateNoteCnToId("✅ 今日預約正常") === "✅ Reservasi hari ini normal (Total 0 meja)", "exact normal warning drifted");
-  ok(app.translateNoteCnToId("✅ 今日預約正常 (共 5 桌)") === "✅ Reservasi hari ini normal (Total 5 meja)", "exact normal warning with tables drifted");
-  ok(calls.length === 0, "exact warnings called LanguageApp: " + JSON.stringify(calls));
-  const takeout = app.translateNoteCnToId("🛵 純外帶日，無內用桌；訂金$1,000已付");
-  ok(takeout === "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.; uang muka $1,000 sudah dibayar", "fixed takeout plus amount keeps tail: " + takeout);
-  const normal = app.translateNoteCnToId("✅ 今日預約正常 (共 5 桌)；找零$1,000.50已付");
-  ok(normal === "✅ Reservasi hari ini normal (Total 5 meja); kembalian $1,000.50 sudah dibayar", "fixed normal plus amount keeps tail: " + normal);
-  ok(normal.indexOf("1000 meja") === -1 && normal.indexOf("1,000 meja") === -1, "fixed normal used the amount as the table count: " + normal);
-  const before = app.translateNoteCnToId("訂金$1,000已付；⚠️ 注意：包含 12 人大組訂位！");
-  ok(countExactToken(before, "$1,000") === 1 && before.indexOf("Rp") === -1, "amount before fixed warning is not dropped: " + before);
-  assertNoRawAmountSent("rewrite stub never receives raw amount on protected paths", calls);
-}
-
-resetCalls();
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：不要辣")) === "Catatan: tidak pedas", "dictionary longest match 不要辣");
-ok(newCalls.length === 0, "dictionary 不要辣 called Google: " + JSON.stringify(newCalls));
-resetCalls();
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：不要花生")) === "Catatan: tanpa kacang", "dictionary 不要花生 is tanpa not inverted");
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：不能吃花生")) === "Catatan: tamu tidak bisa makan kacang", "dictionary 不能吃 is not inverted");
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：可以吃雞")) === "Catatan: tamu bisa makan ayam", "dictionary 可以吃 has no tidak");
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：可以吃雞")).indexOf("tidak") === -1, "dictionary 可以吃 inverted the negation");
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：筊白筍")) === "Catatan: rebung air (jiaobai)", "dictionary 筊白筍");
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：不要放香菜")) === "Catatan: jangan pakai daun ketumbar", "dictionary 不要放 is jangan pakai");
-ok(remarkOf(fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：花生過敏")) === "Catatan: alergi kacang", "dictionary 花生過敏 stays the known phrase");
-ok(newCalls.length === 0, "dictionary phrases called Google: " + JSON.stringify(newCalls));
-
-{
-  function remarkLine(remark) {
-    return "12:00 測試甲先生 (2) | 備註：" + remark;
-  }
-  function checkDict(label, remark, want) {
-    resetCalls();
-    const got = fixed.translateTaskCnToId(remarkLine(remark));
-    ok(remarkOf(got) === "Catatan: " + want, label + "\n  got: " + remarkOf(got));
-    ok(newCalls.length === 0, label + " calls: " + JSON.stringify(newCalls));
-  }
-  const wholeCalls = [];
-  const wholeApp = loadGs(modifiedRemind, {
-    translate(text) {
-      wholeCalls.push(String(text));
-      return "UTUH:" + String(text);
-    },
-  });
-  function checkSend(label, remark) {
-    wholeCalls.length = 0;
-    const got = wholeApp.translateTaskCnToId(remarkLine(remark));
-    ok(remarkOf(got) === "Catatan: UTUH:" + remark, label + "\n  got: " + remarkOf(got));
-    ok(JSON.stringify(wholeCalls) === JSON.stringify([remark]), label + " calls: " + JSON.stringify(wholeCalls));
-  }
-  function checkChinese(label, remark) {
-    resetCalls();
-    const got = remarkOf(fixed.translateTaskCnToId(remarkLine(remark)));
-    ok(newCalls.length === 0, label + " calls: " + JSON.stringify(newCalls.map((c) => c.text)));
-    return got;
-  }
-  checkSend("single char does not split 牛奶", "牛奶");
-  ok(remarkOf(wholeApp.translateTaskCnToId(remarkLine("牛奶"))).indexOf("daging sapi") === -1, "牛奶 became daging sapi");
-  checkSend("single char does not split 奶奶生日", "奶奶生日");
-  checkDict("full word 不要蔥花", "不要蔥花", "tanpa daun bawang cincang");
-  checkDict("full phrase 不要奶油", "不要奶油", "tanpa mentega");
-  checkDict("full phrase 不要蝦仁", "不要蝦仁", "tanpa udang kupas");
-  checkDict("full phrase 不要雞皮", "不要雞皮", "tanpa kulit ayam");
-  checkDict("full phrase 不要冰", "不要冰", "tanpa es");
-  checkSend("single char does not split 自備蛋糕", "自備蛋糕");
-  checkSend("single char does not split 半隻土雞", "半隻土雞");
-  checkDict("single char X at segment end 不要雞", "不要雞", "tanpa ayam");
-  checkDict("single char X at segment end 對蝦過敏", "對蝦過敏", "alergi udang");
-  const chickenSkin = checkChinese("不能吃雞皮 is not a partial negation", "不能吃雞皮");
-  ok(chickenSkin === "Catatan: 不能吃雞皮" && chickenSkin.indexOf("tidak") === -1, "不能吃雞皮 inverted the negation: " + chickenSkin);
-  checkDict("N大 at segment end", "3大", "3 dewasa");
-  checkDict("N小 at segment end", "3小", "3 anak");
-  checkDict("N大 at segment end after a phrase", "靠窗3大", "dekat jendela 3 dewasa");
-  checkSend("N大 does not match 3大桌", "3大桌");
-  checkSend("N小 does not match 提早3小時到", "提早3小時到");
-  checkSend("N大 not at segment end 3大靠窗", "3大靠窗");
-  checkSend("mid-sentence dictionary does not fragment", "今晚不要辣的菜要先標記");
-  checkDict("allergy joins 對花生和蝦子過敏", "對花生和蝦子過敏", "alergi kacang dan udang");
-  checkDict("enumeration allergy 對花生、蝦子過敏", "對花生、蝦子過敏", "alergi kacang dan udang");
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("對花生、蝦子過敏"))).indexOf("udang alergi") === -1, "對花生、蝦子過敏 reversed the allergy");
-  checkDict("enumeration negation 不要香菜、蔥", "不要香菜、蔥", "tanpa daun ketumbar, tanpa daun bawang");
-  checkDict("enumeration remark stays one segment 不要香菜、少鹽", "不要香菜、少鹽", "tanpa daun ketumbar, sedikit garam");
-  checkDict("quantity list stays covered 桶仔雞2隻、雞湯1份", "桶仔雞2隻、雞湯1份", "ayam tong 2 ekor, sup ayam 1 porsi");
-  checkDict("bare allergy 蝦子過敏", "蝦子過敏", "alergi udang");
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("蝦子過敏"))).indexOf("udang alergi") === -1, "蝦子過敏 reversed the allergy");
-  checkDict("bare list allergy 花生、蝦子過敏", "花生、蝦子過敏", "alergi kacang dan udang");
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("花生、蝦子過敏"))).indexOf("kacang, alergi") === -1, "花生、蝦子過敏 marked only the last item");
-  checkDict("bare list allergy 花生、蛋過敏", "花生、蛋過敏", "alergi kacang dan telur");
-  checkDict("bare list allergy 香菜、花生過敏", "香菜、花生過敏", "alergi daun ketumbar dan kacang");
-  checkDict("adjacent allergy 花生蝦子過敏", "花生蝦子過敏", "alergi kacang dan udang");
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("花生蝦子過敏"))).indexOf("kacang alergi") === -1, "花生蝦子過敏 left the first food outside alergi");
-  checkDict("bare list allergy 花生和蝦子過敏", "花生和蝦子過敏", "alergi kacang dan udang");
-  checkDict("bare list allergy 蛋、奶過敏", "蛋、奶過敏", "alergi telur dan susu");
-  checkDict("trailing particle stripped 不要辣的", "不要辣的", "tidak pedas");
-  checkDict("bare 元 stays original", "元", "元");
-  checkDict("time word covers amount phrase", "今晚訂金$1,000已付", "malam ini uang muka $1,000 sudah dibayar");
-  checkDict("allergy list includes 蒜", "花生、蒜過敏", "alergi kacang dan bawang putih");
-  const between = checkChinese("unscoped allergy stays Chinese 花生靠窗過敏", "花生靠窗過敏");
-  ok(between.indexOf("過敏") !== -1 && between.indexOf("alergi") === -1, "unscoped allergy stitched 花生靠窗過敏: " + between);
-  checkSend("question 不要辣嗎 sends the whole segment", "不要辣嗎");
-  const noChair = checkChinese("non-food 不要小孩椅 stays Chinese", "不要小孩椅");
-  ok(noChair === "Catatan: 不要小孩椅" && noChair.indexOf("kursi anak") === -1, "不要小孩椅 was guessed: " + noChair);
-  checkDict("non-food after 不要 is its own phrase 不要香菜、小孩椅", "不要香菜、小孩椅", "tanpa daun ketumbar, kursi anak");
-  checkDict("enumeration includes 蒜", "不要香菜、蔥、蒜", "tanpa daun ketumbar, tanpa daun bawang, tanpa bawang putih");
-  checkDict("negation list keeps food exclusion 不要辣、花生", "不要辣、花生", "tidak pedas, tanpa kacang");
-  checkDict("negation list keeps food exclusion 不要辣、蝦子", "不要辣、蝦子", "tidak pedas, tanpa udang");
-  checkDict("negation list keeps food exclusion 不要油炸、花生", "不要油炸、花生", "jangan digoreng, tanpa kacang");
-  checkDict("negation list keeps food exclusion 不要辣、香菜", "不要辣、香菜", "tidak pedas, tanpa daun ketumbar");
-  checkDict("negation plus separate request 不要辣、靠窗", "不要辣、靠窗", "tidak pedas, dekat jendela");
-  checkDict("dish not spicy 桶仔雞不要辣", "桶仔雞不要辣", "ayam tong tidak pedas");
-  const roast = checkChinese("unknown dish not spicy stays Chinese 烤雞不要辣", "烤雞不要辣");
-  ok(roast === "Catatan: 烤雞不要辣" && roast.indexOf("tidak pedas") === -1 && roast.indexOf("bumbu") === -1, "烤雞不要辣 was guessed: " + roast);
-  checkDict("不吃X 不吃牛", "不吃牛", "tamu tidak makan daging sapi");
-  checkDict("不吃X 不吃花生", "不吃花生", "tamu tidak makan kacang");
-  const noEatSkin = checkChinese("不吃 unknown stays Chinese 不吃雞皮", "不吃雞皮");
-  ok(noEatSkin === "Catatan: 不吃雞皮", "不吃雞皮 was guessed: " + noEatSkin);
-  checkDict("verb list 不能吃花生、蝦子", "不能吃花生、蝦子", "tamu tidak bisa makan kacang dan udang");
-  checkDict("verb list 不要放香菜、花生", "不要放香菜、花生", "jangan pakai daun ketumbar, jangan pakai kacang");
-  checkDict("verb list 不吃牛、雞蛋", "不吃牛、雞蛋", "tamu tidak makan daging sapi dan telur");
-  checkDict("verb list 可以吃雞、花生", "可以吃雞、花生", "tamu bisa makan ayam dan kacang");
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("可以吃雞、花生"))).indexOf("tidak") === -1, "可以吃 list added tidak");
-  checkDict("coverage 海鮮", "海鮮", "makanan laut");
-  checkDict("coverage 蒜", "蒜", "bawang putih");
-  checkDict("coverage 蔥花", "蔥花", "daun bawang cincang");
-  checkDict("coverage 蛋奶", "蛋奶", "telur dan susu");
-  checkDict("coverage 不要放辣", "不要放辣", "jangan pakai cabai");
-  checkDict("coverage 不要太鹹", "不要太鹹", "jangan terlalu asin");
-  checkDict("coverage 不吃辣", "不吃辣", "tamu tidak makan pedas");
-  checkDict("coverage 客人不要辣", "客人不要辣", "tamu minta tidak pedas");
-  checkDict("coverage 對海鮮過敏", "對海鮮過敏", "alergi makanan laut");
-  checkDict("coverage 花生、海鮮過敏", "花生、海鮮過敏", "alergi kacang dan makanan laut");
-  checkDict("coverage 不要蛋奶", "不要蛋奶", "tanpa telur dan susu");
-  const late = checkChinese("scope holds the whole remark 若客人遲到，不要保留座位", "若客人遲到，不要保留座位");
-  ok(late.indexOf("若客人遲到") !== -1 && late.indexOf("不要保留座位") !== -1, "late remark dropped a piece: " + late);
-  ok(late.indexOf("tidak") === -1 && late.indexOf("jika") === -1, "late remark translated a neighbour: " + late);
-  resetCalls();
-  const leak = fixed.translateNoteCnToId("若發現漏水，不要啟動，先通知店長");
-  ok(leak.indexOf("若發現漏水") !== -1 && leak.indexOf("不要啟動") !== -1 && leak.indexOf("先通知店長") !== -1, "C leak note dropped a piece: " + leak);
-  ok(leak.indexOf("Jika") === -1 && leak.indexOf("Beri") === -1, "C leak note translated a neighbour: " + leak);
-  ok(newCalls.length === 0, "C leak note calls: " + JSON.stringify(newCalls.map((c) => c.text)));
-  resetCalls();
-  const fridge = fixed.translateNoteCnToId("今晚冷凍庫維修，不要開冰箱門，明天早上廠商到");
-  ok(fridge.indexOf("今晚冷凍庫維修") !== -1 && fridge.indexOf("不要開冰箱門") !== -1 && fridge.indexOf("明天早上廠商到") !== -1, "C fridge note dropped a piece: " + fridge);
-  ok(newCalls.length === 0, "C fridge note calls: " + JSON.stringify(newCalls.map((c) => c.text)));
-  checkDict("swap A換B 雞湯換筊白筍", "雞湯換筊白筍", "ganti sup ayam dengan rebung air (jiaobai)");
-  checkDict("swap 換X 換筊白筍", "換筊白筍", "ganti dengan rebung air (jiaobai)");
-  const swapMix = checkChinese("swap unknown stays Chinese 山藥雞湯米粉換筊白筍", "山藥雞湯米粉換筊白筍");
-  ok(swapMix === "Catatan: 山藥雞湯米粉換筊白筍" && swapMix.indexOf("rebung") === -1, "compound swap was guessed: " + swapMix);
-  checkDict("paid tail stays on the last amount", "訂金$1,000、尾款$2,000已付", "uang muka $1,000, sisa pembayaran $2,000 sudah dibayar");
-  checkDict("plan code phrase 不要A改成B", "不要5k1a改成6k1a", "ganti 5k1a menjadi 6k1a");
-  checkDict("plan code phrase 加點A一份", "加點5k1a一份", "tambah 5k1a 1 porsi");
-  checkDict("amount phrase 訂金X已付", "訂金$1,000已付", "uang muka $1,000 sudah dibayar");
-  checkDict("paid without amount has no stray comma", "訂金已付", "uang muka sudah dibayar");
-  checkDict("unpaid balance without amount has no stray comma", "尾款未付", "sisa pembayaran belum dibayar");
-  checkDict("amount phrase 訂金X未付", "訂金$1,000未付", "uang muka $1,000 belum dibayar");
-  checkDict("amount phrase 尾款X", "尾款$2,000", "sisa pembayaran $2,000");
-  checkDict("amount phrase 找零X已付", "找零$1,000.50已付", "kembalian $1,000.50 sudah dibayar");
-  resetCalls();
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("加點5k1a"))) === "Catatan: 加點5k1a", "token-adjacent 加點 stays Chinese");
-  ok(newCalls.length === 0, "token-adjacent 加點 was sent: " + JSON.stringify(newCalls));
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("訂金$1,000請拍照"))) === "Catatan: 訂金$1,000請拍照", "uncovered amount phrase stays Chinese");
-  ok(remarkOf(fixed.translateTaskCnToId(remarkLine("$1,000後"))) === "Catatan: $1,000後", "token-adjacent 後 stays Chinese");
-  const lineCalls = [];
-  const lineApp = loadGs(modifiedRemind, {
-    translate(text) {
-      lineCalls.push(String(text));
-      return "UTUH:" + String(text);
-    },
-  });
-  const paid = lineApp.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n訂金$1,000已付");
-  ok(paid.split("\n")[1] === "uang muka $1,000 sudah dibayar", "whole-line amount phrase: " + paid);
-  ok(lineCalls.length === 0, "whole-line amount phrase sent fragments: " + JSON.stringify(lineCalls));
-  const rpApp = loadGs(modifiedRemind, {
-    translate() {
-      return "Rp 1";
-    },
-  });
-  ok(remarkOf(rpApp.translateTaskCnToId(remarkLine("請改菜單"))) === "Catatan: 請改菜單", "whole segment Rp falls back");
-}
-
-{
-  const calls = [];
-  const app = loadGs(modifiedRemind, {
-    translate(text) {
-      calls.push(String(text));
-      return String(text) + ".";
-    },
-  });
-  const whole = app.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n清洗製冰機，下午三點前完成，並拍照回報");
-  ok(calls.length === 1 && calls[0] === "清洗製冰機，下午三點前完成，並拍照回報", "maintenance whole sentence is one call: " + JSON.stringify(calls));
-  ok(whole.split("\n")[1] === "清洗製冰機, 下午三點前完成, 並拍照回報", "strip trailing period on a whole maintenance sentence: " + whole);
-  const failed = loadGs(modifiedRemind, {
-    translate() {
-      throw new Error("down");
-    },
-  });
-  const back = failed.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n若發現漏水，不要啟動，先通知店長");
-  ok(back.split("\n")[1] === "若發現漏水, 不要啟動, 先通知店長", "maintenance failure falls back to the whole line: " + back);
-  ok(failed.__sleeps.length === 1 && failed.__sleeps[0] === 250, "maintenance failure pauses once: " + JSON.stringify(failed.__sleeps));
-  const upkeepCalls = [];
-  const upkeep = loadGs(modifiedRemind, {
-    translate(text) {
-      upkeepCalls.push(String(text));
-      return "UTUH:" + String(text);
-    },
-  });
-  const filterLine = upkeep.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n下午換冷氣濾網");
-  ok(JSON.stringify(upkeepCalls) === JSON.stringify(["下午換冷氣濾網"]), "maintenance 換 sends the whole sentence: " + JSON.stringify(upkeepCalls));
-  ok(filterLine.split("\n")[1].indexOf("UTUH:下午換冷氣濾網") !== -1, "maintenance 換 stayed Chinese: " + filterLine);
-  upkeepCalls.length = 0;
-  const gasLine = upkeep.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n不要開火，等瓦斯行檢查完");
-  ok(JSON.stringify(upkeepCalls) === JSON.stringify(["不要開火，等瓦斯行檢查完"]), "maintenance leading 不要 sends the whole sentence: " + JSON.stringify(upkeepCalls));
-  ok(gasLine.split("\n")[1].indexOf("UTUH:") !== -1 && gasLine.split("\n")[1].indexOf("不要開火") !== -1, "maintenance leading 不要 stayed Chinese: " + gasLine);
-  const amountCalls = [];
-  const amountWhole = loadGs(modifiedRemind, {
-    translate(text) {
-      amountCalls.push(String(text));
-      return String(text).replace("費用", "biaya").replace("請拍照", "mohon foto");
-    },
-  });
-  const kept = amountWhole.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n費用$1,000，請拍照");
-  ok(amountCalls.length === 0, "maintenance amount is not sent: " + JSON.stringify(amountCalls));
-  ok(kept.split("\n")[1] === "費用$1,000, 請拍照", "maintenance amount stays in the whole sentence: " + kept);
-}
-
-resetCalls();
-const particle = fixed.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：訂金$1,000的");
-ok(remarkOf(particle) === "Catatan: uang muka $1,000", "trailing particle is stripped: " + particle);
-ok(newCalls.length === 0, "particle piece called Google: " + JSON.stringify(newCalls));
-
-{
-  const calls = [];
-  const app = loadGs(modifiedRemind, {
-    translate(text) {
-      calls.push(String(text));
-      return "Halo.";
-    },
-  });
-  ok(remarkOf(app.translateTaskCnToId("12:00 測試甲先生 (2) | 備註：請改菜單。")) === "Catatan: Halo.", "source period is kept: " + calls.join("|"));
-}
-
-// --- busy day: 9 dine-in + 3 takeout, cached call bound ---
 const busyCn = sync.buildDigestText_(BUSY_DAY.day, BUSY_DAY.date, BUSY_DAY.time, BUSY_DAY.lunch, BUSY_DAY.dinner);
-const busyCnLines = [
-  "[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]",
-  "☀️ 午餐",
-  "",
-  "🍽️ 內用 (共 5 桌)",
-  "",
-  "11:00 測試01先生 (4) | 備註：花生過敏；不要辣 (小孩椅)",
-  "",
-  "11:10 測試02先生 (2) | 備註：花生過敏",
-  "",
-  "11:20 測試03小姐 (3) | 備註：桶仔雞2隻、雞湯1份",
-  "",
-  "11:30 測試04 (8) | 備註：9大3小",
-  "",
-  "11:40 測試05先生 (5) | 備註：不要辣",
-  "",
-  "🌙 晚餐",
-  "",
-  "🍽️ 內用 (共 4 桌)",
-  "",
-  "17:30 測試06 (2)",
-  "",
-  "17:40 測試07 (5k1a) | 備註：5k1a",
-  "",
-  "18:00 測試08先生 (6) | 備註：啤酒10箱要冰",
-  "",
-  "18:10 測試09小姐 (4) | 備註：12點到",
-  "",
-  "🥡 外帶 (共 3 筆)",
-  "",
-  "17:00 外帶01 | 備註：桶仔雞2隻、雞湯1份",
-  "",
-  "17:20 外帶02 | 備註：２份",
-  "",
-  "17:50 外帶03 | 備註：要VIP桌,不要香菜",
-  "",
-  "(總計 內用 9 桌＋外帶 3 筆)",
-];
-const busyGotLines = busyCn.split("\n");
-ok(busyGotLines.length === busyCnLines.length, "busy Chinese line count " + busyGotLines.length + " != " + busyCnLines.length + "\n" + busyCn);
-for (let i = 0; i < busyCnLines.length; i++) {
-  ok(busyGotLines[i] === busyCnLines[i], "busy CN line " + i + "\n  got:  " + busyGotLines[i] + "\n  want: " + busyCnLines[i]);
-}
-
-const busyNote = "⚠️ 注意：包含 12 人大組訂位！";
-const busyId = "ID";
-const oldMsgLines = previous.buildDailyReminderMessage_(busyCn, busyId, busyNote, "NOTE").split("\n");
-const newMsgLines = fixed.buildDailyReminderMessage_(busyCn, busyId, busyNote, "NOTE").split("\n");
-ok(oldMsgLines.length === newMsgLines.length, "CN message line count drifted");
-for (let i = 0; i < oldMsgLines.length; i++) {
-  ok(oldMsgLines[i] === newMsgLines[i], "old-vs-new Chinese message line " + i + "\n  old: " + oldMsgLines[i] + "\n  new: " + newMsgLines[i]);
-}
-
+const busyRemarks = []
+  .concat(BUSY_DAY.lunch, BUSY_DAY.dinner)
+  .map((row) => row.remarkStr)
+  .filter((text) => text);
 resetCalls();
 const busyIdText = fixed.translateTaskCnToId(busyCn);
-ok(JSON.stringify(newCalls.map((c) => c.text)) === JSON.stringify(BUSY_DAY_CALLS), "busy calls: " + JSON.stringify(newCalls.map((c) => c.text)));
-ok(newCalls.length <= BUSY_DAY_CALLS.length, "busy call bound exceeded: " + newCalls.length);
-ok(newCalls.length === BUSY_DAY_CALLS.length, "busy unique call count: " + newCalls.length);
-const busyTails = busyIdText.split("\n").filter((line) => line.indexOf("Catatan:") !== -1).map(remarkOf);
-const busyTailWant = [
-  "Catatan: alergi kacang; tidak pedas (kursi anak)",
-  "Catatan: alergi kacang",
-  "Catatan: ayam tong 2 ekor, sup ayam 1 porsi",
-  "Catatan: 9 dewasa 3 anak",
-  "Catatan: tidak pedas",
-  "Catatan: 5k1a",
-  "Catatan: bir 10 kotak harus dingin",
-  "Catatan: tiba jam 12",
-  "Catatan: ayam tong 2 ekor, sup ayam 1 porsi",
-  "Catatan: 2 porsi",
-  "Catatan: minta meja VIP, tanpa daun ketumbar",
-];
-ok(JSON.stringify(busyTails) === JSON.stringify(busyTailWant), "busy tails:\n" + busyTails.join("\n"));
-for (const tail of busyTails) {
-  if (tail === "Catatan: 5k1a") continue;
-  assertNoCjk("busy tail", tail);
+const busyBodies = busyIdText.split("\n").filter((line) => line.indexOf("Catatan:") !== -1).map(catatanBody);
+ok(JSON.stringify(busyBodies) === JSON.stringify(busyRemarks), "busy remarks\n  got:  " + JSON.stringify(busyBodies) + "\n  want: " + JSON.stringify(busyRemarks));
+ok(busyIdText.indexOf("共") === -1, "busy Indonesian still contains 共");
+ok(busyIdText.indexOf("$1.000") === -1, "busy day rewrote an amount");
+for (const line of busyIdText.split("\n")) {
+  if (/Makan di tempat|Bawa pulang|Makan Siang|Makan Malam|^\(Total |^\[Minggu /.test(line)) {
+    ok(!CJK.test(line), "busy heading still has Chinese: " + line);
+  }
 }
+ok(calls.length === 0, "busy day called LanguageApp: " + JSON.stringify(calls));
 
-// Before sample comes from the unmodified 09-27 translator plus the same stub.
-resetCalls();
-const beforeMulti = previous.translateTaskCnToId(multiIn);
-const beforeHead = previous.translateTaskCnToId("🍽️ 內用 (共 3 桌)\n🥡 外帶 (共 1 筆)");
-ok(beforeMulti.indexOf("花生過敏") !== -1, "expected the old translator to leave Chinese, got: " + beforeMulti);
-ok(
-  JSON.stringify(oldCalls.map((c) => c.text)) === JSON.stringify(["花生過敏 不要辣 小孩椅"]),
-  "old translator call shape changed: " + JSON.stringify(oldCalls),
-);
-ok(beforeHead.indexOf("共") !== -1, "old headings should still show 共: " + beforeHead);
+const busyNote = "⚠️ 注意：包含 12 人大組訂位！";
+const busyNoteId = fixed.translateNoteCnToId(busyNote);
+const busyMessage = fixed.buildDailyReminderMessage_(busyCn, busyIdText, busyNote, busyNoteId);
+ok(busyMessage.indexOf(busyCn) !== -1, "Chinese task missing from the LINE message");
+ok(busyMessage.indexOf(busyIdText) !== -1, "Indonesian task missing from the LINE message");
+ok(busyMessage.indexOf("共 5 桌") !== -1, "Chinese heading lost 共 inside the CN half");
+ok(!/Tugas \(ID\)：[\s\S]*共/.test(busyMessage), "共 leaked into the ID half");
+const oldShell = previous.buildDailyReminderMessage_(busyCn, "ID", busyNote, "NOTE");
+const newShell = fixed.buildDailyReminderMessage_(busyCn, "ID", busyNote, "NOTE");
+ok(oldShell === newShell, "Chinese message shell drifted");
 
 function sliceFunction(src, name) {
   const key = "function " + name + "(";
@@ -1817,30 +293,29 @@ for (const name of unchangedFns) {
   ok(sliceFunction(modifiedSrc, name) === sliceFunction(originalSrc, name), "locked function drifted: " + name);
 }
 
+const newCallCount = calls.length;
+const beforeBusy = previous.translateTaskCnToId(busyCn);
+const beforeAmount = previous.translateTaskCnToId(remarkLine("$1,000"));
+
 if (failures.length) {
   console.error("FAIL " + failures.length);
   for (const message of failures) console.error("- " + message);
   process.exit(1);
 }
 
-console.log("PASS line-digest-nit offline (" + HEADING_CASES.length + " headings + remark/day fixtures)");
+console.log("PASS line-digest-nit offline (" + HEADING_CASES.length + " headings, remarks stay Chinese)");
+console.log("notice: " + NOTICE);
+console.log("busy ID digest chars: " + busyIdText.length);
+console.log("busy LINE message chars: " + busyMessage.length);
+console.log("LanguageApp calls: " + newCallCount);
 console.log("");
-console.log("--- sample before (09-27 translator, stub LanguageApp) ---");
-console.log(beforeHead);
-console.log(beforeMulti);
+console.log("--- sample before (09-27 translator) ---");
+console.log(beforeBusy);
+console.log(beforeAmount);
 console.log("--- sample after ---");
-console.log(fixed.translateTaskCnToId("🍽️ 內用 (共 3 桌)\n🥡 外帶 (共 1 筆)"));
-console.log(multiGot);
-console.log("--- qty / digits / pipe / plan code ---");
-console.log(qtyGot);
-console.log(partyGot);
-console.log(beerGot);
-console.log(arriveGot);
-console.log(fwGot);
-console.log(semiGot);
-console.log(commaGot);
-console.log(vipGot);
-console.log(pipeGot);
-console.log(codeInPhrase);
-console.log("--- busy day calls " + BUSY_DAY_CALLS.length + " ---");
 console.log(busyIdText);
+console.log(fixed.translateTaskCnToId(remarkLine("$1,000")));
+console.log(fixed.translateTaskCnToId(remarkLine("不要辣、蒜?")));
+console.log(fixed.translateTaskCnToId(remarkLine("不要蔥，香菜、牛肉、靠窗")));
+console.log(fixed.translateTaskCnToId(remarkLine("不要蝦子，$500、芒果和香菜")));
+console.log(fixed.translateTaskCnToId(remarkLine("對花生過敏、蝦子")));

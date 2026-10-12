@@ -47,11 +47,12 @@ PR #39 的回滾點，是**部署前那一刻**、對**同一個** Apps Script �
 
 `rollback-pre-dinein-takeout-split-20260927/` 是**分區之前**的回滾目錄。它**不能**用來回復 PR #39。該目錄不在這個 git repo。repo 也沒有 `.clasp.json`，無法從這裡證明此刻線上仍是 09-27 那一版。
 
-## 翻譯暫停（行為說明，不是部署）
+## 這一版的印尼文（行為說明，不是部署）
 
-- 一般錯誤：暫停 250ms，再試一次。
-- `in a short time`：暫停 1000ms，再試一次。這是官方 Calendar 範例的等待，不保證 LanguageApp 一定成功。
-- `Service invoked too many times`，而且訊息不是 `in a short time`：不暫停、不重試，該段留中文原文。同一則 `translateTaskCnToId` 後面的片段不再呼叫。
-- 這個錯誤訊息比對不是完整清單，沒有涵蓋所有 LanguageApp 或所有語系的寫法。實際遇到其他樣型再補，不要把現在的比對說成全部。
-- 金額與方案代碼先切開，不送進 LanguageApp。對照必須吃完整段才用；有金額卻吃不滿就整段留中文。店務維護提醒整句翻一次，同一套對照也用在整行。
-- C 欄 `translateNoteCnToId` 傳 null cache，沒有整欄配額停止旗標。每日配額錯誤後，每個尚未被對照吃掉、而且沒有金額的整段仍可能再呼叫 LanguageApp 一次；不重試、不暫停。不要把整則通知說成零次額外呼叫。忙日驗收要分開計算這些呼叫，不能只算 B 欄。真實驗收清單見 `REAL_LANGUAGEAPP_ACCEPTANCE.md`。
+結構句用固定字串。備註與自由文字整段留中文，並加 `REMARK_CONFIRM_NOTICE_`。不呼叫 LanguageApp，所以沒有翻譯暫停、沒有配額重試。說明見 `REAL_LANGUAGEAPP_ACCEPTANCE.md`。
+
+## 回滾時不要裝回會改金額的舊翻譯
+
+2026-09-27 的 `LineDailyRemind.gs`（以及與此相同的線上快照）在備註裡把 `$1,000` 改成 `$1.000`（千分位逗號換成點）。那不是可接受的金額行為。
+
+回復整個專案時，仍然只用部署前那份完整 pull，而且要比對檔案清單與 SHA-256。不要把 09-27 的 `original/LineDailyRemind.gs` 當成金額正確的版本裝回去。若回復後的線上檔仍會把 `$1,000` 改成 `$1.000`，先停，不要為了「回到舊翻譯」再推一次。這一版的做法是備註根本不改寫，`$1,000` 維持來源原文。
