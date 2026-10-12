@@ -33,7 +33,7 @@ const twDescription = attr(html, /<meta name="twitter:description" content="([^"
 
 assert(title.includes('水美土雞城'), 'title keeps 水美土雞城');
 assert(title.includes('外埔土雞城'), 'title shows 外埔土雞城');
-assert(title.includes('桶仔雞'), 'title shows 桶仔雞');
+assert(title.includes('甕窯雞'), 'title shows 甕窯雞');
 assert(title.includes('桌菜'), 'title shows 桌菜');
 assert(title.includes('菜單價格'), 'title keeps 菜單價格');
 assert(fullWidthUnits(title) <= 32, `title full-width units ${fullWidthUnits(title)} should be ≤ 32`);
@@ -41,7 +41,7 @@ assert(ogTitle === title && twTitle === title, 'og:title and twitter:title match
 
 const descLen = [...description].length;
 assert(descLen >= 70 && descLen <= 90, `description length ${descLen} should be 70–90`);
-for (const needle of ['桶仔雞（烤雞）', '桌菜', '團體聚餐', '最多可容納 9 桌', '免費停車', '採預約制', '菜單價格']) {
+for (const needle of ['甕窯雞（烤雞）', '桌菜', '團體聚餐', '最多可容納 9 桌', '免費停車', '採預約制', '菜單價格']) {
     assert(description.includes(needle), `description missing ${needle}`);
 }
 assert(ogDescription === description && twDescription === description, 'og:description and twitter:description match meta description');
