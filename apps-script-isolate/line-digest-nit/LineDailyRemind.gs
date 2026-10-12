@@ -2,7 +2,7 @@
  * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
  * 中文總覽、讀表、寫表、LINE 發送都沒改。
  * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
- * 結構句用固定字串，而且只認中文總覽行首的原格式：時段標題、桌數、人數、時間、稱謂。方案代碼留在原位。不把備註送去翻譯。
+ * 結構句用固定字串，只認中文總覽實際組出的整行：☀️ 午餐、🌙 晚餐、內用三種「共 N」標題、外帶「共 N 筆」、總計三種（含 0 桌）。行首尾空白先去掉。其他寫法留中文並加一次提示。方案代碼留在原位。不把備註送去翻譯。
  * 客人列只在內用／外帶區裡拆。其他行留中文原文並加一次提示。稱謂只看姓名欄。
  * 「共」不留在印尼文計數。
  * 備註、多段備註、店務自由文字整段留中文原文。不切段、不對照、不改標點。
@@ -217,23 +217,27 @@ function isBookingHeaderLine_(line) {
   return /^\[[A-Za-z]{3} \d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT\+8\] \[\d{4}-\d{2}-\d{2} 預約總覽\]$/.test(line);
 }
 
-function isCountHeading_(line, label) {
-  if (line === label) return true;
-  if (line.indexOf(label) !== 0) return false;
-  var rest = line.substring(label.length);
-  return /^\s\(共 \d+ 桌\)$/.test(rest) || /^\s\(共 \d+ 筆，桌數待確認\)$/.test(rest) || /^\s\(共 \d+ 桌，另 \d+ 筆桌數待確認\)$/.test(rest);
+function isLunchSlotHeading_(line) {
+  return line === "☀️ 午餐";
+}
+
+function isDinnerSlotHeading_(line) {
+  return line === "🌙 晚餐";
 }
 
 function isDineHeading_(line) {
-  return isCountHeading_(line, "🍽️ 內用");
+  // formatSessionHeading_：0 桌、N 桌、N 筆桌數待確認、N 桌另 M 筆。沒有不帶計數的「🍽️ 內用」。
+  return /^🍽️ 內用 \(共 (?:\d+ 桌(?:，另 \d+ 筆桌數待確認)?|\d+ 筆，桌數待確認)\)$/.test(line);
 }
 
 function isTakeoutHeading_(line) {
+  // formatTakeoutHeading_ 只用「筆」，不用「桌」。
   return /^🥡 外帶 \(共 \d+ 筆\)$/.test(line);
 }
 
 function isGrandTotalLine_(line) {
-  return /^\(總計 內用 .+＋外帶 \d+ 筆\)$/.test(line);
+  // formatGrandTotal_ / formatDineInTotalPart_ 的四種整行。行首尾空白已在呼叫前 trim。
+  return /^\(總計 內用 (?:\d+ 桌(?:，另 \d+ 筆桌數待確認)?|\d+ 筆桌數待確認)＋外帶 \d+ 筆\)$/.test(line);
 }
 
 /**
@@ -284,19 +288,19 @@ function translateTaskCnToId(taskCn) {
       continue;
     }
 
-    // 2. 時段標題只認行首的 ☀️ 午餐／🌙 晚餐，不認備註裡的同一串字。
-    if (isCountHeading_(line, "☀️ 午餐")) {
+    // 2. 時段標題只認整行 ☀️ 午餐／🌙 晚餐。中文總覽不在這兩行後面加計數。
+    if (isLunchSlotHeading_(line)) {
       inCustomerSection = false;
       translatedLines.push(translateSessionHeadingLine_(line, "☀️ Makan Siang"));
       continue;
     }
-    if (isCountHeading_(line, "🌙 晚餐")) {
+    if (isDinnerSlotHeading_(line)) {
       inCustomerSection = false;
       translatedLines.push(translateSessionHeadingLine_(line, "🌙 Makan Malam"));
       continue;
     }
 
-    // 3. 總計只認行首的「(總計 內用 …＋外帶 N 筆)」。
+    // 3. 總計只認 formatGrandTotal_ 的四種整行。
     if (isGrandTotalLine_(line)) {
       inCustomerSection = false;
       translatedLines.push(translateTotalLine_(line));

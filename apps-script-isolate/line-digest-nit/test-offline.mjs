@@ -94,6 +94,55 @@ for (const [input, expected] of HEADING_CASES) {
 }
 ok(calls.length === 0, "headings called LanguageApp: " + JSON.stringify(calls));
 
+const keptChinese = [
+  "(總計 內用 $1,000＋外帶 0 筆)",
+  "(總計 內用 2 桌待取消＋外帶 0 筆)",
+  "(總計 內用 無法確認＋外帶 0 筆)",
+  "(總計 內用 3 桌)",
+  "(總計 內用 3  桌＋外帶 2 筆)",
+  "☀️ 午餐 (共 3 桌)",
+  "🌙 晚餐 (共 2 筆，桌數待確認)",
+  "🍽️ 內用",
+  "🍽️ 內用 (共 2 桌待取消)",
+  "🥡 外帶",
+  "🥡 外帶 (共 5 桌)",
+];
+for (const line of keptChinese) {
+  resetCalls();
+  const got = fixed.translateTaskCnToId(line);
+  ok(got === line + " " + NOTICE, "non-generated structure\n  got:  " + got + "\n  want: " + line + " " + NOTICE);
+  ok(got.indexOf("meja") === -1 && got.indexOf("pesanan") === -1 && got.indexOf("Makan") === -1, "non-generated structure was translated: " + got);
+  ok(got.split(NOTICE).length === 2, "non-generated notice count: " + got);
+  ok(calls.length === 0, "non-generated structure called LanguageApp");
+}
+const amountTotal = fixed.translateTaskCnToId(keptChinese[0]);
+ok(amountTotal.indexOf("$1,000") !== -1 && amountTotal.indexOf("$1.000") === -1, "total amount changed: " + amountTotal);
+ok(fixed.translateTaskCnToId(keptChinese[1]).indexOf("待取消") !== -1, "待取消 was dropped");
+ok(fixed.translateTaskCnToId(keptChinese[2]).indexOf("無法確認") !== -1, "無法確認 was dropped");
+
+ok(fixed.translateTaskCnToId("  (總計 內用 0 桌＋外帶 2 筆)  ") === "(Total makan di tempat 0 meja + bawa pulang 2 pesanan)", "trim dropped an exact total");
+ok(fixed.translateTaskCnToId("  ☀️ 午餐  ") === "☀️ Makan Siang", "trim dropped an exact slot");
+ok(fixed.translateTaskCnToId("  🍽️ 內用 (共 0 桌)  ") === "🍽️ Makan di tempat (total 0 meja)", "trim dropped an exact dine heading");
+ok(fixed.translateTaskCnToId("  🥡 外帶 (共 5 筆)  ") === "🥡 Bawa pulang (total 5 pesanan)", "trim dropped an exact takeout heading");
+ok(
+  fixed.translateTaskCnToId(" (總計 內用 $1,000＋外帶 0 筆) ") === "(總計 內用 $1,000＋外帶 0 筆) " + NOTICE,
+  "trim rewrote a non-generated total",
+);
+
+const closedSection = [
+  ["🍽️ 內用", "12:00 測試甲先生 (4)"],
+  ["🍽️ 內用 (共 2 桌待取消)", "12:00 測試甲先生 (4) | 備註：不要辣"],
+  ["☀️ 午餐 (共 3 桌)", "12:00 測試甲先生 (4)"],
+  ["🌙 晚餐 (共 2 筆，桌數待確認)", "12:00 測試甲先生 (4)"],
+  ["🥡 外帶 (共 5 桌)", "12:00 外帶01 | 備註：加一"],
+  ["(總計 內用 2 桌待取消＋外帶 0 筆)", "12:00 測試甲先生 (4)"],
+];
+for (const [head, guest] of closedSection) {
+  const got = fixed.translateTaskCnToId(head + "\n" + guest);
+  ok(got === head + " " + NOTICE + "\n" + guest + " " + NOTICE, "non-generated heading opened a section:\n" + got);
+  ok(got.indexOf("Bapak") === -1 && got.indexOf("Ibu") === -1 && got.indexOf("Makan") === -1 && got.indexOf("meja") === -1, "section was parsed: " + got);
+}
+
 const originalSrc = readFileSync(originalRemind, "utf8");
 const modifiedSrc = readFileSync(modifiedRemind, "utf8");
 ok(originalSrc.indexOf('Bawa pulang (共 "') !== -1, "original snapshot missing leftover 共 in takeout heading");

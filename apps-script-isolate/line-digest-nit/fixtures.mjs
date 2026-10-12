@@ -1,30 +1,5 @@
-// Offline fixtures for the 2026-09-27 digest translator NITs.
+// Offline fixtures for the LINE digest Indonesian checks.
 // Names are placeholders (測試甲…), not real guests. No phone numbers or order ids.
-
-export const PHRASEBOOK = {
-  "花生過敏": "alergi kacang",
-  "不要辣": "tidak pedas",
-  "小孩椅": "kursi anak",
-  "不要香菜": "tanpa daun ketumbar",
-  "少鹽": "sedikit garam",
-  "生日": "ulang tahun",
-  "不要葱": "tanpa daun bawang",
-  "桶仔雞2隻": "ayam tong 2 ekor",
-  "雞湯1份": "sup ayam 1 porsi",
-  "9大3小": "9 dewasa 3 anak",
-  "啤酒10箱要冰": "bir 10 kotak harus dingin",
-  "12點到": "tiba pukul 12",
-  "２份": "2 porsi",
-  "要VIP桌": "minta meja VIP",
-  "靠窗": "dekat jendela",
-  "花生過敏 | 靠窗": "alergi kacang | dekat jendela",
-  "2隻雞": "2 ekor ayam",
-  "300份": "300 porsi",
-  "12:30到": "tiba 12:30",
-  "訂金": "uang muka",
-  "尾款": "sisa pembayaran",
-  "加桌": "tambah meja",
-};
 
 // Same shape appendSessionBlock_ / buildDigestText_ consume. Not sheet rows.
 export const MIXED_DAY = {
@@ -107,7 +82,7 @@ function take(time, name, remark) {
   };
 }
 
-// 9 dine-in + 3 takeout. Repeated remarks must collapse to one LanguageApp call each.
+// 9 dine-in + 3 takeout. Remarks stay source Chinese and are not sent to LanguageApp.
 export const BUSY_DAY = {
   day: "Sun",
   date: "2026-10-11",
@@ -130,10 +105,6 @@ export const BUSY_DAY = {
   ],
 };
 
-export const BUSY_DAY_CALLS = [
-  "啤酒10箱要冰",
-];
-
 export const HEADING_CASES = [
   ["🍽️ 內用 (共 0 桌)", "🍽️ Makan di tempat (total 0 meja)"],
   ["🍽️ 內用 (共 3 桌)", "🍽️ Makan di tempat (total 3 meja)"],
@@ -142,8 +113,8 @@ export const HEADING_CASES = [
   ["🥡 外帶 (共 0 筆)", "🥡 Bawa pulang (total 0 pesanan)"],
   ["🥡 外帶 (共 5 筆)", "🥡 Bawa pulang (total 5 pesanan)"],
   ["☀️ 午餐", "☀️ Makan Siang"],
-  ["☀️ 午餐 (共 3 桌)", "☀️ Makan Siang (total 3 meja)"],
-  ["🌙 晚餐 (共 2 筆，桌數待確認)", "🌙 Makan Malam (total 2 pesanan, jumlah meja menunggu konfirmasi)"],
+  ["🌙 晚餐", "🌙 Makan Malam"],
+  ["(總計 內用 0 桌＋外帶 1 筆)", "(Total makan di tempat 0 meja + bawa pulang 1 pesanan)"],
   ["(總計 內用 3 桌＋外帶 2 筆)", "(Total makan di tempat 3 meja + bawa pulang 2 pesanan)"],
   ["(總計 內用 4 桌，另 1 筆桌數待確認＋外帶 2 筆)", "(Total makan di tempat 4 meja, 1 pesanan jumlah meja menunggu konfirmasi + bawa pulang 2 pesanan)"],
   ["(總計 內用 2 筆桌數待確認＋外帶 0 筆)", "(Total makan di tempat 2 pesanan, jumlah meja menunggu konfirmasi + bawa pulang 0 pesanan)"],

@@ -1,11 +1,11 @@
---- apps-script-isolate/line-digest-nit/original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
-+++ apps-script-isolate/line-digest-nit/LineDailyRemind.gs	2026-10-12 01:01:54.623050392 +0000
+--- original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
++++ LineDailyRemind.gs	2026-10-12 02:53:59.561462132 +0000
 @@ -1,3 +1,14 @@
 +/**
 + * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
 + * 中文總覽、讀表、寫表、LINE 發送都沒改。
 + * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
-+ * 結構句用固定字串，而且只認中文總覽行首的原格式：時段標題、桌數、人數、時間、稱謂。方案代碼留在原位。不把備註送去翻譯。
++ * 結構句用固定字串，只認中文總覽實際組出的整行：☀️ 午餐、🌙 晚餐、內用三種「共 N」標題、外帶「共 N 筆」、總計三種（含 0 桌）。行首尾空白先去掉。其他寫法留中文並加一次提示。方案代碼留在原位。不把備註送去翻譯。
 + * 客人列只在內用／外帶區裡拆。其他行留中文原文並加一次提示。稱謂只看姓名欄。
 + * 「共」不留在印尼文計數。
 + * 備註、多段備註、店務自由文字整段留中文原文。不切段、不對照、不改標點。
@@ -15,7 +15,7 @@
  function checkAndSendDailyReminders() {
    // ======= 1. 系統安全性憑證設定 =======
    var LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN");
-@@ -202,6 +213,29 @@
+@@ -202,6 +213,33 @@
    return out.join("\n");
  }
  
@@ -23,29 +23,33 @@
 +  return /^\[[A-Za-z]{3} \d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT\+8\] \[\d{4}-\d{2}-\d{2} 預約總覽\]$/.test(line);
 +}
 +
-+function isCountHeading_(line, label) {
-+  if (line === label) return true;
-+  if (line.indexOf(label) !== 0) return false;
-+  var rest = line.substring(label.length);
-+  return /^\s\(共 \d+ 桌\)$/.test(rest) || /^\s\(共 \d+ 筆，桌數待確認\)$/.test(rest) || /^\s\(共 \d+ 桌，另 \d+ 筆桌數待確認\)$/.test(rest);
++function isLunchSlotHeading_(line) {
++  return line === "☀️ 午餐";
++}
++
++function isDinnerSlotHeading_(line) {
++  return line === "🌙 晚餐";
 +}
 +
 +function isDineHeading_(line) {
-+  return isCountHeading_(line, "🍽️ 內用");
++  // formatSessionHeading_：0 桌、N 桌、N 筆桌數待確認、N 桌另 M 筆。沒有不帶計數的「🍽️ 內用」。
++  return /^🍽️ 內用 \(共 (?:\d+ 桌(?:，另 \d+ 筆桌數待確認)?|\d+ 筆，桌數待確認)\)$/.test(line);
 +}
 +
 +function isTakeoutHeading_(line) {
++  // formatTakeoutHeading_ 只用「筆」，不用「桌」。
 +  return /^🥡 外帶 \(共 \d+ 筆\)$/.test(line);
 +}
 +
 +function isGrandTotalLine_(line) {
-+  return /^\(總計 內用 .+＋外帶 \d+ 筆\)$/.test(line);
++  // formatGrandTotal_ / formatDineInTotalPart_ 的四種整行。行首尾空白已在呼叫前 trim。
++  return /^\(總計 內用 (?:\d+ 桌(?:，另 \d+ 筆桌數待確認)?|\d+ 筆桌數待確認)＋外帶 \d+ 筆\)$/.test(line);
 +}
 +
  /**
   * 智慧型逐行翻譯解譯器 (確保印尼文格式與中文百分之百對齊)
   */
-@@ -209,9 +243,10 @@
+@@ -209,9 +247,10 @@
    if (!taskCn) return "Tidak ada terjemahan";
    var lines = taskCn.split("\n");
    var translatedLines = [];
@@ -57,7 +61,7 @@
  
    for (var i = 0; i < lines.length; i++) {
      var line = lines[i].trim();
-@@ -220,50 +255,50 @@
+@@ -220,50 +259,50 @@
        continue;
      }
  
@@ -113,14 +117,14 @@
  
 -    // 2. 轉換時段標題
 -    if (line.indexOf("☀️ 午餐") !== -1) {
-+    // 2. 時段標題只認行首的 ☀️ 午餐／🌙 晚餐，不認備註裡的同一串字。
-+    if (isCountHeading_(line, "☀️ 午餐")) {
++    // 2. 時段標題只認整行 ☀️ 午餐／🌙 晚餐。中文總覽不在這兩行後面加計數。
++    if (isLunchSlotHeading_(line)) {
 +      inCustomerSection = false;
        translatedLines.push(translateSessionHeadingLine_(line, "☀️ Makan Siang"));
        continue;
      }
 -    if (line.indexOf("🌙 晚餐") !== -1) {
-+    if (isCountHeading_(line, "🌙 晚餐")) {
++    if (isDinnerSlotHeading_(line)) {
 +      inCustomerSection = false;
        translatedLines.push(translateSessionHeadingLine_(line, "🌙 Makan Malam"));
        continue;
@@ -128,13 +132,13 @@
  
 -    // 3. 轉換結尾總計
 -    if (line.indexOf("(總計") !== -1) {
-+    // 3. 總計只認行首的「(總計 內用 …＋外帶 N 筆)」。
++    // 3. 總計只認 formatGrandTotal_ 的四種整行。
 +    if (isGrandTotalLine_(line)) {
 +      inCustomerSection = false;
        translatedLines.push(translateTotalLine_(line));
        continue;
      }
-@@ -274,53 +309,37 @@
+@@ -274,53 +313,37 @@
        continue;
      }
  
@@ -198,7 +202,7 @@
    }
    return translatedLines.join("\n");
  }
-@@ -328,17 +347,33 @@
+@@ -328,17 +351,33 @@
  function translateSessionHeadingLine_(line, idName) {
    var pendingTail = "jumlah meja menunggu konfirmasi";
    // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
@@ -235,7 +239,7 @@
  }
  
  function translateTotalLine_(line) {
-@@ -373,31 +408,41 @@
+@@ -373,31 +412,41 @@
    return "(Total " + (tables ? tables[0] : "0") + " meja)";
  }
  
