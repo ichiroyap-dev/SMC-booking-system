@@ -275,7 +275,7 @@ function prePrOrder(type) {
         date: '2026-10-22',
         time: '12:00',
         note: type === 'takeout' ? '客製包裝' : '散客 大人2位；靠窗',
-        orderItems: type === 'takeout' ? '甕窯雞 x 1\n' : '',
+        orderItems: type === 'takeout' ? '桶仔雞 x 1\n' : '',
     };
 }
 assert(attr.attributionSendingEnabled() === false, '來源欄位預設不送後端');
@@ -768,7 +768,7 @@ try {
                     document.getElementById('tables').value = '1';
                     document.getElementById('note').value = '靠窗';
                 } else {
-                    document.querySelector('#takeoutFields [data-item="甕窯雞"]').value = '1';
+                    document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = '1';
                     document.getElementById('note').value = '客製包裝';
                 }
                 document.getElementById('name').value = '測試同學';
@@ -809,7 +809,7 @@ try {
         assert(sameOriginal(matrix.takeoutPlain, matrix.takeoutTagged), `外帶有無標記的原欄位與備註要相同：${JSON.stringify(matrix.takeoutPlain.original)} vs ${JSON.stringify(matrix.takeoutTagged.original)}`);
         assert(matrix.diningPlain.original.type === 'dining' && matrix.diningPlain.original.note.includes('靠窗'), '內用備註仍是餐點內容');
         assert(matrix.takeoutPlain.original.type === 'takeout' && matrix.takeoutPlain.original.note === '客製包裝', '外帶備註仍是客人自填');
-        assert(matrix.takeoutPlain.original.orderItems.includes('甕窯雞'), '外帶品項維持原欄位');
+        assert(matrix.takeoutPlain.original.orderItems.includes('桶仔雞'), '外帶品項維持原欄位');
         assert(!matrix.diningPlain.original.note.includes('utm') && !matrix.takeoutTagged.original.note.includes('TESTGCLID9000'), '備註不可混入來源');
         assert(matrix.diningPlain.body === matrix.diningTagged.body, `內用有無 UTM 的正式 payload 要逐字相同：${matrix.diningPlain.body} vs ${matrix.diningTagged.body}`);
         assert(matrix.takeoutPlain.body === matrix.takeoutTagged.body, `外帶有無 UTM 的正式 payload 要逐字相同：${matrix.takeoutPlain.body} vs ${matrix.takeoutTagged.body}`);
@@ -1101,7 +1101,7 @@ try {
             const date = document.getElementById('date');
             date.value = iso;
             date.dispatchEvent(new Event('change', { bubbles: true }));
-            document.querySelector('#takeoutFields [data-item="甕窯雞"]').value = '1';
+            document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = '1';
             document.getElementById('name').value = '測試同學';
             document.getElementById('phone').value = '0900000000';
             document.getElementById('note').value = '客製包裝';
@@ -1114,7 +1114,7 @@ try {
             await new Promise((resolve) => setTimeout(resolve, 40));
             const locked = {
                 name: document.getElementById('name').value,
-                chicken: document.querySelector('#takeoutFields [data-item="甕窯雞"]').value,
+                chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
                 message: document.getElementById('messageBox').textContent,
                 button: document.getElementById('submitBtn').innerText,
                 disabled: document.getElementById('submitBtn').disabled,
@@ -1124,7 +1124,7 @@ try {
             return {
                 locked,
                 name: document.getElementById('name').value,
-                chicken: document.querySelector('#takeoutFields [data-item="甕窯雞"]').value,
+                chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
                 button: document.getElementById('submitBtn').innerText,
                 disabled: document.getElementById('submitBtn').disabled,
                 anotherHidden: document.getElementById('anotherBookingBtn').classList.contains('hidden'),
@@ -1153,7 +1153,7 @@ try {
                     document.querySelector('input[name="partyType"][value="casual"]').checked = true;
                     document.getElementById('adults').value = '2';
                 } else {
-                    document.querySelector('#takeoutFields [data-item="甕窯雞"]').value = '1';
+                    document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = '1';
                 }
                 document.getElementById('name').value = '測試同學';
                 document.getElementById('phone').value = '0900000000';
@@ -1182,7 +1182,7 @@ try {
                     booked,
                     extra,
                     name: document.getElementById('name').value,
-                    chicken: document.querySelector('#takeoutFields [data-item="甕窯雞"]').value,
+                    chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
                     message: document.getElementById('messageBox').textContent,
                     button: document.getElementById('submitBtn').innerText,
                     disabled: document.getElementById('submitBtn').disabled,
@@ -1203,7 +1203,7 @@ try {
             const date = document.getElementById('date');
             date.value = iso;
             date.dispatchEvent(new Event('change', { bubbles: true }));
-            document.querySelector('#takeoutFields [data-item="甕窯雞"]').value = '1';
+            document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = '1';
             document.getElementById('name').value = '測試同學';
             document.getElementById('phone').value = '0900000000';
             document.getElementById('note').value = '客製包裝';
@@ -1216,7 +1216,7 @@ try {
             await new Promise((resolve) => setTimeout(resolve, 40));
             const after = {
                 name: document.getElementById('name').value,
-                chicken: document.querySelector('#takeoutFields [data-item="甕窯雞"]').value,
+                chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
                 message: document.getElementById('messageBox').textContent,
                 button: document.getElementById('submitBtn').innerText,
                 disabled: document.getElementById('submitBtn').disabled,
@@ -1335,7 +1335,7 @@ try {
                 const date = document.getElementById('date');
                 date.value = iso;
                 date.dispatchEvent(new Event('change', { bubbles: true }));
-                document.querySelector('#takeoutFields [data-item="甕窯雞"]').value = String(chicken);
+                document.querySelector('#takeoutFields [data-item="桶仔雞"]').value = String(chicken);
                 document.getElementById('name').value = '測試同學';
                 document.getElementById('phone').value = '0900000000';
                 document.getElementById('note').value = note;
@@ -1353,7 +1353,7 @@ try {
             await new Promise((resolve) => setTimeout(resolve, 40));
             const unlocked = {
                 name: document.getElementById('name').value,
-                chicken: document.querySelector('#takeoutFields [data-item="甕窯雞"]').value,
+                chicken: document.querySelector('#takeoutFields [data-item="桶仔雞"]').value,
                 disabled: document.getElementById('submitBtn').disabled,
                 button: document.getElementById('submitBtn').innerText,
                 locked: document.getElementById('bookingForm').getAttribute('data-booking-locked') === '1',
@@ -1376,7 +1376,7 @@ try {
         assert(takeoutResetOk.unlocked.name === '' && takeoutResetOk.unlocked.chicken === '0' && takeoutResetOk.unlocked.disabled === false && takeoutResetOk.unlocked.button === '送出預約申請' && takeoutResetOk.unlocked.locked === false, '成功清空後要解開外帶表單');
         assert(takeoutResetOk.unlocked.receipt.includes('SMC900083'), '外帶第一筆成功後收件畫面要有編號');
         assert(takeoutResetOk.count === 2, `外帶清空成功後依序再送一筆，連同第一筆共 ${takeoutResetOk.count} 次`);
-        assert(takeoutResetOk.type === 'takeout' && String(takeoutResetOk.orderItems).includes('甕窯雞 x 2') && takeoutResetOk.note === '客製包裝再一筆', '第二筆外帶要送出新的品項與備註');
+        assert(takeoutResetOk.type === 'takeout' && String(takeoutResetOk.orderItems).includes('桶仔雞 x 2') && takeoutResetOk.note === '客製包裝再一筆', '第二筆外帶要送出新的品項與備註');
         assert(takeoutResetOk.receipt.includes('SMC900084'), '第二筆外帶要顯示新編號');
         assert(JSON.stringify(takeoutResetOk.keys) === JSON.stringify(['action', 'type', 'name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note', 'orderItems']), '外帶再送出的正式請求仍是原 11 欄');
     });

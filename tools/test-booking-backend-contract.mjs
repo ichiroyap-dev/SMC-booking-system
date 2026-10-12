@@ -29,7 +29,7 @@ function baseOrder(type) {
         date: '2026-10-22',
         time: '12:00',
         note: type === 'takeout' ? '客製包裝' : '散客 大人2位；靠窗',
-        orderItems: type === 'takeout' ? '甕窯雞 x 1\n' : '',
+        orderItems: type === 'takeout' ? '桶仔雞 x 1\n' : '',
     };
 }
 
