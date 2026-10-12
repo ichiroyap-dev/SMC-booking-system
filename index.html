@@ -410,6 +410,7 @@
         }
         .contact-link { color: #c2410c; text-decoration: underline; font-weight: bold; white-space: nowrap; }
         #booking-section,
+        #featured-dishes,
         #menu,
         #group-dining,
         #takeout,
@@ -739,6 +740,38 @@
             background: #f6ecdc;
             color: #4c3525;
         }
+        .featured-dish-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1.25rem;
+            margin: 1.5rem 0 0;
+            padding: 0;
+            list-style: none;
+        }
+        .featured-dish-card {
+            margin: 0;
+            overflow: hidden;
+            border-radius: 16px;
+            border: 1px solid rgba(94, 62, 36, 0.12);
+            background: #fffdf9;
+            box-shadow: 0 8px 18px rgba(71, 43, 20, 0.05);
+        }
+        .featured-dish-card picture { display: block; background: #f6ecdc; }
+        .featured-dish-card img {
+            display: block;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 4 / 3;
+            object-fit: cover;
+        }
+        .featured-dish-name {
+            margin: 0;
+            padding: 0.8rem 0.75rem 0.95rem;
+            text-align: center;
+            font-weight: 700;
+            color: #3c2a1d;
+            line-height: 1.4;
+        }
         .arrival-grid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -918,6 +951,10 @@
             /* 480–767px 兩欄時菜名欄只剩約 120px，價格溢出、按鈕被裁；改單欄。 */
             .signature-grid { grid-template-columns: 1fr; }
             .signature-photo-card { min-height: 340px; }
+            .featured-dish-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.85rem;
+            }
         }
 
         @media (max-width: 479px) {
@@ -945,9 +982,11 @@
             .takeout-stepper { margin-left: auto; }
             .arrival-grid { grid-template-columns: 1fr; }
             #booking-notice,
+            #featured-dishes,
             #menu,
             #group-dining,
             #location-section { padding: 1.5rem; }
+            .featured-dish-grid { grid-template-columns: 1fr; }
             #booking-notice { min-width: 0; }
             #booking-notice > * { min-width: 0; }
             .map-frame { height: 300px; }
@@ -966,6 +1005,7 @@
             </a>
             <nav class="site-nav flex flex-wrap gap-x-5 gap-y-2 text-sm" aria-label="主要">
                 <a href="./" aria-current="page">首頁</a>
+                <a href="#featured-dishes">招牌菜色</a>
                 <a href="#menu">菜單價格</a>
                 <a href="#group-dining">團體聚餐</a>
                 <a href="faq.html">常見問題</a>
@@ -1080,6 +1120,67 @@
                 <span class="text-xl" aria-hidden="true">◎</span>
                 <p class="text-sm leading-7"><b>為什麼要提前預約？</b><br>我們會依用餐時段、人數與口味需求準備料理；如有不吃辣、不喜香茅等需求，請在預約備註中告知。</p>
             </div>
+        </section>
+
+        <!-- 招牌菜色：只列菜名與照片，不寫價格或未確認的描述 -->
+        <section id="featured-dishes" class="glass-card featured-dishes p-8 mb-8" aria-labelledby="featured-dishes-title">
+            <h2 id="featured-dishes-title" class="brand-font text-2xl text-stone-800">招牌菜色</h2>
+            <ol class="featured-dish-grid">
+                <li>
+                    <figure class="featured-dish-card">
+                        <picture>
+                            <source srcset="dish_01.webp" type="image/webp">
+                            <img src="dish_01.jpg" alt="水美土雞城 雞汁炒米粉" width="800" height="600" loading="lazy">
+                        </picture>
+                        <figcaption class="featured-dish-name">雞汁炒米粉</figcaption>
+                    </figure>
+                </li>
+                <li>
+                    <figure class="featured-dish-card">
+                        <picture>
+                            <source srcset="dish_02.webp" type="image/webp">
+                            <img src="dish_02.jpg" alt="水美土雞城 飄香甕窯雞" width="800" height="600" loading="lazy">
+                        </picture>
+                        <figcaption class="featured-dish-name">飄香甕窯雞</figcaption>
+                    </figure>
+                </li>
+                <li>
+                    <figure class="featured-dish-card">
+                        <picture>
+                            <source srcset="dish_03.webp" type="image/webp">
+                            <img src="dish_03.jpg" alt="水美土雞城 鳳梨苦瓜雞湯" width="800" height="600" loading="lazy">
+                        </picture>
+                        <figcaption class="featured-dish-name">鳳梨苦瓜雞湯</figcaption>
+                    </figure>
+                </li>
+                <li>
+                    <figure class="featured-dish-card">
+                        <picture>
+                            <source srcset="dish_04.webp" type="image/webp">
+                            <img src="dish_04.jpg" alt="水美土雞城 客家嫩悶筍" width="800" height="600" loading="lazy">
+                        </picture>
+                        <figcaption class="featured-dish-name">客家嫩悶筍</figcaption>
+                    </figure>
+                </li>
+                <li>
+                    <figure class="featured-dish-card">
+                        <picture>
+                            <source srcset="dish_05.webp" type="image/webp">
+                            <img src="dish_05.jpg" alt="水美土雞城 清蒸石斑魚" width="800" height="600" loading="lazy">
+                        </picture>
+                        <figcaption class="featured-dish-name">清蒸石斑魚</figcaption>
+                    </figure>
+                </li>
+                <li>
+                    <figure class="featured-dish-card">
+                        <picture>
+                            <source srcset="dish_06.webp" type="image/webp">
+                            <img src="dish_06.jpg" alt="水美土雞城 客家炸婆菜" width="800" height="600" loading="lazy">
+                        </picture>
+                        <figcaption class="featured-dish-name">客家炸婆菜</figcaption>
+                    </figure>
+                </li>
+            </ol>
         </section>
 
         <!-- 菜單與價格：可被搜尋引擎讀取的公開價位（內容與下方訂位／外帶表單一致） -->
