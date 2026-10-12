@@ -59,6 +59,22 @@ function expectRemark(body) {
   return "12:00 Bapak 測試甲 (4) | Catatan: " + body + " " + NOTICE;
 }
 
+function translateInSection(headingCn, headingId, line) {
+  const got = fixed.translateTaskCnToId(headingCn + "\n\n" + line);
+  const parts = got.split("\n");
+  ok(parts[0] === headingId, "section heading\n  got: " + parts[0] + "\n  want: " + headingId);
+  ok(parts[1] === "", "section blank line dropped: " + JSON.stringify(parts));
+  return parts.slice(2).join("\n");
+}
+
+function translateDineGuest(line) {
+  return translateInSection("🍽️ 內用 (共 1 桌)", "🍽️ Makan di tempat (total 1 meja)", line);
+}
+
+function translateTakeoutGuest(line) {
+  return translateInSection("🥡 外帶 (共 1 筆)", "🥡 Bawa pulang (total 1 pesanan)", line);
+}
+
 function catatanBody(line) {
   const mark = "Catatan: ";
   const at = line.indexOf(mark);
@@ -108,7 +124,7 @@ const remarks = [
 ];
 for (const body of remarks) {
   resetCalls();
-  const got = fixed.translateTaskCnToId(remarkLine(body));
+  const got = translateDineGuest(remarkLine(body));
   ok(got === expectRemark(body), "remark\n  got:  " + got + "\n  want: " + expectRemark(body));
   ok(catatanBody(got) === body, "remark body changed: " + JSON.stringify(catatanBody(got)));
   ok(got.indexOf("$1.000") === -1 && got.indexOf("$1.000.50") === -1, "amount rewritten: " + got);
@@ -117,15 +133,47 @@ for (const body of remarks) {
 }
 
 resetCalls();
-ok(fixed.translateTaskCnToId("12:00 測試乙小姐 (4)") === "12:00 Ibu 測試乙 (4)", "empty guest line drifted");
-ok(
-  fixed.translateTaskCnToId("12:00 測試乙小姐 (4) | 備註：") === "12:00 Ibu 測試乙 (4) | Catatan:",
-  "empty catatan drifted",
-);
-ok(fixed.translateTaskCnToId("19:00 測試戊 人數待確認") === "19:00 Bapak/Ibu 測試戊 Jumlah orang menunggu konfirmasi", "headcount label drifted");
-ok(fixed.translateTaskCnToId("11:00 測試丙 (5k1a)") === "11:00 Bapak/Ibu 測試丙 (5k1a)", "plan code on the name drifted");
-ok(fixed.translateTaskCnToId("11:00 外帶01 | 備註：桶仔雞2隻") === "11:00 Bapak/Ibu 外帶01 | Catatan: 桶仔雞2隻 " + NOTICE, "takeout remark drifted");
+ok(translateDineGuest("12:00 測試乙小姐 (4)") === "12:00 Ibu 測試乙 (4)", "empty guest line drifted");
+ok(translateDineGuest("12:00 測試乙小姐 (4) | 備註：") === "12:00 Ibu 測試乙 (4) | Catatan:", "empty catatan drifted");
+ok(translateDineGuest("19:00 測試戊 人數待確認") === "19:00 Bapak/Ibu 測試戊 Jumlah orang menunggu konfirmasi", "headcount label drifted");
+ok(translateDineGuest("11:00 測試丙 (5k1a)") === "11:00 Bapak/Ibu 測試丙 (5k1a)", "plan code on the name drifted");
+ok(translateTakeoutGuest("11:00 外帶01 | 備註：桶仔雞2隻") === "11:00 Bapak/Ibu 外帶01 | Catatan: 桶仔雞2隻 " + NOTICE, "takeout remark drifted");
+ok(translateDineGuest("12:00 陳太太 (2) | 備註：先生不吃牛") === "12:00 Ibu 陳 (2) | Catatan: 先生不吃牛 " + NOTICE, "honorific read the remark");
+ok(translateDineGuest("12:00 測試甲先生 (4) | 備註：小姐也來") === "12:00 Bapak 測試甲 (4) | Catatan: 小姐也來 " + NOTICE, "remark honorific changed the name");
 ok(calls.length === 0, "structural guest lines called LanguageApp");
+
+const markerRemarks = ["☀️ 午餐先上湯", "🌙 晚餐加菜", "(總計先結帳)", "🍽️ 內用靠窗", "🥡 外帶加一"];
+for (const body of markerRemarks) {
+  const dine = translateDineGuest("12:00 測試甲先生 (4) | 備註：" + body);
+  ok(dine === "12:00 Bapak 測試甲 (4) | Catatan: " + body + " " + NOTICE, "dine marker remark\n  got: " + dine);
+  ok(dine.indexOf("Makan Siang") === -1 && dine.indexOf("Makan Malam") === -1 && dine.indexOf("total 12") === -1, "dine marker became a heading: " + dine);
+  const take = translateTakeoutGuest("12:00 外帶01 | 備註：" + body);
+  ok(take === "12:00 Bapak/Ibu 外帶01 | Catatan: " + body + " " + NOTICE, "takeout marker remark\n  got: " + take);
+  ok(take.indexOf("Makan Siang") === -1 && take.indexOf("total 12") === -1, "takeout marker became a heading: " + take);
+}
+
+const opsLines = [
+  "14:00 水電先生來修冷氣",
+  "☀️ 午餐先上湯",
+  "🌙 晚餐加菜",
+  "(總計先結帳)",
+  "12:00 測試甲先生 (4) | 備註：不要辣",
+  "🍽️ 內用靠窗",
+  "🥡 外帶加一",
+];
+for (const line of opsLines) {
+  resetCalls();
+  const got = fixed.translateTaskCnToId(line);
+  ok(got === line + " " + NOTICE, "ops line\n  got:  " + got + "\n  want: " + line + " " + NOTICE);
+  ok(got.split(NOTICE).length === 2, "ops notice count: " + got);
+  ok(got.indexOf("Bapak") === -1 && got.indexOf("Ibu") === -1 && got.indexOf("Makan") === -1, "ops line was parsed: " + got);
+  ok(calls.length === 0, "ops line called LanguageApp");
+}
+const opsBlock = fixed.translateTaskCnToId("[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n14:00 水電先生來修冷氣\n☀️ 午餐先上湯");
+ok(
+  opsBlock === "[Minggu 11 Oktober 2026 09:05 GMT+8] [Ringkasan Reservasi 11 Oktober 2026]\n14:00 水電先生來修冷氣 " + NOTICE + "\n☀️ 午餐先上湯 " + NOTICE,
+  "ops under a header was parsed as customers: " + opsBlock,
+);
 
 resetCalls();
 const maintenance = "[Sun 2026-10-11 09:05 GMT+8] [2026-10-11 預約總覽]\n清洗製冰機，下午三點前完成，並拍照回報\n費用$1,000，請拍照";
@@ -314,8 +362,8 @@ console.log(beforeBusy);
 console.log(beforeAmount);
 console.log("--- sample after ---");
 console.log(busyIdText);
-console.log(fixed.translateTaskCnToId(remarkLine("$1,000")));
-console.log(fixed.translateTaskCnToId(remarkLine("不要辣、蒜?")));
-console.log(fixed.translateTaskCnToId(remarkLine("不要蔥，香菜、牛肉、靠窗")));
-console.log(fixed.translateTaskCnToId(remarkLine("不要蝦子，$500、芒果和香菜")));
-console.log(fixed.translateTaskCnToId(remarkLine("對花生過敏、蝦子")));
+console.log(translateDineGuest(remarkLine("$1,000")));
+console.log(translateDineGuest(remarkLine("不要辣、蒜?")));
+console.log(translateDineGuest(remarkLine("不要蔥，香菜、牛肉、靠窗")));
+console.log(translateDineGuest(remarkLine("不要蝦子，$500、芒果和香菜")));
+console.log(translateDineGuest(remarkLine("對花生過敏、蝦子")));

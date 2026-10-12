@@ -2,7 +2,8 @@
  * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
  * 中文總覽、讀表、寫表、LINE 發送都沒改。
  * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
- * 結構句用固定字串：時段標題、桌數、人數、時間、稱謂。方案代碼留在原位。不把備註送去翻譯。
+ * 結構句用固定字串，而且只認中文總覽行首的原格式：時段標題、桌數、人數、時間、稱謂。方案代碼留在原位。不把備註送去翻譯。
+ * 客人列只在內用／外帶區裡拆。其他行留中文原文並加一次提示。稱謂只看姓名欄。
  * 「共」不留在印尼文計數。
  * 備註、多段備註、店務自由文字整段留中文原文。不切段、不對照、不改標點。
  * 金額照來源留下（$1,000 仍是 $1,000，不改成 $1.000）。
@@ -212,6 +213,29 @@ function sanitizeDigestTaskForPush_(taskCn) {
   return out.join("\n");
 }
 
+function isBookingHeaderLine_(line) {
+  return /^\[[A-Za-z]{3} \d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT\+8\] \[\d{4}-\d{2}-\d{2} 預約總覽\]$/.test(line);
+}
+
+function isCountHeading_(line, label) {
+  if (line === label) return true;
+  if (line.indexOf(label) !== 0) return false;
+  var rest = line.substring(label.length);
+  return /^\s\(共 \d+ 桌\)$/.test(rest) || /^\s\(共 \d+ 筆，桌數待確認\)$/.test(rest) || /^\s\(共 \d+ 桌，另 \d+ 筆桌數待確認\)$/.test(rest);
+}
+
+function isDineHeading_(line) {
+  return isCountHeading_(line, "🍽️ 內用");
+}
+
+function isTakeoutHeading_(line) {
+  return /^🥡 外帶 \(共 \d+ 筆\)$/.test(line);
+}
+
+function isGrandTotalLine_(line) {
+  return /^\(總計 內用 .+＋外帶 \d+ 筆\)$/.test(line);
+}
+
 /**
  * 智慧型逐行翻譯解譯器 (確保印尼文格式與中文百分之百對齊)
  */
@@ -222,6 +246,7 @@ function translateTaskCnToId(taskCn) {
 
   var daysMap = { 'Sun': 'Minggu', 'Mon': 'Senin', 'Tue': 'Selasa', 'Wed': 'Rabu', 'Thu': 'Kamis', 'Fri': 'Jumat', 'Sat': 'Sabtu' };
   var monthsMap = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  var inCustomerSection = false;
 
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i].trim();
@@ -230,50 +255,50 @@ function translateTaskCnToId(taskCn) {
       continue;
     }
 
-    // 1. 解析並轉換時間標頭 [Wed 2026-07-01 13:52 GMT+8]
-    if (line.indexOf("[") === 0 && line.indexOf("預約總覽]") !== -1) {
+    // 1. 時間標頭必須整行符合中文總覽格式。
+    if (isBookingHeaderLine_(line)) {
+      inCustomerSection = false;
       var headerMatch = line.match(/\[([A-Za-z]+)\s+(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2})\s+GMT\+8\]/);
-      if (headerMatch) {
-        var dayEN = headerMatch[1];
-        var year = headerMatch[2];
-        var monthIdx = parseInt(headerMatch[3], 10) - 1;
-        var dayStr = parseInt(headerMatch[4], 10).toString();
-        var timeStr = headerMatch[5];
-
-        var dayID = daysMap[dayEN] || dayEN;
-        var monthID = monthsMap[monthIdx] || headerMatch[3];
-        var dateStrID = dayStr + " " + monthID + " " + year;
-
-        translatedLines.push("[" + dayID + " " + dateStrID + " " + timeStr + " GMT+8] [Ringkasan Reservasi " + dateStrID + "]");
-      } else {
-        translatedLines.push(line);
-      }
+      var dayEN = headerMatch[1];
+      var year = headerMatch[2];
+      var monthIdx = parseInt(headerMatch[3], 10) - 1;
+      var dayStr = parseInt(headerMatch[4], 10).toString();
+      var timeStr = headerMatch[5];
+      var dayID = daysMap[dayEN] || dayEN;
+      var monthID = monthsMap[monthIdx] || headerMatch[3];
+      var dateStrID = dayStr + " " + monthID + " " + year;
+      translatedLines.push("[" + dayID + " " + dateStrID + " " + timeStr + " GMT+8] [Ringkasan Reservasi " + dateStrID + "]");
       continue;
     }
 
-    // 2a. 內用／外帶分區標題（20260927）
-    if (line.indexOf("🍽️ 內用") === 0) {
+    // 2a. 內用／外帶分區標題必須是行首的「共 N」格式。這兩區裡面才拆客人列。
+    if (isDineHeading_(line)) {
+      inCustomerSection = true;
       translatedLines.push(translateSessionHeadingLine_(line, "🍽️ Makan di tempat"));
       continue;
     }
-    if (line.indexOf("🥡 外帶") === 0) {
+    if (isTakeoutHeading_(line)) {
+      inCustomerSection = true;
       var takeoutN = line.match(/\d+/);
       translatedLines.push("🥡 Bawa pulang (total " + (takeoutN ? takeoutN[0] : "0") + " pesanan)");
       continue;
     }
 
-    // 2. 轉換時段標題
-    if (line.indexOf("☀️ 午餐") !== -1) {
+    // 2. 時段標題只認行首的 ☀️ 午餐／🌙 晚餐，不認備註裡的同一串字。
+    if (isCountHeading_(line, "☀️ 午餐")) {
+      inCustomerSection = false;
       translatedLines.push(translateSessionHeadingLine_(line, "☀️ Makan Siang"));
       continue;
     }
-    if (line.indexOf("🌙 晚餐") !== -1) {
+    if (isCountHeading_(line, "🌙 晚餐")) {
+      inCustomerSection = false;
       translatedLines.push(translateSessionHeadingLine_(line, "🌙 Makan Malam"));
       continue;
     }
 
-    // 3. 轉換結尾總計
-    if (line.indexOf("(總計") !== -1) {
+    // 3. 總計只認行首的「(總計 內用 …＋外帶 N 筆)」。
+    if (isGrandTotalLine_(line)) {
+      inCustomerSection = false;
       translatedLines.push(translateTotalLine_(line));
       continue;
     }
@@ -284,9 +309,8 @@ function translateTaskCnToId(taskCn) {
       continue;
     }
 
-    // 5. 轉換客戶明細行（含無備註、但人數待確認的列）
-    // 20260927：外帶區明細不再帶「(外帶)」且可能無備註 → 以時間開頭也走逐行規則，不整行丟機翻
-    if (line.indexOf("|") !== -1 || line.indexOf("人數待確認") !== -1 || /^\d{2}:\d{2}\s+\S/.test(line)) {
+    // 5. 客人列只在內用／外帶區。店務提醒即使以時間開頭，也留原文。
+    if (inCustomerSection && (line.indexOf("|") !== -1 || line.indexOf("人數待確認") !== -1 || /^\d{2}:\d{2}\s+\S/.test(line))) {
       var hadPipe = line.indexOf("|") !== -1;
       var parts = line.split("|");
       var frontPart = parts[0].trim();
@@ -298,10 +322,10 @@ function translateTaskCnToId(taskCn) {
       var nameAndCode = frontPart.replace(/^\d{2}:\d{2}\s+/, "");
 
       var titleID = "Bapak/Ibu ";
-      if (line.indexOf("先生") !== -1) titleID = "Bapak ";
-      if (line.indexOf("小姐") !== -1 || line.indexOf("女士") !== -1) titleID = "Ibu ";
+      if (nameAndCode.indexOf("小姐") !== -1 || nameAndCode.indexOf("女士") !== -1 || nameAndCode.indexOf("太太") !== -1) titleID = "Ibu ";
+      else if (nameAndCode.indexOf("先生") !== -1) titleID = "Bapak ";
 
-      nameAndCode = nameAndCode.replace("先生", "").replace("小姐", "").replace("女士", "");
+      nameAndCode = nameAndCode.replace("先生", "").replace("小姐", "").replace("女士", "").replace("太太", "");
       nameAndCode = nameAndCode.replace("(外帶)", "(Bawa pulang)");
       nameAndCode = nameAndCode.replace(/人數待確認/g, "Jumlah orang menunggu konfirmasi");
 
