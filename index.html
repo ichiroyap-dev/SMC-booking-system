@@ -791,6 +791,11 @@
         }
         .tone-peach .section-kicker,
         .tone-peach .contact-link { color: #9a3412; }
+        /* 白卡 #fffdf9 與蜜桃 #faf1e5–#f3e3d1 之間。深端不用 #f8ecdd：它比蜜桃淺端更深，相鄰會糊在一起，小標與連結也低於 4.5:1。 */
+        .tone-cream {
+            background: linear-gradient(135deg, #fdf7ef 0%, #fffaf4 100%);
+            border-color: rgba(166, 116, 72, 0.2);
+        }
         .map-frame { height: clamp(320px, 34vw, 420px); }
         .map-frame iframe { width: 100%; height: 100%; display: block; }
         
@@ -1208,7 +1213,7 @@
                         <li>自製冷凍米血：NT$90／斤（一塊約 150 元）</li>
                         <li>自養土雞：NT$180／斤</li>
                     </ul>
-                    <p class="mt-2 text-xs text-stone-500">按斤品項為估重下單、到店實秤。</p>
+                    <p class="mt-2 text-xs text-stone-600">按斤品項為估重下單、到店實秤。</p>
                 </div>
             </div>
             <p class="mt-6 text-sm text-stone-600 leading-7"><b class="text-stone-800">兒童：</b>幼兒園及以下不收費，可提供兒童椅；兒童計入實際到店人數。國小及以上兒童，份量與收費約2位折算1位成人，可再討論；座位依實際人數安排。<a href="faq.html#faq-kids" class="contact-link">兒童計費說明</a></p>
@@ -1216,7 +1221,7 @@
         </section>
 
         <!-- 團體聚餐：桌數、場合與預約方式（價位見上方菜單，不在此重列） -->
-        <section id="group-dining" class="glass-card p-8 mb-8" aria-labelledby="group-dining-title">
+        <section id="group-dining" class="tone-cream glass-card p-8 mb-8" aria-labelledby="group-dining-title">
             <p class="section-kicker mb-2">GROUP DINING</p>
             <h2 id="group-dining-title" class="brand-font text-2xl text-stone-800 mb-2">團體聚餐・家庭聚會</h2>
             <p class="text-sm text-stone-600 leading-7 mb-6">適合家庭聚餐、同學會、公司聚餐與親友聚會。本店採預約制，請先訂位再出發。最多可容納 9 桌；每桌建議最多坐12位。</p>
