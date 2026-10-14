@@ -26,8 +26,13 @@ const end = html.indexOf('</section>', start);
 assert(start > 0 && end > start, 'homepage has #featured-dishes');
 const section = start > 0 ? html.slice(start, end) : '';
 
-assert(section.includes('>招牌菜色<'), 'section heading is 招牌菜色');
-assert(!/NT\$|\$\d|\d元|價格/.test(section), 'section does not show a price');
+const h2Match = section.match(/<h2 id="featured-dishes-title"[^>]*>([\s\S]*?)<\/h2>/);
+assert(h2Match && h2Match[1] === '招牌菜色', 'h2 is exactly 招牌菜色');
+assert(/<h2 id="featured-dishes-title"[^>]*>招牌菜色<\/h2>\s*<p id="featured-dishes-note" class="mt-2 text-sm text-stone-600">（每桌價格不同，菜色及菜量皆會有所調整）<\/p>/.test(section), 'note p is directly after the h2');
+const note = '（每桌價格不同，菜色及菜量皆會有所調整）';
+const priceScan = section.replace(note, '');
+assert(!priceScan.includes(note), 'price scan excludes only that note');
+assert(!/NT\$|\$\d|\d元|價格/.test(priceScan), 'section does not show a price');
 
 let cursor = 0;
 for (const [file, name] of dishes) {
