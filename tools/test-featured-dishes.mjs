@@ -15,7 +15,7 @@ const assert = (cond, message) => { if (!cond) failures.push(message); };
 const dishes = [
     ['dish_01', '雞汁炒米粉'],
     ['dish_02', '飄香甕窯雞'],
-    ['dish_03', '鳳梨苦瓜雞湯'],
+    ['dish_03', '剝皮辣椒雞湯'],
     ['dish_04', '客家嫩燜筍'],
     ['dish_05', '清蒸石斑魚'],
     ['dish_06', '客家炸婆菜'],
@@ -31,9 +31,9 @@ assert(!/NT\$|\$\d|\d元|價格/.test(section), 'section does not show a price')
 
 let cursor = 0;
 for (const [file, name] of dishes) {
-    const pictureAt = section.indexOf(`<source srcset="${file}.webp" type="image/webp">`, cursor);
+    const pictureAt = section.indexOf(`<source srcset="${file}.webp?v=20261014" type="image/webp">`, cursor);
     assert(pictureAt > cursor, `${file} webp source is in order`);
-    const imgAt = section.indexOf(`<img src="${file}.jpg" alt="水美土雞城 ${name}" width="800" height="600" loading="lazy">`, pictureAt);
+    const imgAt = section.indexOf(`<img src="${file}.jpg?v=20261014" alt="水美土雞城 ${name}" width="800" height="600" loading="lazy">`, pictureAt);
     assert(imgAt > pictureAt, `${name} jpg fallback, alt, size, and lazy load`);
     const captionAt = section.indexOf(`<figcaption class="featured-dish-name">${name}</figcaption>`, imgAt);
     assert(captionAt > imgAt, `${name} caption is the dish name only`);
