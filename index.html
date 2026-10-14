@@ -791,6 +791,11 @@
         }
         .tone-peach .section-kicker,
         .tone-peach .contact-link { color: #9a3412; }
+        /* 白卡 #fffdf9 與蜜桃 #faf1e5–#f3e3d1 之間。深端不用 #f8ecdd：它比蜜桃淺端更深，相鄰會糊在一起，小標與連結也低於 4.5:1。 */
+        .tone-cream {
+            background: linear-gradient(135deg, #fdf7ef 0%, #fffaf4 100%);
+            border-color: rgba(166, 116, 72, 0.2);
+        }
         .map-frame { height: clamp(320px, 34vw, 420px); }
         .map-frame iframe { width: 100%; height: 100%; display: block; }
         
@@ -1123,7 +1128,7 @@
         </section>
 
         <!-- 招牌菜色：只列菜名與照片，不寫價格或未確認的描述 -->
-        <section id="featured-dishes" class="tone-peach glass-card featured-dishes p-8 mb-8" aria-labelledby="featured-dishes-title" aria-describedby="featured-dishes-note">
+        <section id="featured-dishes" class="glass-card featured-dishes p-8 mb-8" aria-labelledby="featured-dishes-title" aria-describedby="featured-dishes-note">
             <h2 id="featured-dishes-title" class="brand-font text-2xl text-stone-800">招牌菜色</h2>
             <p id="featured-dishes-note" class="mt-2 text-sm text-stone-600">（每桌價格不同，菜色及菜量皆會有所調整）</p>
             <ol class="featured-dish-grid">
@@ -1185,7 +1190,7 @@
         </section>
 
         <!-- 菜單與價格：可被搜尋引擎讀取的公開價位（內容與下方訂位／外帶表單一致） -->
-        <section id="menu" class="glass-card p-8 mb-8" aria-labelledby="menu-title">
+        <section id="menu" class="tone-peach glass-card p-8 mb-8" aria-labelledby="menu-title">
             <p class="section-kicker mb-2">MENU &amp; PRICES</p>
             <h2 id="menu-title" class="brand-font text-2xl text-stone-800 mb-2">水美土雞城菜單與價格</h2>
             <p class="text-sm text-stone-600 leading-7 mb-6">本店為預約式無菜單，桌菜依人數與口味現做；以下為官網公布的內用價位與外帶品項。內用各價位原則每桌含招牌甕窯雞（烤雞）一隻。</p>
@@ -1208,7 +1213,7 @@
                         <li>自製冷凍米血：NT$90／斤（一塊約 150 元）</li>
                         <li>自養土雞：NT$180／斤</li>
                     </ul>
-                    <p class="mt-2 text-xs text-stone-500">按斤品項為估重下單、到店實秤。</p>
+                    <p class="mt-2 text-xs text-stone-600">按斤品項為估重下單、到店實秤。</p>
                 </div>
             </div>
             <p class="mt-6 text-sm text-stone-600 leading-7"><b class="text-stone-800">兒童：</b>幼兒園及以下不收費，可提供兒童椅；兒童計入實際到店人數。國小及以上兒童，份量與收費約2位折算1位成人，可再討論；座位依實際人數安排。<a href="faq.html#faq-kids" class="contact-link">兒童計費說明</a></p>
@@ -1216,7 +1221,7 @@
         </section>
 
         <!-- 團體聚餐：桌數、場合與預約方式（價位見上方菜單，不在此重列） -->
-        <section id="group-dining" class="tone-peach glass-card p-8 mb-8" aria-labelledby="group-dining-title">
+        <section id="group-dining" class="tone-cream glass-card p-8 mb-8" aria-labelledby="group-dining-title">
             <p class="section-kicker mb-2">GROUP DINING</p>
             <h2 id="group-dining-title" class="brand-font text-2xl text-stone-800 mb-2">團體聚餐・家庭聚會</h2>
             <p class="text-sm text-stone-600 leading-7 mb-6">適合家庭聚餐、同學會、公司聚餐與親友聚會。本店採預約制，請先訂位再出發。最多可容納 9 桌；每桌建議最多坐12位。</p>
@@ -1233,7 +1238,7 @@
         </section>
 
         <!-- 📍 交通與位置：路線、免費停車與夜間提醒只寫在這裡 -->
-        <section id="location-section" class="glass-card p-8 mb-8" aria-labelledby="location-title">
+        <section id="location-section" class="tone-peach glass-card p-8 mb-8" aria-labelledby="location-title">
             <p class="section-kicker mb-2">FIND US</p>
             <h2 id="location-title" class="brand-font text-2xl mb-6 flex items-center text-stone-800">
                 <span class="mr-2">📍</span> 交通與位置
