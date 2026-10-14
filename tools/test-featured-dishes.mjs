@@ -26,8 +26,10 @@ const end = html.indexOf('</section>', start);
 assert(start > 0 && end > start, 'homepage has #featured-dishes');
 const section = start > 0 ? html.slice(start, end) : '';
 
-assert(section.includes('>招牌菜色<'), 'section heading is 招牌菜色');
-assert(!/NT\$|\$\d|\d元|價格/.test(section), 'section does not show a price');
+assert(/<h2 id="featured-dishes-title"[^>]*>招牌菜色<span\b/.test(section), 'section heading is 招牌菜色');
+assert(section.includes('（每桌價格不同，菜色及菜量皆會有所調整）'), 'heading notes price and portions vary by table');
+const priceScan = section.replace('（每桌價格不同，菜色及菜量皆會有所調整）', '');
+assert(!/NT\$|\$\d|\d元|價格/.test(priceScan), 'section does not show a price');
 
 let cursor = 0;
 for (const [file, name] of dishes) {
