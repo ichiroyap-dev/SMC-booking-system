@@ -15,7 +15,7 @@ const assert = (cond, message) => { if (!cond) failures.push(message); };
 const dishes = [
     ['dish_01', '雞汁炒米粉'],
     ['dish_02', '飄香甕窯雞'],
-    ['dish_03', '鳳梨苦瓜雞湯'],
+    ['dish_03', '剝皮辣椒雞湯'],
     ['dish_04', '客家嫩燜筍'],
     ['dish_05', '清蒸石斑魚'],
     ['dish_06', '客家炸婆菜'],
