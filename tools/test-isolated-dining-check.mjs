@@ -921,9 +921,15 @@ try {
         text: document.getElementById('result').textContent,
         lock: localStorage.getItem(${lockKey}) || ''
       }))()`);
-      const fetchesB = await tabB.evalExpr('window.__fetches || 0');
-      assert(afterA.ready === true && fetchesB === 1, 'A 恢復後不可再送，兩個分頁合計只送一次');
-      assert(afterA.lock.includes('"state":"unknown"') && afterA.lock.includes('SMC900888') && !afterA.lock.includes('"state":"submitting"'), '兩個分頁互搶後要保留 UNKNOWN / SMC900888');
+      const afterB = await pollPage(tabB.evalExpr, `(() => ({
+        ready: (window.__fetches || 0) === 1 && document.getElementById('submit').disabled === true && document.getElementById('result').textContent.includes('SMC900888') && !document.getElementById('result').textContent.includes('已送到'),
+        fetches: window.__fetches || 0,
+        disabled: document.getElementById('submit').disabled,
+        text: document.getElementById('result').textContent,
+        lock: localStorage.getItem(${lockKey}) || ''
+      }))()`);
+      assert(afterA.ready === true && afterB.ready === true, 'A 恢復後不可再送；要等 B 也停住後，兩個分頁合計只送一次');
+      assert(afterB.lock.includes('"state":"unknown"') && afterB.lock.includes('SMC900888') && !afterB.lock.includes('"state":"submitting"'), '兩個分頁互搶後要保留 UNKNOWN / SMC900888');
       console.log('test 兩個分頁互搶鎖: pass');
 
       await tabA.evalExpr(`sessionStorage.removeItem(${lockKey}); localStorage.removeItem(${lockKey}); true`);
@@ -957,9 +963,20 @@ try {
       assert(holding.ready === true, 'A 要先握住互斥，而且還沒送出');
       await tabB.evalExpr(`(() => {
         window.__fetches = 0;
+        window.__bLockDone = false;
         window.fetch = () => {
           window.__fetches += 1;
           return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve(${successBody}) });
+        };
+        const nativeRequest = navigator.locks.request.bind(navigator.locks);
+        navigator.locks.request = function (name, callback) {
+          return nativeRequest(name, function () {
+            try {
+              return callback();
+            } finally {
+              window.__bLockDone = true;
+            }
+          });
         };
         const input = document.getElementById('endpoint');
         input.value = ${endpoint};
@@ -978,16 +995,27 @@ try {
       const stillHolding = await tabA.evalExpr('({ holding: window.__holding === true, fetches: window.__fetches || 0 })');
       assert(stillQueued === 0 && stillHolding.holding === true && stillHolding.fetches === 0, '多等一會兒，B 仍在排隊且兩邊都還沒送出');
       await tabA.evalExpr('window.__releaseHold()');
-      const released = await pollPage(tabA.evalExpr, `(() => {
+      const released = await pollPage(tabB.evalExpr, `(() => {
         const lock = localStorage.getItem(${lockKey}) || '';
         return {
-          ready: (window.__fetches || 0) === 1 && lock.includes('"state":"unknown"') && lock.includes('SMC900888'),
+          ready: window.__bLockDone === true
+            && (window.__fetches || 0) === 0
+            && document.getElementById('submit').disabled === true
+            && document.getElementById('ack-sheet').hidden === false
+            && !document.getElementById('result').textContent.includes('已送到')
+            && lock.includes('"state":"unknown"')
+            && lock.includes('SMC900888')
+            && !lock.includes('"state":"submitting"'),
           fetches: window.__fetches || 0,
+          disabled: document.getElementById('submit').disabled,
+          ackHidden: document.getElementById('ack-sheet').hidden,
+          lockDone: window.__bLockDone === true,
+          text: document.getElementById('result').textContent,
           lock: lock
         };
       })()`);
-      const queuedFetches = await tabB.evalExpr('window.__fetches || 0');
-      assert(released.ready === true && queuedFetches === 0, '放行後只有先握住鎖的那一頁送出一次，UNKNOWN 保留');
+      const releasedA = await tabA.evalExpr(`(() => ({ fetches: window.__fetches || 0, lock: localStorage.getItem(${lockKey}) || '' }))()`);
+      assert(released.ready === true && releasedA.fetches === 1, '等 B 取鎖完成後才檢查：B 沒有送出，按鈕停住，UNKNOWN / SMC900888 保留');
       console.log('test 排隊之後才拿到鎖: pass');
       browser.ws.close();
       tabA.ws.close();
