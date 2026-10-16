@@ -40,20 +40,31 @@
 
 `direct/unknown` 只表示這筆官網預約沒有廣告參數。不要把它算成 Google 廣告。`有點擊識別碼、來源待核對` 要另列，等人對過再決定算不算廣告。
 
-外來參數寫進試算表前要當純文字。`cleanToken` 只去掉控制字元，**不是**公式防護。官網送出前若值以 `=`、`+`、`-`、`@` 開頭，會先加一個單引號。隔離環境仍要確認儲存格沒有執行公式。
+外來參數寫進試算表前要當純文字。`cleanToken` 只去掉控制字元，**不是**公式防護。官網送出前若值以 `=`、`+`、`-`、`@` 開頭，會先加一個單引號。隔離腳本會先去掉開頭的空格、Tab 與換行，再做同一個判斷；姓名、備註等原訂位文字在寫進儲存格前也同樣處理。本機假試算表只留下字串，不會執行公式，所以不能代替你打開 Google 試算表看那一格。
 
 ## 品牌／非品牌網址
 
-同一個活動代碼，用 `utm_adgroup` 分開群組：
+有 `utm_adgroup` 時，只用它分類，不用 `utm_content` 蓋過：
 
 - 品牌：`utm_adgroup=brand`
 - 非品牌：`utm_adgroup=nonbrand`
 
-內用到達網址（品牌例）：
+舊例（素材放在 `utm_content`，群組放在 `utm_adgroup`）：
 
 `https://www.sweetmeichicken.com/?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=rsa_family&utm_adgroup=brand#booking-section`
 
-非品牌把 `utm_adgroup=brand` 換成 `utm_adgroup=nonbrand`。外帶若另開素材，改 `mode=takeout` 與 `#takeout`，其餘來源參數同樣要帶。
+`rsa_family` 這類素材代碼不分類。`utm_adgroup` 有值但不在白名單（含 `br!and`）時，分類留白。
+
+### 第一輪最終到達網址（文案定稿）
+
+定稿把廣告群組放在 `utm_content`，**沒有** `utm_adgroup`，也沒有 `gclid`。`mode=dining` 與 `#booking-section` 會打開內用訂位區。
+
+- 品牌 `ag_brand`：`https://www.sweetmeichicken.com/?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_brand#booking-section`
+- 非品牌 `ag_geo_dining`：`https://www.sweetmeichicken.com/?mode=dining&utm_source=google&utm_medium=cpc&utm_campaign=launch_202610&utm_content=ag_geo_dining#booking-section`
+
+沒有 `utm_adgroup` 時，只認這兩個原值：`ag_brand` → `品牌`，`ag_geo_dining` → `非品牌`。原值仍留在 `utmContent`。尚未投放的 `ag_group`、`ag_chongyang`、`ag_takeout` 不猜分類。外帶若另開，改 `mode=takeout` 與 `#takeout`；這一輪不開外帶廣告。
+
+活動代碼不出現在頁面內文、收件畫面、備註或客人信。
 
 ## 人工狀態（試算表手改，網站不送）
 
@@ -84,6 +95,15 @@
 
 `js/booking-attribution.js` 的 `bookingOutcomeCounts()` 就是上面這套「只算第一次」的演算法，不會自己去改試算表。
 
+## 訂單編號與來源快照
+
+來源在按下送出時先拍照（9 個字串）。後端回傳訂單編號之後，這張快照只綁到該編號，留在這次分頁，不進備註、收件畫面，旗標關閉時也不進正式 POST。
+
+- 請求還沒回來時，就算造訪紀錄被換成另一組來源，這一筆仍用按下送出時的快照。
+- 同一編號再記一次：不覆寫快照、不重複送出 `smc:booking-submitted`。
+- 「再預約一筆」或清空成功後的下一筆，是新編號，用那次按下送出時的快照。不會回頭改上一筆。
+- 收件失敗或清空失敗而沒有送出的下一筆，不會多一個編號，也不會多一筆綁定。
+
 ## 點擊與轉換事件（尚未接廣告代碼）
 
 廣告像素、轉換代碼、LINE Tag 都還沒有編號，此 PR **不載入** gtag 或像素。
@@ -97,13 +117,15 @@
 
 沒有現行 Apps Script 的去識別化程式，因此後端會不會收下新欄位、會不會改到寫表或寄信，都還沒有證據。狀態就是待驗證。這份 PR 不把新欄位送進正式請求。
 
+正式腳本的原始碼不在這個 repo，隔離腳本**不是**正式腳本的補丁。`apps-script/booking-attribution-isolated.gs` 依前端看得到的 11 欄 POST 契約，另外寫一支只給隔離專案用的實作：缺來源、多來源或格式不對時仍收單，備註原樣寫入，來源欄空白或改成純文字。客人信不放活動代碼；店內信才放來源對帳。步驟與預期的表、信在 `docs/booking-attribution-isolated-runbook.md`。本機對帳腳本是 `tools/test-booking-reconciliation.mjs`。
+
 隔離環境要做的檢查（不要用正式試算表、不要部署到正式 web app、不要寫正式訂單）：
 
-1. 複製正式腳本到隔離專案，改連隔離試算表。
-2. 只用假資料送原有欄位（姓名「測試同學」、電話 `0900000000`、編號例如 `SMC900001`），記下寫進表的欄位與寄出的信。
-3. 同一隔離複本再送一筆，加上面 9 個欄位。其中一筆的 `utmCampaign` 用 `=1+1` 這類公式開頭的假字串，確認儲存格是純文字、沒有執行公式。
-4. 比對：原有欄位仍寫入、訂單編號仍會回傳、信的正文沒有被新欄位改掉或變成公式。
-5. 上面四步都通過之後，才把 `js/booking-attribution.js` 的 `SEND_ATTRIBUTION_TO_BACKEND` 改成 `true`，並**另案**部署靜態官網。這份 PR 不改那一行，也不部署。
+1. 不要把隔離腳本貼上正式專案。開一個新的 Apps Script，連一張新的測試試算表。試算表要先有分頁「隔離標記」，A1 為 `SMC-ISOLATED-TEST`，指令碼屬性要寫上這張表的 ID。少了標記或 ID，就應該完全沒有新列、也沒有信。正式腳本原始碼不在 repo，無法在這裡對 diff。
+2. 只用假資料送原有欄位（姓名「測試同學」、電話 `0900000000`、編號例如 `SMC900001`），記下寫進表的欄位與寄出的信。點選方式與 8 筆完整內容在 `docs/booking-attribution-isolated-runbook.md`。
+3. 同一隔離複本再送一筆，加上面 9 個欄位。其中一筆的 `utmCampaign` 用 `=1+1` 這類公式開頭的假字串（開頭也可以先有空格、Tab 或換行），確認儲存格是純文字、沒有執行公式。
+4. 比對：原有欄位仍寫入、訂單編號仍會回傳、客人信的正文沒有被新欄位改掉或變成公式。店內信才看得到來源。回應裡沒有備註欄；備註要對提交內容、試算表與兩封信。
+5. 上面四步都通過，而且正式腳本也接上同樣的失敗仍收單行為之後，才把 `js/booking-attribution.js` 的 `SEND_ATTRIBUTION_TO_BACKEND` 改成 `true`，並**另案**部署靜態官網。這份 PR 不改那一行，也不部署。
 
 `tools/test-booking-backend-contract.mjs` 只核對「旗標關閉時送出形狀與改動前相同」以及這份文件的字句。它**不能證明後端相容**，也不能代替上面的寫表與寄信檢查。
 
@@ -113,5 +135,5 @@
 2. 旗標維持關閉時，就算這個 PR 之後合併、GitHub Pages 更新，正式請求仍是舊欄位。不要在隔離檢查完成前把 `SEND_ATTRIBUTION_TO_BACKEND` 改成 `true`。
 3. 打開旗標之前先做上一節的隔離檢查。結果出來之前，後端行為維持待驗證。
 4. 人工六欄可以先在試算表加上，不必等腳本；不要用網站送出的空值覆蓋。
-5. 廣告後台的最終到達網址要帶 `utm_adgroup=brand` 或 `nonbrand`。只靠沒有 `utm_adgroup` 的那條網址，無法分開品牌與非品牌。
+5. 第一輪最終到達網址用 `utm_content=ag_brand` 或 `ag_geo_dining`（見上節），不必再加 `utm_adgroup`。若網址另外帶了 `utm_adgroup`，分類只看 `utm_adgroup`。
 6. 像素編號核發後再另案接到 `smc:booking-submitted`。後端重複建單的防護也另案。
