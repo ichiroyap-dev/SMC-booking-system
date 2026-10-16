@@ -362,41 +362,44 @@ function acceptBooking_(payload) {
   }
   var orderId = '';
   var attemptedWrite = false;
+  var outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
   try {
     var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
     var ids = readColumn_(sheet, 1).slice(1);
     orderId = orderIdFor_(payload, ids);
     if (!orderId) {
-      return { response: { status: 'error', message: '測試編號已用完，沒有收單。' }, wrote: false, mailed: false };
+      outcome = { response: { status: 'error', message: '測試編號已用完，沒有收單。' }, wrote: false, mailed: false };
+    } else {
+      var props = PropertiesService.getScriptProperties();
+      var result = buildBookingResult_(
+        payload,
+        orderId,
+        nowIso_(),
+        guestAddress_(payload.email),
+        guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
+      );
+      if (ids.indexOf(orderId) !== -1) {
+        result.response.mailed = false;
+        outcome = { response: result.response, wrote: false, mailed: false };
+      } else {
+        attemptedWrite = true;
+        writeRow_(sheet, result.row);
+        var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
+        writeRow_(mailSheet, mailPreviewRow_(result));
+        var mailed = false;
+        try {
+          sendEmails_(result);
+          mailed = true;
+        } catch (mailErr) {
+          mailed = false;
+        }
+        result.response.mailed = mailed;
+        outcome = { response: result.response, wrote: true, mailed: mailed };
+      }
     }
-    var props = PropertiesService.getScriptProperties();
-    var result = buildBookingResult_(
-      payload,
-      orderId,
-      nowIso_(),
-      guestAddress_(payload.email),
-      guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
-    );
-    if (ids.indexOf(orderId) !== -1) {
-      result.response.mailed = false;
-      return { response: result.response, wrote: false, mailed: false };
-    }
-    attemptedWrite = true;
-    writeRow_(sheet, result.row);
-    var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
-    writeRow_(mailSheet, mailPreviewRow_(result));
-    var mailed = false;
-    try {
-      sendEmails_(result);
-      mailed = true;
-    } catch (mailErr) {
-      mailed = false;
-    }
-    result.response.mailed = mailed;
-    return { response: result.response, wrote: true, mailed: mailed };
   } catch (err) {
     if (attemptedWrite) {
-      return {
+      outcome = {
         response: {
           status: 'unknown',
           orderId: orderId,
@@ -406,14 +409,29 @@ function acceptBooking_(payload) {
         wrote: true,
         mailed: false
       };
+    } else {
+      outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
     }
-    return { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
   } finally {
     if (attemptedWrite) {
-      try { SpreadsheetApp.flush(); } catch (flushErr) {}
+      try {
+        SpreadsheetApp.flush();
+      } catch (flushErr) {
+        outcome = {
+          response: {
+            status: 'unknown',
+            orderId: orderId,
+            message: '結果未知，先核對試算表、勿重送',
+            mailed: false
+          },
+          wrote: true,
+          mailed: false
+        };
+      }
     }
     try { lock.releaseLock(); } catch (releaseErr) {}
   }
+  return outcome;
 }
 
 function doPost(e) {

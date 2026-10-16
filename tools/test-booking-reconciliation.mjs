@@ -721,6 +721,21 @@ assert(sheetRows(previewBoom, '郵件預覽').length === 0 && previewBoom.box.ma
 assertFlushBeforeRelease(previewBoom.box, '寫入後郵件預覽失敗');
 console.log('test 寫入後郵件預覽失敗: pass');
 
+const flushFail = loadIsolated();
+flushFail.sandbox.SpreadsheetApp.flush = function () {
+  flushFail.box.lockLog.push(flushFail.box.lockHeld ? 'flush-held' : 'flush-free');
+  throw new Error('flush failed');
+};
+const flushRes = post(flushFail, previewPayload(brandFields, 'SMC900501'));
+assert(flushRes.status === 'unknown' && flushRes.orderId === 'SMC900501', '寫入後 flush 失敗不可回成功，要回 unknown 與訂單編號');
+assert(flushRes.status !== 'success' && flushRes.mailed === false, 'flush 失敗的回應不可是成功，也不可宣稱已寄出');
+assert(String(flushRes.message).includes('結果未知，先核對試算表、勿重送'), 'flush 失敗要告訴操作者結果未知');
+assert(String(flushRes.message) !== '隔離腳本無法完成寫入。', 'flush 失敗不可落成一般錯誤');
+assert(rowById(flushFail, 'SMC900501'), 'flush 失敗前訂單列已經寫入');
+assert(flushFail.box.lockHeld === false, 'flush 失敗後鎖仍要放開');
+assertFlushBeforeRelease(flushFail.box, '寫入後 flush 失敗');
+console.log('test 寫入後 flush 失敗: pass');
+
 assertFlushBeforeRelease(isolated.box, '八筆與後續新單');
 
 const lines = [
