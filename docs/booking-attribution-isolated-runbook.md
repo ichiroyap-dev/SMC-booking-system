@@ -15,7 +15,7 @@
 3. 點那一頁的 **A1**，打上 `SMC-ISOLATED-TEST`，按 Enter。不要改字、不要加空白。腳本不會幫你建立這個分頁。
 4. 看瀏覽器網址，`/d/` 和 `/edit` 中間那一串就是試算表 ID。先複製下來。
 5. 選單「擴充功能」→「Apps Script」。若問要登入，用你自己的 Google 帳號。
-6. 把編輯器裡原有的內容全部刪掉，貼上 repo 的 `.github/pages-unpublished/booking-attribution-isolated.gs`，按磁碟圖示存檔。這個路徑在 `.github` 裡，GitHub Pages 上傳時會排除，正式官網打不開；請從 repo 複製。
+6. 把編輯器裡原有的內容全部刪掉，貼上 repo 的 `.github/pages-unpublished/booking-attribution-isolated.gs`，按磁碟圖示存檔。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開；請從 repo 複製。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這兩個檔是否又被公開。
 7. 左側齒輪「專案設定」→ 往下到「指令碼內容」→「新增指令碼內容」，加三列（ID **不可留白**，腳本不會改去你正在看的另一張表）：
    - `SMC_ATTRIBUTION_ISOLATED` = `yes`
    - `SMC_SHOP_EMAIL` = 你自己的測試信箱
@@ -156,7 +156,7 @@
 
 這一步確認官網那套來源判斷有接到隔離後端。**不要**打開正式官網，也不要把正式 web app 網址貼進來。
 
-1. 在專案資料夾執行 `python3 -m http.server 8765`，用瀏覽器開 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html`。這個檔放在 `.github/pages-unpublished/`，GitHub Pages 上傳時會排除 `.github`，所以正式官網打不開；本機這個位址仍可開。鎖只在同一個來源之間共用。請固定用這個 `127.0.0.1`，不要改開 `file://`，也不要改用別的連接埠或主機。不同來源看不到彼此的鎖。
+1. 在專案資料夾執行 `python3 -m http.server 8765`，用瀏覽器開 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html`。這個檔放在 `.github/pages-unpublished/`，目前的建置方式會排除 `.github`，所以正式官網打不開；本機這個位址仍可開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這兩個檔是否又被公開。鎖只在同一個來源之間共用。請固定用這個 `127.0.0.1`，不要改開 `file://`，也不要改用別的連接埠或主機。不同來源看不到彼此的鎖。
 2. 點「帶入品牌最終網址」。網址列應出現 `mode=dining`、`utm_content=ag_brand` 和 `#booking-section`，頁面停在「內用訂位」。
 3. 畫面上要看到：來源 `google`、utm內容 `ag_brand`、群組分類 `品牌`、內用。
 4. 先打開 `tools/isolated-check-guard.js`，把你的隔離部署編號加進 `ALLOWED_DEPLOYMENT_IDS`。不要把正式編號加進去；正式編號即使寫進白名單也不會放行。白名單以外的部署（含正式專案的其他部署）按鈕會停住。本機測試用的 `ISOLATEDTEST` 可以留著。然後把隔離網址貼進「隔離 web app 網址」。網址要剛好是 `https://script.google.com/macros/s/部署編號/exec`。不要加問號、井號、帳號、連接埠，也不要貼別的網站。若貼到正式那支 `AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q`，按鈕會停住，不會送出。
