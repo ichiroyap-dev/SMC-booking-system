@@ -427,6 +427,8 @@ assert(!html.includes('source: attribution.source'), '預設的送出物件不�
 assert(readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '旗標預設必須關閉');
 assert(!html.slice(html.indexOf("action: 'cancel'"), html.indexOf("action: 'cancel'") + 500).includes('utm'), '取消申請不附來源欄');
 assert(html.includes('recordBookingSubmission(orderId, attribution)'), '成功後要把送出當下的來源綁到這個訂單編號');
+assert(html.includes('data-item="桶仔雞"') && html.includes('data-label="甕窯雞"'), '外帶送出的品項值仍是桶仔雞，畫面用 data-label 顯示甕窯雞');
+assert(html.includes("getAttribute('data-item')") && html.includes('customerFacingOrderItems'), '正式送出用 data-item，收件畫面另用顯示名稱');
 assert(!html.includes('payloadIfAttributionEnabled'), '官網不可走預覽送出');
 assert(!html.includes('booking-attribution-isolated'), '官網不可載入隔離腳本');
 assert(!html.includes('ag_brand') && !html.includes('ag_geo_dining') && !html.includes('launch_202610'), '頁面不可寫出最終網址的活動或群組代碼');
@@ -892,7 +894,8 @@ try {
         assert(sameOriginal(matrix.takeoutPlain, matrix.takeoutTagged), `外帶有無標記的原欄位與備註要相同：${JSON.stringify(matrix.takeoutPlain.original)} vs ${JSON.stringify(matrix.takeoutTagged.original)}`);
         assert(matrix.diningPlain.original.type === 'dining' && matrix.diningPlain.original.note.includes('靠窗'), '內用備註仍是餐點內容');
         assert(matrix.takeoutPlain.original.type === 'takeout' && matrix.takeoutPlain.original.note === '客製包裝', '外帶備註仍是客人自填');
-        assert(matrix.takeoutPlain.original.orderItems.includes('桶仔雞'), '外帶品項維持原欄位');
+        assert(matrix.takeoutPlain.original.orderItems.includes('桶仔雞') && !matrix.takeoutPlain.original.orderItems.includes('甕窯雞'), '外帶送出的品項值仍是桶仔雞');
+        assert(matrix.takeoutPlain.receipt.includes('甕窯雞') && !matrix.takeoutPlain.receipt.includes('桶仔雞'), '外帶收件畫面用 data-label 顯示甕窯雞');
         assert(!matrix.diningPlain.original.note.includes('utm') && !matrix.takeoutTagged.original.note.includes('TESTGCLID9000'), '備註不可混入來源');
         assert(matrix.diningPlain.body === matrix.diningTagged.body, `內用有無 UTM 的正式 payload 要逐字相同：${matrix.diningPlain.body} vs ${matrix.diningTagged.body}`);
         assert(matrix.takeoutPlain.body === matrix.takeoutTagged.body, `外帶有無 UTM 的正式 payload 要逐字相同：${matrix.takeoutPlain.body} vs ${matrix.takeoutTagged.body}`);
