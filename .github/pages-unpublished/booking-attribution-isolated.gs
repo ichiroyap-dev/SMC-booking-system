@@ -18,8 +18,9 @@
  *
  * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
  * 這個檔在 .github/pages-unpublished/booking-attribution-isolated.gs。
- * Pages 不會公開 .github，請從 repo 複製，不要從官網網址下載。
- * 步驟見 docs/booking-attribution-isolated-runbook.md。
+ * 目前的建置方式不會公開 .github，請從 repo 複製，不要從官網網址下載。
+ * 換建置流程或 upload-pages-artifact 換版本後，要再確認這個目錄沒有被公開。
+ * 步驟見 .github/pages-unpublished/booking-attribution-isolated-runbook.md。
  */
 var ORDER_HEADERS = [
   '訂單編號', '收到時間', '動作', '類型', '姓名', '電話', '信箱', '人數', '桌數', '日期', '時間', '備註', '品項',

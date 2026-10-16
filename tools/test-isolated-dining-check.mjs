@@ -9,7 +9,7 @@ import { spawn } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
-const guard = require(join(root, 'tools/isolated-check-guard.js'));
+const guard = require(join(root, '.github/pages-unpublished/isolated-check-guard.js'));
 const pageFile = '.github/pages-unpublished/isolated-dining-check.html';
 const page = readFileSync(join(root, pageFile), 'utf8');
 const failures = [];
@@ -219,7 +219,7 @@ assert(raceA.claimed === false && raceA.existing && raceA.existing.state === 'un
 const raceLeft = guard.readLock(raceSession, raceLocal);
 assert(raceLeft && raceLeft.state === 'unknown' && raceLeft.orderId === 'SMC900888', 'SMC900888 這個結果未知的編號要保留下來');
 console.log('test 讀寫鎖交錯只送一次: pass');
-const guardSource = readFileSync(join(root, 'tools/isolated-check-guard.js'), 'utf8');
+const guardSource = readFileSync(join(root, '.github/pages-unpublished/isolated-check-guard.js'), 'utf8');
 const insideStart = guardSource.indexOf('function claimInsideMutex');
 const insideEnd = guardSource.indexOf('function claimSubmit');
 const inside = guardSource.slice(insideStart, insideEnd);
@@ -227,7 +227,7 @@ const read1 = inside.indexOf('readLock');
 const writeAt = inside.indexOf('commitLock');
 const read2 = inside.indexOf('readLock', read1 + 1);
 assert(read1 >= 0 && writeAt > read1 && read2 > writeAt, '互斥區內要先重讀、再寫入、再讀回');
-assert(page.includes('classifyFetch') && page.includes('../../tools/isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
+assert(page.includes('classifyFetch') && page.includes('./isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
 assert(page.includes('../../js/booking-attribution.js'), '驗收頁要載入官網同一支來源腳本');
 assert(page.includes('commitLock') && page.includes('readLock') && page.includes('sessionStorage') && page.includes('localStorage') && page.includes('AbortController'), '驗收頁要把鎖寫進兩種儲存並讀回，並用 AbortController 逾時');
 assert(!page.includes('沒有送到'), '驗收頁不可寫沒有送到');
@@ -821,7 +821,10 @@ try {
   }
   assert(pageStatus === 200, '127.0.0.1:8765 要能打開未公開的驗收頁');
   const localPaths = [
-    ['/tools/isolated-check-guard.js', 200],
+    ['/.github/pages-unpublished/isolated-check-guard.js', 200],
+    ['/.github/pages-unpublished/booking-attribution-isolated-runbook.md', 200],
+    ['/tools/isolated-check-guard.js', 404],
+    ['/docs/booking-attribution-isolated-runbook.md', 404],
     ['/js/booking-attribution.js', 200],
     ['/.github/pages-unpublished/booking-attribution-isolated.gs', 200],
     ['/tools/isolated-dining-check.html', 404],
