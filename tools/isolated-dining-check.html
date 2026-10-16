@@ -180,9 +180,24 @@
       refresh();
     });
 
+    window.addEventListener('storage', function (event) {
+      if (!event || event.key !== window.SmcIsolatedCheck.LOCK_KEY) return;
+      if (submitState !== 'idle') return;
+      var existing = window.SmcIsolatedCheck.readLock(window.sessionStorage, window.localStorage);
+      if (!existing) return;
+      holdPage();
+      showStored(existing);
+    });
+
     document.getElementById('booking-form').addEventListener('submit', function (event) {
       event.preventDefault();
       if (submitState !== 'idle') return;
+      var existing = window.SmcIsolatedCheck.readLock(window.sessionStorage, window.localStorage);
+      if (existing) {
+        holdPage();
+        showStored(existing);
+        return;
+      }
       var url = document.getElementById('endpoint').value.trim();
       var problem = endpointProblem(url);
       var result = document.getElementById('result');

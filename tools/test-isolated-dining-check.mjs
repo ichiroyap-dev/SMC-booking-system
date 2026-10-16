@@ -347,6 +347,41 @@ await withPage(async (evalExpr, reload) => {
   assert(timeoutUi.disabled === true && timeoutUi.ackHidden === false, '逾時後頁面仍鎖住');
   assert(timeoutUi.lock && timeoutUi.lock.includes('"state":"unknown"'), '逾時的鎖要寫進 localStorage');
   console.log('test 送出逾時: pass');
+
+  const submitAt = page.indexOf("addEventListener('submit'");
+  const rereadAt = page.indexOf('readLock', submitAt);
+  const fetchAt = page.indexOf('fetch(url', submitAt);
+  assert(rereadAt > submitAt && rereadAt < fetchAt, '送出前要先重讀鎖');
+
+  const priorTab = await evalExpr(`new Promise((resolve) => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
+    sessionStorage.removeItem(${lockKey});
+    localStorage.setItem(${lockKey}, JSON.stringify({ state: 'unknown', orderId: 'SMC900888' }));
+    window.__fetches = 0;
+    window.fetch = () => {
+      window.__fetches += 1;
+      return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC900999","mailed":true}') });
+    };
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('submit').click();
+    setTimeout(() => resolve({
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      ackHidden: document.getElementById('ack-sheet').hidden,
+      className: document.getElementById('result').className,
+      text: document.getElementById('result').textContent,
+      lock: localStorage.getItem(${lockKey})
+    }), 40);
+  })`);
+  assert(priorTab.fetches === 0, '事先開啟的分頁在別頁鎖住後不可再送');
+  assert(priorTab.disabled === true && priorTab.ackHidden === false, '事先開啟的分頁要改成鎖住');
+  assert(priorTab.text.includes('SMC900888') && priorTab.text.includes('勿重送'), '事先開啟的分頁要顯示已存在的訂單編號');
+  assert(priorTab.lock && priorTab.lock.includes('"state":"unknown"') && priorTab.lock.includes('SMC900888') && !priorTab.lock.includes('submitting'), '事先開啟的分頁不可把別人的未知鎖覆寫成空編號');
+  assert(priorTab.className !== 'ok' && !priorTab.text.includes('已送到'), '事先開啟的分頁不可顯示成功');
+  console.log('test 事先開啟的分頁不可重送: pass');
 });
 
 if (failures.length) {
