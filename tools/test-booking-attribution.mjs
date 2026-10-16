@@ -507,19 +507,50 @@ function startStaticServer() {
     });
 }
 
+const cdpSessions = new Map();
+
+function cdpSession(wsUrl) {
+    let session = cdpSessions.get(wsUrl);
+    if (session) return session;
+    session = {
+        ws: new WebSocket(wsUrl),
+        nextId: 1,
+        pending: new Map(),
+        queue: [],
+        open: false,
+    };
+    session.ws.addEventListener('open', () => {
+        session.open = true;
+        for (const payload of session.queue) session.ws.send(payload);
+        session.queue = [];
+    });
+    session.ws.addEventListener('message', (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.id == null || !session.pending.has(msg.id)) return;
+        const { resolve, reject } = session.pending.get(msg.id);
+        session.pending.delete(msg.id);
+        if (msg.error) reject(new Error(JSON.stringify(msg.error)));
+        else resolve(msg.result);
+    });
+    session.ws.addEventListener('error', () => {
+        for (const { reject } of session.pending.values()) {
+            reject(new Error(`CDP socket error`));
+        }
+        session.pending.clear();
+    });
+    cdpSessions.set(wsUrl, session);
+    return session;
+}
+
 function cdp(wsUrl, method, params = {}) {
     return new Promise((resolve, reject) => {
-        const ws = new WebSocket(wsUrl);
-        const id = 1;
-        ws.addEventListener('open', () => ws.send(JSON.stringify({ id, method, params })));
-        ws.addEventListener('message', (event) => {
-            const msg = JSON.parse(event.data);
-            if (msg.id !== id) return;
-            ws.close();
-            if (msg.error) reject(new Error(JSON.stringify(msg.error)));
-            else resolve(msg.result);
-        });
-        ws.addEventListener('error', () => reject(new Error(`CDP socket error for ${method}`)));
+        const session = cdpSession(wsUrl);
+        const id = session.nextId;
+        session.nextId += 1;
+        session.pending.set(id, { resolve, reject });
+        const payload = JSON.stringify({ id, method, params });
+        if (session.open) session.ws.send(payload);
+        else session.queue.push(payload);
     });
 }
 
