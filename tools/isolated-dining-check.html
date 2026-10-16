@@ -158,6 +158,12 @@
       });
     }
 
+    function pageLocks() {
+      return window.SmcIsolatedCheck.locksFrom(function () {
+        return navigator.locks;
+      });
+    }
+
     function blockStorage(reason) {
       submitState = 'blocked';
       document.getElementById('submit').disabled = true;
@@ -196,6 +202,10 @@
       window.SmcIsolatedCheck.clearLock(stores.sessionStore, stores.localStore);
       submitState = 'idle';
       document.getElementById('ack-sheet').hidden = true;
+      if (!pageLocks()) {
+        blockStorage(window.SmcIsolatedCheck.MUTEX_BLOCKED);
+        return;
+      }
       if (!window.SmcIsolatedCheck.canPersist(stores.sessionStore, stores.localStore)) {
         blockStorage();
         return;
@@ -212,16 +222,14 @@
       showStored(existing);
     });
 
-    document.getElementById('booking-form').addEventListener('submit', function (event) {
-      event.preventDefault();
+    function beginClaim() {
       if (submitState !== 'idle') return;
-      var stores = pageStores();
-      var existing = window.SmcIsolatedCheck.readLock(stores.sessionStore, stores.localStore);
-      if (existing) {
-        holdPage();
-        showStored(existing);
+      var locks = pageLocks();
+      if (!locks) {
+        blockStorage(window.SmcIsolatedCheck.MUTEX_BLOCKED);
         return;
       }
+      var stores = pageStores();
       var url = document.getElementById('endpoint').value.trim();
       var problem = endpointProblem(url);
       var result = document.getElementById('result');
@@ -230,15 +238,20 @@
         result.textContent = problem;
         return;
       }
-      var committed = window.SmcIsolatedCheck.commitLock(stores.sessionStore, stores.localStore, 'submitting', '');
-      if (!committed.ok) {
-        blockStorage(committed.reason);
-        return;
-      }
       submitState = 'sending';
       document.getElementById('submit').disabled = true;
       document.getElementById('ack-sheet').hidden = true;
-      var fields = window.SmcAttribution.bookingFields(window.SmcAttribution.resolveStorage(window));
+      window.SmcIsolatedCheck.claimSubmit(stores.sessionStore, stores.localStore, locks).then(function (claim) {
+        if (claim && claim.existing) {
+          holdPage();
+          showStored(claim.existing);
+          return;
+        }
+        if (!claim || claim.ok !== true || claim.claimed !== true) {
+          blockStorage(claim && claim.reason);
+          return;
+        }
+        var fields = window.SmcAttribution.bookingFields(window.SmcAttribution.resolveStorage(window));
       var payload = window.SmcAttribution.payloadIfAttributionEnabled(formBase(), fields);
       result.className = '';
       result.textContent = '送出中…';
@@ -291,6 +304,10 @@
         window.SmcIsolatedCheck.clearLock(cleared.sessionStore, cleared.localStore);
         submitState = 'idle';
         document.getElementById('ack-sheet').hidden = true;
+        if (!pageLocks()) {
+          blockStorage(window.SmcIsolatedCheck.MUTEX_BLOCKED);
+          return;
+        }
         if (!window.SmcIsolatedCheck.canPersist(cleared.sessionStore, cleared.localStore)) {
           blockStorage();
           return;
@@ -299,6 +316,34 @@
       }).catch(function () {
         finishUnknown('');
       });
+      });
+    }
+
+    document.getElementById('booking-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      if (submitState !== 'idle') return;
+      var stores = pageStores();
+      var existing = window.SmcIsolatedCheck.readLock(stores.sessionStore, stores.localStore);
+      if (existing) {
+        holdPage();
+        showStored(existing);
+        return;
+      }
+      var pause = window.__smcYieldBeforeClaim;
+      if (typeof pause === 'function') {
+        window.__smcYieldBeforeClaim = null;
+        submitState = 'yielding';
+        document.getElementById('submit').disabled = true;
+        Promise.resolve().then(function () { return pause(); }).then(function () {
+          if (submitState !== 'yielding') return;
+          submitState = 'idle';
+          beginClaim();
+        }, function () {
+          blockStorage(window.SmcIsolatedCheck.MUTEX_BLOCKED);
+        });
+        return;
+      }
+      beginClaim();
     });
 
     var bootStores = pageStores();
@@ -307,6 +352,8 @@
       remember(storedLock.state, storedLock.orderId);
       holdPage();
       showStored(storedLock);
+    } else if (!pageLocks()) {
+      blockStorage(window.SmcIsolatedCheck.MUTEX_BLOCKED);
     } else if (!window.SmcIsolatedCheck.canPersist(bootStores.sessionStore, bootStores.localStore)) {
       blockStorage();
     }

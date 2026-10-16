@@ -112,6 +112,74 @@ assert(storedCommit.ok === true && storedCommit.body.includes('SMC900401'), '寫
 const secureStores = guard.storesFrom(() => { throw new Error('SecurityError'); }, () => { throw new Error('SecurityError'); });
 assert(secureStores.sessionStore === null && secureStores.localStore === null, '取得儲存物件失敗要留在保護範圍內，不可讓頁面初始化中斷');
 assert(guard.canPersist(secureStores.sessionStore, secureStores.localStore) === false, '拿不到儲存時不可送出');
+assert(guard.locksFrom(() => { throw new Error('SecurityError'); }) === null, '取得互斥物件失敗要留在保護範圍內');
+const noMutex = await guard.claimSubmit(guard.memoryStore(), guard.memoryStore(), null);
+assert(noMutex.ok === false && noMutex.claimed === false && noMutex.reason === guard.MUTEX_BLOCKED, '瀏覽器沒有互斥時不可送出');
+const throwingLocks = { request() { throw new Error('no locks'); } };
+const thrownMutex = await guard.claimSubmit(guard.memoryStore(), guard.memoryStore(), throwingLocks);
+assert(thrownMutex.ok === false && thrownMutex.claimed === false, '互斥丟出例外時不可送出');
+const hungLocks = { request() { return new Promise(() => {}); } };
+const hungMutex = await guard.claimSubmit(guard.memoryStore(), guard.memoryStore(), hungLocks, { waitMs: 30 });
+assert(hungMutex.ok === false && hungMutex.claimed === false && hungMutex.reason === guard.MUTEX_BLOCKED, '拿不到互斥時不可送出');
+function scriptedLocks() {
+  let held = false;
+  const queue = [];
+  function pump() {
+    if (!held && queue.length) queue.shift()();
+  }
+  return {
+    request(name, callback) {
+      return new Promise((resolve, reject) => {
+        const run = () => {
+          held = true;
+          let result;
+          try { result = callback(); }
+          catch (err) {
+            held = false;
+            reject(err);
+            pump();
+            return;
+          }
+          Promise.resolve(result).then((value) => {
+            held = false;
+            resolve(value);
+            pump();
+          }, (err) => {
+            held = false;
+            reject(err);
+            pump();
+          });
+        };
+        if (held) queue.push(run);
+        else run();
+      });
+    },
+  };
+}
+const raceSession = guard.memoryStore();
+const raceLocal = guard.memoryStore();
+const raceLocks = scriptedLocks();
+assert(guard.readLock(raceSession, raceLocal) === null, 'A 先讀到沒有鎖');
+let raceFetches = 0;
+const raceB = await guard.claimSubmit(raceSession, raceLocal, raceLocks);
+assert(raceB.claimed === true, 'B 在 A 停住時要能取得送出權');
+raceFetches += 1;
+assert(guard.commitLock(raceSession, raceLocal, 'unknown', 'SMC900888').ok === true, 'B 的結果未知要寫得回去');
+const raceA = await guard.claimSubmit(raceSession, raceLocal, raceLocks);
+if (raceA.claimed) raceFetches += 1;
+assert(raceFetches === 1, 'A 繼續後只能有 B 那一次送出');
+assert(raceA.claimed === false && raceA.existing && raceA.existing.state === 'unknown' && raceA.existing.orderId === 'SMC900888', 'A 要看到 B 的結果未知，不可再占鎖');
+const raceLeft = guard.readLock(raceSession, raceLocal);
+assert(raceLeft && raceLeft.state === 'unknown' && raceLeft.orderId === 'SMC900888', 'SMC900888 這個結果未知的編號要保留下來');
+console.log('test 讀寫鎖交錯只送一次: pass');
+const guardSource = readFileSync(join(root, 'tools/isolated-check-guard.js'), 'utf8');
+const insideStart = guardSource.indexOf('function claimInsideMutex');
+const insideEnd = guardSource.indexOf('function claimSubmit');
+const inside = guardSource.slice(insideStart, insideEnd);
+const read1 = inside.indexOf('readLock');
+const writeAt = inside.indexOf('commitLock');
+const read2 = inside.indexOf('readLock', read1 + 1);
+assert(read1 >= 0 && writeAt > read1 && read2 > writeAt, '互斥區內要先重讀、再寫入、再讀回');
 assert(page.includes('classifyFetch') && page.includes('isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
 assert(page.includes('commitLock') && page.includes('readLock') && page.includes('sessionStorage') && page.includes('localStorage') && page.includes('AbortController'), '驗收頁要把鎖寫進兩種儲存並讀回，並用 AbortController 逾時');
 assert(!page.includes('沒有送到'), '驗收頁不可寫沒有送到');
@@ -264,18 +332,19 @@ await withPage(async (evalExpr, reload, cdpCall) => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     const form = document.getElementById('booking-form');
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    const during = {
-      fetches: window.__fetches,
-      disabled: document.getElementById('submit').disabled,
-      text: document.getElementById('result').textContent
-    };
-    release({
-      status: 200,
-      type: 'basic',
-      text: () => Promise.resolve('{"status":"unknown","orderId":"SMC900401","mailed":false,"message":"結果未知，先核對試算表、勿重送"}')
-    });
-    setTimeout(() => {
+    const finishDuring = () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      const during = {
+        fetches: window.__fetches,
+        disabled: document.getElementById('submit').disabled,
+        text: document.getElementById('result').textContent
+      };
+      release({
+        status: 200,
+        type: 'basic',
+        text: () => Promise.resolve('{"status":"unknown","orderId":"SMC900401","mailed":false,"message":"結果未知，先核對試算表、勿重送"}')
+      });
+      setTimeout(() => {
       const after = {
         fetches: window.__fetches,
         disabled: document.getElementById('submit').disabled,
@@ -293,6 +362,15 @@ await withPage(async (evalExpr, reload, cdpCall) => {
       };
       resolve({ during: during, after: after, afterRefresh: afterRefresh });
     }, 40);
+    };
+    const waitFetch = () => {
+      if (typeof release === 'function') {
+        finishDuring();
+        return;
+      }
+      setTimeout(waitFetch, 10);
+    };
+    waitFetch();
   })`);
   assert(holdUi.during.fetches === 1 && holdUi.during.disabled === true && holdUi.during.text.includes('送出中'), '送出中連按只送一次');
   assert(holdUi.after.fetches === 1 && holdUi.after.className === 'warn' && holdUi.after.disabled === true && holdUi.after.ackHidden === false && holdUi.after.text.includes('SMC900401') && holdUi.after.text.includes('勿重送'), '寫入後未知要顯示訂單編號並鎖住');
@@ -388,10 +466,14 @@ await withPage(async (evalExpr, reload, cdpCall) => {
   assert(timeoutUi.lock && timeoutUi.lock.includes('"state":"unknown"'), '逾時的鎖要寫進 localStorage');
   console.log('test 送出逾時: pass');
 
+  const beginAt = page.indexOf('function beginClaim');
   const submitAt = page.indexOf("addEventListener('submit'");
   const rereadAt = page.indexOf('readLock', submitAt);
-  const fetchAt = page.indexOf('fetch(url', submitAt);
-  assert(rereadAt > submitAt && rereadAt < fetchAt, '送出前要先重讀鎖');
+  const claimCall = page.indexOf('beginClaim()', submitAt);
+  const claimAt = page.indexOf('claimSubmit', beginAt);
+  const fetchAt = page.indexOf('fetch(url', beginAt);
+  assert(rereadAt > submitAt && claimCall > rereadAt, '送出前要先重讀鎖，沒有鎖才進入互斥');
+  assert(claimAt > beginAt && fetchAt > claimAt, '取得跨分頁互斥並確認鎖之後才送出');
 
   const priorTab = await evalExpr(`new Promise((resolve) => {
     const ack = document.getElementById('ack-sheet');
@@ -457,8 +539,95 @@ await withPage(async (evalExpr, reload, cdpCall) => {
   assert(lateUi.lock && lateUi.lock.includes('"state":"unknown"') && !lateUi.lock.includes('SMC900777'), '晚到的成功不可把鎖改成完成');
   console.log('test 逾時後晚到的成功: pass');
 
-  const commitAt = page.indexOf('commitLock', submitAt);
-  assert(commitAt > rereadAt && commitAt < fetchAt, '送出前要先寫入鎖並讀回確認');
+  const crossed = await evalExpr(`(async () => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
+    sessionStorage.removeItem(${lockKey});
+    localStorage.removeItem(${lockKey});
+    window.__fetches = 0;
+    window.fetch = () => {
+      window.__fetches += 1;
+      return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC1","mailed":true}') });
+    };
+    let release;
+    const paused = new Promise((resolve) => { release = resolve; });
+    window.__smcYieldBeforeClaim = () => paused;
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('submit').click();
+    const seen = window.SmcIsolatedCheck.readLock(sessionStorage, localStorage);
+    const b = await window.SmcIsolatedCheck.claimSubmit(sessionStorage, localStorage, navigator.locks);
+    if (b && b.claimed) {
+      window.__fetches += 1;
+      window.SmcIsolatedCheck.commitLock(sessionStorage, localStorage, 'unknown', 'SMC900888');
+    }
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    return {
+      seenEmpty: !seen,
+      bClaimed: !!(b && b.claimed),
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      text: document.getElementById('result').textContent,
+      lock: localStorage.getItem(${lockKey})
+    };
+  })()`);
+  assert(crossed.seenEmpty === true && crossed.bClaimed === true, 'A 讀到沒有鎖並停住時，B 要能送出');
+  assert(crossed.fetches === 1, 'A 繼續後頁面不可再送出第二次');
+  assert(crossed.disabled === true && crossed.text.includes('SMC900888') && crossed.text.includes('勿重送'), 'A 要停在 B 的結果未知');
+  assert(crossed.lock && crossed.lock.includes('"state":"unknown"') && crossed.lock.includes('SMC900888') && !crossed.lock.includes('"state":"submitting"'), 'SMC900888 不可被 A 蓋掉');
+  console.log('test 事先開啟的分頁讀寫交錯: pass');
+
+  const noLockUi = await evalExpr(`(async () => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
+    const original = window.SmcIsolatedCheck.locksFrom;
+    window.SmcIsolatedCheck.locksFrom = function () { return null; };
+    window.__fetches = 0;
+    window.fetch = () => { window.__fetches += 1; return new Promise(() => {}); };
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('booking-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    const blocked = {
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      text: document.getElementById('result').textContent
+    };
+    window.SmcIsolatedCheck.locksFrom = original;
+    return blocked;
+  })()`);
+  assert(noLockUi.fetches === 0 && noLockUi.disabled === true && noLockUi.text.includes('無法鎖定這次送出'), '瀏覽器不支援互斥時要停用送出並顯示原因');
+  await reload();
+
+  const hungUi = await evalExpr(`(async () => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
+    const original = window.SmcIsolatedCheck.locksFrom;
+    window.SmcIsolatedCheck.locksFrom = function () {
+      return { request: function () { return new Promise(function () {}); } };
+    };
+    window.SmcIsolatedCheck.setMutexWaitMs(40);
+    window.__fetches = 0;
+    window.fetch = () => { window.__fetches += 1; return new Promise(() => {}); };
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('booking-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const blocked = {
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      text: document.getElementById('result').textContent
+    };
+    window.SmcIsolatedCheck.locksFrom = original;
+    window.SmcIsolatedCheck.setMutexWaitMs(5000);
+    return blocked;
+  })()`);
+  assert(hungUi.fetches === 0 && hungUi.disabled === true && hungUi.text.includes('無法鎖定這次送出'), '拿不到互斥時要停用送出並顯示原因');
+  console.log('test 沒有互斥時停用送出: pass');
+  await reload();
 
   const storageBlocked = await evalExpr(`new Promise((resolve) => {
     const ack = document.getElementById('ack-sheet');

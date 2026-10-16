@@ -14,6 +14,9 @@
   var PROBE_KEY = 'smc_isolated_check_probe_v1';
   var SUBMIT_TIMEOUT_MS = 30000;
   var STORAGE_BLOCKED = '瀏覽器存不了這次的鎖，已停住，沒有送出。';
+  var MUTEX_NAME = 'smc-isolated-check-submit-v1';
+  var MUTEX_BLOCKED = '瀏覽器無法鎖定這次送出，已停住，沒有送出。';
+  var runtime = { mutexWaitMs: 5000 };
 
   function unknownVerdict(orderId) {
     var id = typeof orderId === 'string' ? orderId.trim() : '';
@@ -203,6 +206,79 @@
     try { if (localStore) localStore.removeItem(LOCK_KEY); } catch (err) {}
   }
 
+  function locksFrom(getLocks) {
+    try {
+      var locks = typeof getLocks === 'function' ? getLocks() : null;
+      if (!locks || typeof locks.request !== 'function') return null;
+      return locks;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function claimInsideMutex(sessionStore, localStore) {
+    var existing = readLock(sessionStore, localStore);
+    if (existing) return { ok: true, claimed: false, existing: existing };
+    var committed = commitLock(sessionStore, localStore, 'submitting', '');
+    var confirmed = readLock(sessionStore, localStore);
+    if (!committed.ok || !confirmed || confirmed.state !== 'submitting') {
+      return {
+        ok: false,
+        claimed: false,
+        reason: committed.reason || STORAGE_BLOCKED,
+        existing: confirmed
+      };
+    }
+    return { ok: true, claimed: true };
+  }
+
+  function claimSubmit(sessionStore, localStore, locks, options) {
+    if (!locks || typeof locks.request !== 'function') {
+      return Promise.resolve({ ok: false, claimed: false, reason: MUTEX_BLOCKED });
+    }
+    var waitMs = options && typeof options.waitMs === 'number' ? options.waitMs : runtime.mutexWaitMs;
+    return new Promise(function (resolve) {
+      var finished = false;
+      var abandoned = false;
+      function finish(value) {
+        if (finished) return;
+        finished = true;
+        resolve(value);
+      }
+      var timer = setTimeout(function () {
+        abandoned = true;
+        finish({ ok: false, claimed: false, reason: MUTEX_BLOCKED });
+      }, waitMs);
+      var pending;
+      try {
+        pending = locks.request(MUTEX_NAME, function () {
+          if (abandoned) return { ok: false, claimed: false, reason: MUTEX_BLOCKED };
+          return claimInsideMutex(sessionStore, localStore);
+        });
+      } catch (err) {
+        clearTimeout(timer);
+        finish({ ok: false, claimed: false, reason: MUTEX_BLOCKED });
+        return;
+      }
+      if (!pending || typeof pending.then !== 'function') {
+        clearTimeout(timer);
+        finish({ ok: false, claimed: false, reason: MUTEX_BLOCKED });
+        return;
+      }
+      pending.then(function (value) {
+        clearTimeout(timer);
+        if (!value || value.ok !== true && value.ok !== false) {
+          finish({ ok: false, claimed: false, reason: MUTEX_BLOCKED });
+          return;
+        }
+        finish(value);
+      }, function () {
+        clearTimeout(timer);
+        finish({ ok: false, claimed: false, reason: MUTEX_BLOCKED });
+      });
+    });
+  }
+
   function classifyFetch(response, body) {
     if (!response || response.type === 'opaque' || response.status === 0) return unknownVerdict();
     var status = Number(response.status);
@@ -217,8 +293,13 @@
     LOCK_KEY: LOCK_KEY,
     SUBMIT_TIMEOUT_MS: SUBMIT_TIMEOUT_MS,
     STORAGE_BLOCKED: STORAGE_BLOCKED,
+    MUTEX_NAME: MUTEX_NAME,
+    MUTEX_BLOCKED: MUTEX_BLOCKED,
     writeLock: writeLock,
     commitLock: commitLock,
+    claimSubmit: claimSubmit,
+    locksFrom: locksFrom,
+    setMutexWaitMs: function (ms) { runtime.mutexWaitMs = ms; },
     canPersist: canPersist,
     storesFrom: storesFrom,
     readLock: readLock,
