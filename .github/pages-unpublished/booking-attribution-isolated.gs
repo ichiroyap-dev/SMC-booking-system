@@ -17,6 +17,8 @@
  * 對不上就不會寫入任何訂單、也不會寄信。腳本不會自動幫你做出這個標記。
  *
  * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
+ * 這個檔在 .github/pages-unpublished/booking-attribution-isolated.gs。
+ * Pages 不會公開 .github，請從 repo 複製，不要從官網網址下載。
  * 步驟見 docs/booking-attribution-isolated-runbook.md。
  */
 var ORDER_HEADERS = [

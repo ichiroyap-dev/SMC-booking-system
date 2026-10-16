@@ -3,7 +3,7 @@
 // The in-memory sheet stores setValues strings and does not execute formulas.
 // A leading apostrophe here is not evidence that Google Sheets will skip calculation.
 // Usage: node tools/test-booking-reconciliation.mjs
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -14,9 +14,10 @@ const require = createRequire(import.meta.url);
 const attr = require(join(root, 'js/booking-attribution.js'));
 const source = readFileSync(join(root, 'js/booking-attribution.js'), 'utf8');
 const html = readFileSync(join(root, 'index.html'), 'utf8');
-const gs = readFileSync(join(root, 'apps-script/booking-attribution-isolated.gs'), 'utf8');
+const unpublishedDir = '.github/pages-unpublished';
+const gs = readFileSync(join(root, unpublishedDir, 'booking-attribution-isolated.gs'), 'utf8');
 const runbook = readFileSync(join(root, 'docs/booking-attribution-isolated-runbook.md'), 'utf8');
-const checkPage = readFileSync(join(root, 'tools/isolated-dining-check.html'), 'utf8');
+const checkPage = readFileSync(join(root, unpublishedDir, 'isolated-dining-check.html'), 'utf8');
 const checkGuard = readFileSync(join(root, 'tools/isolated-check-guard.js'), 'utf8');
 const failures = [];
 const assert = (cond, message) => { if (!cond) failures.push(message); };
@@ -414,6 +415,17 @@ assert(checkGuard.includes(LIVE_ID), '驗收頁要拒絕正式 web app');
 assert(checkGuard.includes('結果未知，先核對試算表、勿重送'), '結果未知時要先核對試算表');
 assert(checkPage.includes('noindex'), '驗收頁不可被索引');
 assert(checkPage.includes('www.sweetmeichicken.com') && checkPage.includes('不要打開'), '驗收頁要寫明不要用正式官網');
+assert(existsSync(join(root, unpublishedDir, 'isolated-dining-check.html')), '驗收頁要留在 repo 的未公開目錄');
+assert(existsSync(join(root, unpublishedDir, 'booking-attribution-isolated.gs')), '隔離腳本要留在 repo 的未公開目錄');
+assert(!existsSync(join(root, 'tools/isolated-dining-check.html')), '驗收頁不可留在會被 Pages 發布的 tools');
+assert(!existsSync(join(root, 'apps-script/booking-attribution-isolated.gs')), '隔離腳本不可留在會被 Pages 發布的 apps-script');
+assert(unpublishedDir.startsWith('.github/'), '未公開檔必須放在 Pages 上傳會排除的 .github');
+assert(checkPage.includes('../../tools/isolated-check-guard.js'), '驗收頁要從新位置載入原本的 guard');
+assert(checkPage.includes('../../js/booking-attribution.js'), '驗收頁要從新位置載入官網同一支來源腳本');
+assert(runbook.includes('http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html'), '手冊的本機驗收網址要指到未公開路徑');
+assert(runbook.includes('.github/pages-unpublished/booking-attribution-isolated.gs'), '手冊要指向未公開的隔離腳本');
+assert(!runbook.includes('tools/isolated-dining-check.html'), '手冊不可再叫人開公開路徑上的驗收頁');
+assert(!runbook.includes('apps-script/booking-attribution-isolated.gs'), '手冊不可再指向公開路徑上的隔離腳本');
 for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', 'ALLOWED_DEPLOYMENT_IDS', '未全部寄出', 'duplicate']) {
   assert(runbook.includes(phrase), `驗收步驟缺少 ${phrase}`);
 }

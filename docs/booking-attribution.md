@@ -117,7 +117,7 @@
 
 沒有現行 Apps Script 的去識別化程式，因此後端會不會收下新欄位、會不會改到寫表或寄信，都還沒有證據。狀態就是待驗證。這份 PR 不把新欄位送進正式請求。
 
-正式腳本的原始碼不在這個 repo，隔離腳本**不是**正式腳本的補丁。`apps-script/booking-attribution-isolated.gs` 依前端看得到的 11 欄 POST 契約，另外寫一支只給隔離專案用的實作：缺來源、多來源或格式不對時仍收單，備註原樣寫入，來源欄空白或改成純文字。客人信不放活動代碼；店內信才放來源對帳。步驟與預期的表、信在 `docs/booking-attribution-isolated-runbook.md`。本機對帳腳本是 `tools/test-booking-reconciliation.mjs`。
+正式腳本的原始碼不在這個 repo，隔離腳本**不是**正式腳本的補丁。`.github/pages-unpublished/booking-attribution-isolated.gs` 依前端看得到的 11 欄 POST 契約，另外寫一支只給隔離專案用的實作：缺來源、多來源或格式不對時仍收單，備註原樣寫入，來源欄空白或改成純文字。客人信不放活動代碼；店內信才放來源對帳。步驟與預期的表、信在 `docs/booking-attribution-isolated-runbook.md`。本機對帳腳本是 `tools/test-booking-reconciliation.mjs`。
 
 隔離環境要做的檢查（不要用正式試算表、不要部署到正式 web app、不要寫正式訂單）：
 
