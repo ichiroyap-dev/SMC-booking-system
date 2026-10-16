@@ -150,8 +150,26 @@
       document.getElementById(id).addEventListener('input', refresh);
     });
 
+    function pageStores() {
+      return window.SmcIsolatedCheck.storesFrom(function () {
+        return window.sessionStorage;
+      }, function () {
+        return window.localStorage;
+      });
+    }
+
+    function blockStorage(reason) {
+      submitState = 'blocked';
+      document.getElementById('submit').disabled = true;
+      document.getElementById('ack-sheet').hidden = true;
+      var result = document.getElementById('result');
+      result.className = 'bad';
+      result.textContent = reason || window.SmcIsolatedCheck.STORAGE_BLOCKED;
+    }
+
     function remember(state, orderId) {
-      window.SmcIsolatedCheck.writeLock(window.sessionStorage, window.localStorage, state, orderId || '');
+      var stores = pageStores();
+      return window.SmcIsolatedCheck.commitLock(stores.sessionStore, stores.localStore, state, orderId || '');
     }
 
     function holdPage() {
@@ -174,16 +192,21 @@
 
     document.getElementById('ack-sheet').addEventListener('click', function () {
       if (submitState !== 'hold') return;
-      window.SmcIsolatedCheck.clearLock(window.sessionStorage, window.localStorage);
+      var stores = pageStores();
+      window.SmcIsolatedCheck.clearLock(stores.sessionStore, stores.localStore);
       submitState = 'idle';
       document.getElementById('ack-sheet').hidden = true;
+      if (!window.SmcIsolatedCheck.canPersist(stores.sessionStore, stores.localStore)) {
+        blockStorage();
+        return;
+      }
       refresh();
     });
 
     window.addEventListener('storage', function (event) {
       if (!event || event.key !== window.SmcIsolatedCheck.LOCK_KEY) return;
       if (submitState !== 'idle') return;
-      var existing = window.SmcIsolatedCheck.readLock(window.sessionStorage, window.localStorage);
+      var existing = window.SmcIsolatedCheck.readLock(pageStores().sessionStore, pageStores().localStore);
       if (!existing) return;
       holdPage();
       showStored(existing);
@@ -192,7 +215,8 @@
     document.getElementById('booking-form').addEventListener('submit', function (event) {
       event.preventDefault();
       if (submitState !== 'idle') return;
-      var existing = window.SmcIsolatedCheck.readLock(window.sessionStorage, window.localStorage);
+      var stores = pageStores();
+      var existing = window.SmcIsolatedCheck.readLock(stores.sessionStore, stores.localStore);
       if (existing) {
         holdPage();
         showStored(existing);
@@ -206,10 +230,14 @@
         result.textContent = problem;
         return;
       }
+      var committed = window.SmcIsolatedCheck.commitLock(stores.sessionStore, stores.localStore, 'submitting', '');
+      if (!committed.ok) {
+        blockStorage(committed.reason);
+        return;
+      }
       submitState = 'sending';
       document.getElementById('submit').disabled = true;
       document.getElementById('ack-sheet').hidden = true;
-      remember('submitting', '');
       var fields = window.SmcAttribution.bookingFields(window.SmcAttribution.resolveStorage(window));
       var payload = window.SmcAttribution.payloadIfAttributionEnabled(formBase(), fields);
       result.className = '';
@@ -259,20 +287,28 @@
           holdPage();
           return;
         }
-        window.SmcIsolatedCheck.clearLock(window.sessionStorage, window.localStorage);
+        var cleared = pageStores();
+        window.SmcIsolatedCheck.clearLock(cleared.sessionStore, cleared.localStore);
         submitState = 'idle';
         document.getElementById('ack-sheet').hidden = true;
+        if (!window.SmcIsolatedCheck.canPersist(cleared.sessionStore, cleared.localStore)) {
+          blockStorage();
+          return;
+        }
         refresh();
       }).catch(function () {
         finishUnknown('');
       });
     });
 
-    var storedLock = window.SmcIsolatedCheck.readLock(window.sessionStorage, window.localStorage);
+    var bootStores = pageStores();
+    var storedLock = window.SmcIsolatedCheck.readLock(bootStores.sessionStore, bootStores.localStore);
     if (storedLock) {
       remember(storedLock.state, storedLock.orderId);
       holdPage();
       showStored(storedLock);
+    } else if (!window.SmcIsolatedCheck.canPersist(bootStores.sessionStore, bootStores.localStore)) {
+      blockStorage();
     }
     refresh();
   </script>

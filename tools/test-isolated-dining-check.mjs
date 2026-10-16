@@ -81,8 +81,31 @@ assert(guard.readLock(sessionStore, localStore) === null, '清掉之後讀不到
 sessionStore.setItem(guard.LOCK_KEY, '{"state":"idle"}');
 assert(guard.readLock(sessionStore, guard.memoryStore()) === null, '不認得的狀態不當成鎖');
 assert(guard.SUBMIT_TIMEOUT_MS === 30000, '送出逾時預設 30 秒');
+function throwingStore() {
+  return {
+    getItem() { return null; },
+    setItem() { throw new Error('blocked'); },
+    removeItem() { throw new Error('blocked'); },
+  };
+}
+function lyingStore() {
+  return {
+    getItem() { return null; },
+    setItem() {},
+    removeItem() {},
+  };
+}
+const blockedCommit = guard.commitLock(throwingStore(), throwingStore(), 'submitting', '');
+assert(blockedCommit.ok === false && blockedCommit.reason === guard.STORAGE_BLOCKED, '兩種儲存寫不進去不可當成已鎖住');
+const unreadCommit = guard.commitLock(lyingStore(), guard.memoryStore(), 'submitting', '');
+assert(unreadCommit.ok === false && unreadCommit.reason === guard.STORAGE_BLOCKED, '寫入後讀不回不可當成已鎖住');
+const storedCommit = guard.commitLock(guard.memoryStore(), guard.memoryStore(), 'unknown', 'SMC900401');
+assert(storedCommit.ok === true && storedCommit.body.includes('SMC900401'), '寫入後讀得回才算鎖住');
+const secureStores = guard.storesFrom(() => { throw new Error('SecurityError'); }, () => { throw new Error('SecurityError'); });
+assert(secureStores.sessionStore === null && secureStores.localStore === null, '取得儲存物件失敗要留在保護範圍內，不可讓頁面初始化中斷');
+assert(guard.canPersist(secureStores.sessionStore, secureStores.localStore) === false, '拿不到儲存時不可送出');
 assert(page.includes('classifyFetch') && page.includes('isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
-assert(page.includes('writeLock') && page.includes('readLock') && page.includes('sessionStorage') && page.includes('localStorage') && page.includes('AbortController'), '驗收頁要把鎖寫進兩種儲存，並用 AbortController 逾時');
+assert(page.includes('commitLock') && page.includes('readLock') && page.includes('sessionStorage') && page.includes('localStorage') && page.includes('AbortController'), '驗收頁要把鎖寫進兩種儲存並讀回，並用 AbortController 逾時');
 assert(!page.includes('沒有送到'), '驗收頁不可寫沒有送到');
 assert(!page.includes("className = 'ok'") || page.includes("verdict.kind === 'success'"), '綠色成功只能在判定成功之後');
 
@@ -157,14 +180,14 @@ async function withPage(fn) {
       await loaded;
       await evalExpr('new Promise((resolve) => setTimeout(resolve, 40))');
     }
-    await fn(evalExpr, reload);
+    await fn(evalExpr, reload, (method, params) => cdp(ws, method, params));
   } finally {
     ws.close();
     chrome.kill('SIGKILL');
   }
 }
 
-await withPage(async (evalExpr, reload) => {
+await withPage(async (evalExpr, reload, cdpCall) => {
   const blocked = await evalExpr(`(() => {
     window.__fetches = 0;
     window.fetch = () => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC1"}') }); };
@@ -382,6 +405,51 @@ await withPage(async (evalExpr, reload) => {
   assert(priorTab.lock && priorTab.lock.includes('"state":"unknown"') && priorTab.lock.includes('SMC900888') && !priorTab.lock.includes('submitting'), '事先開啟的分頁不可把別人的未知鎖覆寫成空編號');
   assert(priorTab.className !== 'ok' && !priorTab.text.includes('已送到'), '事先開啟的分頁不可顯示成功');
   console.log('test 事先開啟的分頁不可重送: pass');
+
+  const commitAt = page.indexOf('commitLock', submitAt);
+  assert(commitAt > rereadAt && commitAt < fetchAt, '送出前要先寫入鎖並讀回確認');
+
+  const storageBlocked = await evalExpr(`new Promise((resolve) => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
+    Storage.prototype.setItem = function () { throw new Error('storage blocked'); };
+    window.__fetches = 0;
+    window.fetch = () => {
+      window.__fetches += 1;
+      return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC1","mailed":true}') });
+    };
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('booking-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    setTimeout(() => resolve({
+      fetches: window.__fetches,
+      disabled: document.getElementById('submit').disabled,
+      text: document.getElementById('result').textContent
+    }), 40);
+  })`);
+  assert(storageBlocked.fetches === 0, '存不了鎖時不可送出');
+  assert(storageBlocked.disabled === true && storageBlocked.text.includes('存不了這次的鎖'), '存不了鎖時要停用送出並顯示原因');
+
+  await cdpCall('Page.addScriptToEvaluateOnNewDocument', {
+    source: `Storage.prototype.setItem = function () { throw new Error('storage blocked'); };
+      window.__fetches = 0;
+      window.fetch = function () { window.__fetches += 1; return new Promise(function () {}); };`,
+  });
+  await reload();
+  const storageReload = await evalExpr(`new Promise((resolve) => {
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('booking-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    setTimeout(() => resolve({
+      fetches: window.__fetches || 0,
+      disabled: document.getElementById('submit').disabled,
+      text: document.getElementById('result').textContent
+    }), 40);
+  })`);
+  assert(storageReload.fetches === 0 && storageReload.disabled === true && storageReload.text.includes('存不了這次的鎖'), '重新載入後儲存仍失敗時，送出鍵維持停用且沒有送出');
+  console.log('test 儲存失敗與重新載入: pass');
 });
 
 if (failures.length) {

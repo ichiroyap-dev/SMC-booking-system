@@ -10,7 +10,9 @@
   var LIVE_ID = 'AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q';
   var UNKNOWN_MESSAGE = '結果未知，先核對試算表、勿重送';
   var LOCK_KEY = 'smc_isolated_check_lock_v1';
+  var PROBE_KEY = 'smc_isolated_check_probe_v1';
   var SUBMIT_TIMEOUT_MS = 30000;
+  var STORAGE_BLOCKED = '瀏覽器存不了這次的鎖，已停住，沒有送出。';
 
   function unknownVerdict(orderId) {
     var id = typeof orderId === 'string' ? orderId.trim() : '';
@@ -115,11 +117,65 @@
     }
   }
 
-  function writeLock(sessionStore, localStore, state, orderId) {
+  function storesFrom(getSession, getLocal) {
+    var sessionStore = null;
+    var localStore = null;
+    try {
+      sessionStore = typeof getSession === 'function' ? getSession() : null;
+    } catch (err) {
+      sessionStore = null;
+    }
+    try {
+      localStore = typeof getLocal === 'function' ? getLocal() : null;
+    } catch (err) {
+      localStore = null;
+    }
+    return { sessionStore: sessionStore, localStore: localStore };
+  }
+
+  function roundTripStore(store) {
+    if (!store) return false;
+    var token = 'ok';
+    try {
+      store.setItem(PROBE_KEY, token);
+      var seen = store.getItem(PROBE_KEY);
+      try { store.removeItem(PROBE_KEY); } catch (err) {}
+      return seen === token;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function canPersist(sessionStore, localStore) {
+    return roundTripStore(sessionStore) && roundTripStore(localStore);
+  }
+
+  function commitLock(sessionStore, localStore, state, orderId) {
     var body = JSON.stringify({ state: state, orderId: orderId || '' });
-    try { if (sessionStore) sessionStore.setItem(LOCK_KEY, body); } catch (err) {}
-    try { if (localStore) localStore.setItem(LOCK_KEY, body); } catch (err) {}
-    return body;
+    var sessionOk = false;
+    var localOk = false;
+    try {
+      if (sessionStore) {
+        sessionStore.setItem(LOCK_KEY, body);
+        sessionOk = sessionStore.getItem(LOCK_KEY) === body;
+      }
+    } catch (err) {
+      sessionOk = false;
+    }
+    try {
+      if (localStore) {
+        localStore.setItem(LOCK_KEY, body);
+        localOk = localStore.getItem(LOCK_KEY) === body;
+      }
+    } catch (err) {
+      localOk = false;
+    }
+    if (sessionOk && localOk) return { ok: true, body: body };
+    return { ok: false, reason: STORAGE_BLOCKED };
+  }
+
+  function writeLock(sessionStore, localStore, state, orderId) {
+    return commitLock(sessionStore, localStore, state, orderId).body || JSON.stringify({ state: state, orderId: orderId || '' });
   }
 
   function readLock(sessionStore, localStore) {
@@ -145,7 +201,11 @@
     UNKNOWN_MESSAGE: UNKNOWN_MESSAGE,
     LOCK_KEY: LOCK_KEY,
     SUBMIT_TIMEOUT_MS: SUBMIT_TIMEOUT_MS,
+    STORAGE_BLOCKED: STORAGE_BLOCKED,
     writeLock: writeLock,
+    commitLock: commitLock,
+    canPersist: canPersist,
+    storesFrom: storesFrom,
     readLock: readLock,
     clearLock: clearLock,
     memoryStore: memoryStore,
