@@ -362,6 +362,7 @@ function acceptBooking_(payload) {
   }
   var orderId = '';
   var attemptedWrite = false;
+  var pendingMail = null;
   var outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
   try {
     var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
@@ -389,18 +390,13 @@ function acceptBooking_(payload) {
         writeRow_(sheet, result.row);
         var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
         writeRow_(mailSheet, mailPreviewRow_(result));
-        var mailed = false;
-        try {
-          sendEmails_(result);
-          mailed = true;
-        } catch (mailErr) {
-          mailed = false;
-        }
-        result.response.mailed = mailed;
-        outcome = { response: result.response, wrote: true, mailed: mailed };
+        result.response.mailed = false;
+        pendingMail = result;
+        outcome = { response: result.response, wrote: true, mailed: false };
       }
     }
   } catch (err) {
+    pendingMail = null;
     if (attemptedWrite) {
       outcome = {
         response: {
@@ -420,6 +416,7 @@ function acceptBooking_(payload) {
       try {
         SpreadsheetApp.flush();
       } catch (flushErr) {
+        pendingMail = null;
         outcome = {
           response: {
             status: 'unknown',
@@ -433,6 +430,17 @@ function acceptBooking_(payload) {
       }
     }
     try { lock.releaseLock(); } catch (releaseErr) {}
+  }
+  if (pendingMail && outcome.response && outcome.response.status === 'success') {
+    var mailed = false;
+    try {
+      sendEmails_(pendingMail);
+      mailed = true;
+    } catch (mailErr) {
+      mailed = false;
+    }
+    pendingMail.response.mailed = mailed;
+    outcome.mailed = mailed;
   }
   return outcome;
 }

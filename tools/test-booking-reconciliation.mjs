@@ -200,7 +200,10 @@ function loadIsolated(options = {}) {
     },
   };
   sandbox.MailApp = {
-    sendEmail(to, subject, body) { box.mails.push({ to, subject, body }); },
+    sendEmail(to, subject, body) {
+      box.mails.push({ to, subject, body });
+      box.lockLog.push(box.lockHeld ? 'mail-held' : 'mail-free');
+    },
   };
   sandbox.LockService = {
     getScriptLock() {
@@ -231,6 +234,21 @@ function loadIsolated(options = {}) {
 function post(isolated, payload) {
   const response = isolated.sandbox.doPost({ postData: { contents: JSON.stringify(payload) } });
   return JSON.parse(response.getContent());
+}
+
+function assertMailAfterRelease(box, label) {
+  let open = false;
+  let sawMail = false;
+  for (const event of box.lockLog) {
+    if (event === 'lock') open = true;
+    if (event === 'mail-held') assert(false, `${label}：寄信時鎖還握著`);
+    if (event === 'mail-free') {
+      assert(!open, `${label}：寄信要在 releaseLock 之後`);
+      sawMail = true;
+    }
+    if (event === 'release') open = false;
+  }
+  assert(sawMail, `${label}：成功寫入後要寄信`);
 }
 
 function assertFlushBeforeRelease(box, label) {
@@ -695,7 +713,9 @@ assert(race.box.lockDenied === 1 && race.box.lockHeld === false, '交錯取號�
 assert(sheetRows(race, '訂單').filter((row) => row[0] === 'SMC900001').length === 1, '交錯取號：SMC900001 只有一列');
 assert(race.box.mails.length === 2, '交錯取號：只模擬寄出先進入那一筆的兩封信');
 assertFlushBeforeRelease(race.box, '交錯取號');
+assertMailAfterRelease(race.box, '交錯取號');
 console.log('test 交錯取號: pass');
+console.log('test 寄信在放鎖之後: pass');
 
 const exhausted = loadIsolated();
 const everyId = [];
@@ -735,6 +755,8 @@ assert(String(flushRes.message) !== '隔離腳本無法完成寫入。', 'flush 
 assert(rowById(flushFail, 'SMC900501'), 'flush 失敗前訂單列已經寫入');
 assert(flushFail.box.lockHeld === false, 'flush 失敗後鎖仍要放開');
 assertFlushBeforeRelease(flushFail.box, '寫入後 flush 失敗');
+assert(flushFail.box.mails.length === 0, 'flush 失敗不可寄信');
+assert(!flushFail.box.lockLog.includes('mail-held') && !flushFail.box.lockLog.includes('mail-free'), 'flush 失敗不可在鎖內或鎖外寄信');
 console.log('test 寫入後 flush 失敗: pass');
 
 assertFlushBeforeRelease(isolated.box, '八筆與後續新單');
