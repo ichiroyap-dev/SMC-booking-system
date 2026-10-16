@@ -9,8 +9,9 @@ import { spawn } from 'node:child_process';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
-const guard = require(join(root, 'tools/isolated-check-guard.js'));
-const page = readFileSync(join(root, 'tools/isolated-dining-check.html'), 'utf8');
+const guard = require(join(root, '.github/pages-unpublished/isolated-check-guard.js'));
+const pageFile = '.github/pages-unpublished/isolated-dining-check.html';
+const page = readFileSync(join(root, pageFile), 'utf8');
 const failures = [];
 const assert = (cond, message) => { if (!cond) failures.push(message); };
 
@@ -121,6 +122,52 @@ assert(thrownMutex.ok === false && thrownMutex.claimed === false, '互斥丟出�
 const hungLocks = { request() { return new Promise(() => {}); } };
 const hungMutex = await guard.claimSubmit(guard.memoryStore(), guard.memoryStore(), hungLocks, { waitMs: 30 });
 assert(hungMutex.ok === false && hungMutex.claimed === false && hungMutex.reason === guard.MUTEX_BLOCKED, '拿不到互斥時不可送出');
+function countingStore(inner) {
+  return {
+    writes: 0,
+    getItem(key) { return inner.getItem(key); },
+    setItem(key, value) { this.writes += 1; inner.setItem(key, value); },
+    removeItem(key) { inner.removeItem(key); },
+  };
+}
+function deferredLock() {
+  let callback = null;
+  let resolveRequest = null;
+  return {
+    request(name, callbackIn) {
+      callback = callbackIn;
+      return new Promise((resolve) => { resolveRequest = resolve; });
+    },
+    fire() {
+      const value = callback();
+      resolveRequest(value);
+      return value;
+    },
+  };
+}
+const lateEmptySession = countingStore(guard.memoryStore());
+const lateEmptyLocal = countingStore(guard.memoryStore());
+const lateEmptyLocks = deferredLock();
+const lateEmpty = await guard.claimSubmit(lateEmptySession, lateEmptyLocal, lateEmptyLocks, { waitMs: 40 });
+assert(lateEmpty.ok === false && lateEmpty.claimed === false && lateEmpty.reason === guard.MUTEX_BLOCKED, '等不到互斥時要先停住');
+const lateEmptyCallback = lateEmptyLocks.fire();
+assert(lateEmptyCallback && lateEmptyCallback.ok === false && lateEmptyCallback.claimed === false && !lateEmptyCallback.existing, '逾時後才進互斥不可補寫新鎖');
+assert(lateEmptySession.writes === 0 && lateEmptyLocal.writes === 0, '逾時後的 callback 不可新增寫入');
+assert(guard.readLock(lateEmptySession, lateEmptyLocal) === null, '空的鎖不可被晚到的 callback 寫成送出中');
+const seededSession = guard.memoryStore();
+const seededLocal = guard.memoryStore();
+assert(guard.commitLock(seededSession, seededLocal, 'unknown', 'SMC900888').ok === true, '先放進既有的結果未知');
+const lateSeedSession = countingStore(seededSession);
+const lateSeedLocal = countingStore(seededLocal);
+const lateSeedLocks = deferredLock();
+const lateSeed = await guard.claimSubmit(lateSeedSession, lateSeedLocal, lateSeedLocks, { waitMs: 40 });
+assert(lateSeed.ok === false && lateSeed.claimed === false && lateSeed.reason === guard.MUTEX_BLOCKED, '已有鎖時，等不到互斥仍要停住');
+const lateSeedCallback = lateSeedLocks.fire();
+assert(lateSeedCallback && lateSeedCallback.ok === false && lateSeedCallback.claimed === false && !lateSeedCallback.existing, '逾時後才進互斥不可再讀走既有鎖');
+assert(lateSeedSession.writes === 0 && lateSeedLocal.writes === 0, '逾時後的 callback 不可改寫既有鎖');
+const lateLeft = guard.readLock(seededSession, seededLocal);
+assert(lateLeft && lateLeft.state === 'unknown' && lateLeft.orderId === 'SMC900888', '晚到的 callback 不可動到 SMC900888');
+console.log('test 逾時後才執行鎖 callback: pass');
 function scriptedLocks() {
   let held = false;
   const queue = [];
@@ -172,7 +219,7 @@ assert(raceA.claimed === false && raceA.existing && raceA.existing.state === 'un
 const raceLeft = guard.readLock(raceSession, raceLocal);
 assert(raceLeft && raceLeft.state === 'unknown' && raceLeft.orderId === 'SMC900888', 'SMC900888 這個結果未知的編號要保留下來');
 console.log('test 讀寫鎖交錯只送一次: pass');
-const guardSource = readFileSync(join(root, 'tools/isolated-check-guard.js'), 'utf8');
+const guardSource = readFileSync(join(root, '.github/pages-unpublished/isolated-check-guard.js'), 'utf8');
 const insideStart = guardSource.indexOf('function claimInsideMutex');
 const insideEnd = guardSource.indexOf('function claimSubmit');
 const inside = guardSource.slice(insideStart, insideEnd);
@@ -180,7 +227,8 @@ const read1 = inside.indexOf('readLock');
 const writeAt = inside.indexOf('commitLock');
 const read2 = inside.indexOf('readLock', read1 + 1);
 assert(read1 >= 0 && writeAt > read1 && read2 > writeAt, '互斥區內要先重讀、再寫入、再讀回');
-assert(page.includes('classifyFetch') && page.includes('isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
+assert(page.includes('classifyFetch') && page.includes('./isolated-check-guard.js'), '驗收頁要呼叫同一套判斷');
+assert(page.includes('../../js/booking-attribution.js'), '驗收頁要載入官網同一支來源腳本');
 assert(page.includes('commitLock') && page.includes('readLock') && page.includes('sessionStorage') && page.includes('localStorage') && page.includes('AbortController'), '驗收頁要把鎖寫進兩種儲存並讀回，並用 AbortController 逾時');
 assert(!page.includes('沒有送到'), '驗收頁不可寫沒有送到');
 assert(!page.includes("className = 'ok'") || page.includes("verdict.kind === 'success'"), '綠色成功只能在判定成功之後');
@@ -236,7 +284,7 @@ async function withPage(fn) {
   }
   try {
     await cdp(ws, 'Page.enable');
-    await cdp(ws, 'Page.navigate', { url: 'file://' + join(root, 'tools/isolated-dining-check.html') });
+    await cdp(ws, 'Page.navigate', { url: 'file://' + join(root, pageFile) });
     await evalExpr(`new Promise((resolve) => { if (document.readyState === 'complete') setTimeout(resolve, 30); else window.addEventListener('load', () => resolve()); })`);
     async function reload() {
       const loaded = new Promise((resolve) => {
@@ -671,6 +719,317 @@ await withPage(async (evalExpr, reload, cdpCall) => {
   assert(storageReload.fetches === 0 && storageReload.disabled === true && storageReload.text.includes('存不了這次的鎖'), '重新載入後儲存仍失敗時，送出鍵維持停用且沒有送出');
   console.log('test 儲存失敗與重新載入: pass');
 });
+
+function connectSocket(wsUrl) {
+  const ws = new WebSocket(wsUrl);
+  const pending = new Map();
+  let next = 1;
+  ws.addEventListener('message', (event) => {
+    const msg = JSON.parse(event.data);
+    if (!msg.id || !pending.has(msg.id)) return;
+    const waiter = pending.get(msg.id);
+    pending.delete(msg.id);
+    if (msg.error) waiter.reject(new Error(JSON.stringify(msg.error)));
+    else waiter.resolve(msg.result);
+  });
+  const ready = new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve);
+    ws.addEventListener('error', reject);
+  });
+  function call(method, params) {
+    return new Promise((resolve, reject) => {
+      const id = next++;
+      pending.set(id, { resolve, reject });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  }
+  async function evalExpr(expression) {
+    const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || JSON.stringify(result.exceptionDetails));
+    return result.result.value;
+  }
+  return { ws, ready, call, evalExpr };
+}
+
+async function gotoPage(session, url) {
+  await session.call('Page.enable');
+  const loaded = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('load timeout ' + url)), 8000);
+    const onMsg = (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch (err) { return; }
+      if (msg.method !== 'Page.loadEventFired') return;
+      clearTimeout(timer);
+      session.ws.removeEventListener('message', onMsg);
+      resolve();
+    };
+    session.ws.addEventListener('message', onMsg);
+  });
+  await session.call('Page.navigate', { url });
+  await loaded;
+  await session.evalExpr('new Promise((resolve) => setTimeout(resolve, 40))');
+}
+
+async function reloadPage(session) {
+  const loaded = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('reload timeout')), 8000);
+    const onMsg = (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch (err) { return; }
+      if (msg.method !== 'Page.loadEventFired') return;
+      clearTimeout(timer);
+      session.ws.removeEventListener('message', onMsg);
+      resolve();
+    };
+    session.ws.addEventListener('message', onMsg);
+  });
+  await session.call('Page.reload');
+  await loaded;
+  await session.evalExpr('new Promise((resolve) => setTimeout(resolve, 40))');
+}
+
+async function pollPage(evalExpr, expression, timeoutMs = 4000) {
+  const start = Date.now();
+  let last;
+  while (Date.now() - start < timeoutMs) {
+    last = await evalExpr(expression);
+    if (last && last.ready) return last;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+  return last || { ready: false };
+}
+
+const localPageUrl = 'http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html';
+const httpServer = spawn('python3', ['-m', 'http.server', '8765', '--bind', '127.0.0.1'], {
+  cwd: root,
+  stdio: ['ignore', 'ignore', 'pipe'],
+});
+let serverExit = null;
+httpServer.on('exit', (code) => { serverExit = code; });
+try {
+  const serverReady = Date.now();
+  let pageStatus = 0;
+  while (Date.now() - serverReady < 5000) {
+    if (serverExit !== null) throw new Error('http server exited ' + serverExit);
+    try {
+      pageStatus = (await fetch(localPageUrl)).status;
+      if (pageStatus === 200) break;
+    } catch (err) {
+      pageStatus = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert(pageStatus === 200, '127.0.0.1:8765 要能打開未公開的驗收頁');
+  const localPaths = [
+    ['/.github/pages-unpublished/isolated-check-guard.js', 200],
+    ['/.github/pages-unpublished/booking-attribution-isolated-runbook.md', 200],
+    ['/tools/isolated-check-guard.js', 404],
+    ['/docs/booking-attribution-isolated-runbook.md', 404],
+    ['/js/booking-attribution.js', 200],
+    ['/.github/pages-unpublished/booking-attribution-isolated.gs', 200],
+    ['/tools/isolated-dining-check.html', 404],
+    ['/apps-script/booking-attribution-isolated.gs', 404],
+  ];
+  for (const [path, status] of localPaths) {
+    const actual = (await fetch('http://127.0.0.1:8765' + path)).status;
+    assert(actual === status, '127.0.0.1:8765' + path + ' 應為 ' + status + '，實際 ' + actual);
+  }
+  if (pageStatus === 200) {
+    const tabsChrome = spawn('/usr/bin/google-chrome', [
+      '--headless=new',
+      '--disable-gpu',
+      '--no-sandbox',
+      '--remote-debugging-port=0',
+      `--user-data-dir=/tmp/smc-isolated-tabs-${process.pid}`,
+      'about:blank',
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    try {
+      const debugPort = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('chrome debug port timeout')), 15000);
+        tabsChrome.stderr.on('data', (buf) => {
+          const match = buf.toString().match(/DevTools listening on [^\n]+:(\d+)/);
+          if (!match) return;
+          clearTimeout(timer);
+          resolve(match[1]);
+        });
+        tabsChrome.on('exit', (code) => reject(new Error('chrome exited ' + code)));
+      });
+      const listed = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) => response.json());
+      const first = listed.find((item) => item.type === 'page') || listed[0];
+      const version = await fetch(`http://127.0.0.1:${debugPort}/json/version`).then((response) => response.json());
+      const browser = connectSocket(version.webSocketDebuggerUrl);
+      const tabA = connectSocket(first.webSocketDebuggerUrl);
+      await Promise.all([browser.ready, tabA.ready]);
+      const created = await browser.call('Target.createTarget', { url: 'about:blank' });
+      let second = null;
+      for (let i = 0; i < 50 && !second; i += 1) {
+        const again = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((response) => response.json());
+        second = again.find((item) => item.id === created.targetId);
+        if (!second) await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+      if (!second) throw new Error('second tab missing');
+      const tabB = connectSocket(second.webSocketDebuggerUrl);
+      await tabB.ready;
+      await gotoPage(tabA, localPageUrl);
+      await gotoPage(tabB, localPageUrl);
+      const loadedApi = await tabA.evalExpr('Boolean(window.SmcIsolatedCheck && window.SmcAttribution && navigator.locks)');
+      assert(loadedApi === true, '兩個分頁都要載入 guard、來源腳本，以及瀏覽器互斥');
+      const endpoint = JSON.stringify(OK);
+      const lockKey = JSON.stringify(guard.LOCK_KEY);
+      const unknownBody = JSON.stringify('{"status":"unknown","orderId":"SMC900888","mailed":false,"message":"結果未知，先核對試算表、勿重送"}');
+      const successBody = JSON.stringify('{"status":"success","orderId":"SMC1","mailed":true}');
+
+      await tabA.evalExpr(`(() => {
+        window.__fetches = 0;
+        window.fetch = () => {
+          window.__fetches += 1;
+          return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve(${successBody}) });
+        };
+        window.__releaseA = null;
+        window.__smcYieldBeforeClaim = () => new Promise((resolve) => { window.__releaseA = resolve; });
+        const input = document.getElementById('endpoint');
+        input.value = ${endpoint};
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('submit').click();
+        return true;
+      })()`);
+      const paused = await pollPage(tabA.evalExpr, '(() => ({ ready: typeof window.__releaseA === "function", fetches: window.__fetches || 0 }))()');
+      assert(paused.ready === true && paused.fetches === 0, 'A 讀到沒有鎖並停住時還沒送出');
+
+      await tabB.evalExpr(`(() => {
+        window.__fetches = 0;
+        window.fetch = () => {
+          window.__fetches += 1;
+          return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve(${unknownBody}) });
+        };
+        const input = document.getElementById('endpoint');
+        input.value = ${endpoint};
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('submit').click();
+        return true;
+      })()`);
+      const fromB = await pollPage(tabB.evalExpr, `(() => {
+        const lock = localStorage.getItem(${lockKey}) || '';
+        return {
+          ready: window.__fetches === 1 && lock.includes('"state":"unknown"') && lock.includes('SMC900888'),
+          fetches: window.__fetches || 0,
+          lock: lock
+        };
+      })()`);
+      assert(fromB.ready === true, 'B 這個分頁要自己送出並寫下 SMC900888');
+      await tabA.evalExpr('window.__releaseA()');
+      const afterA = await pollPage(tabA.evalExpr, `(() => ({
+        ready: (window.__fetches || 0) === 0 && document.getElementById('result').textContent.includes('SMC900888') && document.getElementById('submit').disabled === true,
+        fetches: window.__fetches || 0,
+        text: document.getElementById('result').textContent,
+        lock: localStorage.getItem(${lockKey}) || ''
+      }))()`);
+      const afterB = await pollPage(tabB.evalExpr, `(() => ({
+        ready: (window.__fetches || 0) === 1 && document.getElementById('submit').disabled === true && document.getElementById('result').textContent.includes('SMC900888') && !document.getElementById('result').textContent.includes('已送到'),
+        fetches: window.__fetches || 0,
+        disabled: document.getElementById('submit').disabled,
+        text: document.getElementById('result').textContent,
+        lock: localStorage.getItem(${lockKey}) || ''
+      }))()`);
+      assert(afterA.ready === true && afterB.ready === true, 'A 恢復後不可再送；要等 B 也停住後，兩個分頁合計只送一次');
+      assert(afterB.lock.includes('"state":"unknown"') && afterB.lock.includes('SMC900888') && !afterB.lock.includes('"state":"submitting"'), '兩個分頁互搶後要保留 UNKNOWN / SMC900888');
+      console.log('test 兩個分頁互搶鎖: pass');
+
+      await tabA.evalExpr(`sessionStorage.removeItem(${lockKey}); localStorage.removeItem(${lockKey}); true`);
+      await tabB.evalExpr(`sessionStorage.removeItem(${lockKey}); true`);
+      await reloadPage(tabA);
+      await reloadPage(tabB);
+      await tabA.evalExpr(`(() => {
+        window.__fetches = 0;
+        window.__holding = false;
+        window.__releaseHold = null;
+        const native = navigator.locks.request.bind(navigator.locks);
+        navigator.locks.request = function (name, callback) {
+          return native(name, function () {
+            return new Promise((resolve) => {
+              window.__releaseHold = resolve;
+              window.__holding = true;
+            }).then(function () { return callback(); });
+          });
+        };
+        window.fetch = () => {
+          window.__fetches += 1;
+          return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve(${unknownBody}) });
+        };
+        const input = document.getElementById('endpoint');
+        input.value = ${endpoint};
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('submit').click();
+        return true;
+      })()`);
+      const holding = await pollPage(tabA.evalExpr, '(() => ({ ready: window.__holding === true && (window.__fetches || 0) === 0, fetches: window.__fetches || 0 }))()');
+      assert(holding.ready === true, 'A 要先握住互斥，而且還沒送出');
+      await tabB.evalExpr(`(() => {
+        window.__fetches = 0;
+        window.__bLockDone = false;
+        window.fetch = () => {
+          window.__fetches += 1;
+          return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve(${successBody}) });
+        };
+        const nativeRequest = navigator.locks.request.bind(navigator.locks);
+        navigator.locks.request = function (name, callback) {
+          return nativeRequest(name, function () {
+            try {
+              return callback();
+            } finally {
+              window.__bLockDone = true;
+            }
+          });
+        };
+        const input = document.getElementById('endpoint');
+        input.value = ${endpoint};
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.getElementById('submit').click();
+        return true;
+      })()`);
+      const queued = await pollPage(tabB.evalExpr, `(() => ({
+        ready: document.getElementById('submit').disabled === true && (window.__fetches || 0) === 0 && !document.getElementById('result').textContent.includes('無法鎖定'),
+        fetches: window.__fetches || 0,
+        text: document.getElementById('result').textContent
+      }))()`);
+      assert(queued.ready === true, 'B 要在 A 握住互斥時排隊，期間不送出');
+      await tabB.evalExpr('new Promise((resolve) => setTimeout(resolve, 800))');
+      const stillQueued = await tabB.evalExpr('window.__fetches || 0');
+      const stillHolding = await tabA.evalExpr('({ holding: window.__holding === true, fetches: window.__fetches || 0 })');
+      assert(stillQueued === 0 && stillHolding.holding === true && stillHolding.fetches === 0, '多等一會兒，B 仍在排隊且兩邊都還沒送出');
+      await tabA.evalExpr('window.__releaseHold()');
+      const released = await pollPage(tabB.evalExpr, `(() => {
+        const lock = localStorage.getItem(${lockKey}) || '';
+        return {
+          ready: window.__bLockDone === true
+            && (window.__fetches || 0) === 0
+            && document.getElementById('submit').disabled === true
+            && document.getElementById('ack-sheet').hidden === false
+            && !document.getElementById('result').textContent.includes('已送到')
+            && lock.includes('"state":"unknown"')
+            && lock.includes('SMC900888')
+            && !lock.includes('"state":"submitting"'),
+          fetches: window.__fetches || 0,
+          disabled: document.getElementById('submit').disabled,
+          ackHidden: document.getElementById('ack-sheet').hidden,
+          lockDone: window.__bLockDone === true,
+          text: document.getElementById('result').textContent,
+          lock: lock
+        };
+      })()`);
+      const releasedA = await tabA.evalExpr(`(() => ({ fetches: window.__fetches || 0, lock: localStorage.getItem(${lockKey}) || '' }))()`);
+      assert(released.ready === true && releasedA.fetches === 1, '等 B 取鎖完成後才檢查：B 沒有送出，按鈕停住，UNKNOWN / SMC900888 保留');
+      console.log('test 排隊之後才拿到鎖: pass');
+      browser.ws.close();
+      tabA.ws.close();
+      tabB.ws.close();
+    } finally {
+      tabsChrome.kill('SIGKILL');
+    }
+  }
+} finally {
+  httpServer.kill('SIGKILL');
+}
 
 if (failures.length) {
   console.error('isolated check failed:');

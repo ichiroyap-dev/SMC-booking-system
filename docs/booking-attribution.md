@@ -117,12 +117,12 @@
 
 沒有現行 Apps Script 的去識別化程式，因此後端會不會收下新欄位、會不會改到寫表或寄信，都還沒有證據。狀態就是待驗證。這份 PR 不把新欄位送進正式請求。
 
-正式腳本的原始碼不在這個 repo，隔離腳本**不是**正式腳本的補丁。`apps-script/booking-attribution-isolated.gs` 依前端看得到的 11 欄 POST 契約，另外寫一支只給隔離專案用的實作：缺來源、多來源或格式不對時仍收單，備註原樣寫入，來源欄空白或改成純文字。客人信不放活動代碼；店內信才放來源對帳。步驟與預期的表、信在 `docs/booking-attribution-isolated-runbook.md`。本機對帳腳本是 `tools/test-booking-reconciliation.mjs`。
+正式腳本的原始碼不在這個 repo，隔離腳本**不是**正式腳本的補丁。`.github/pages-unpublished/booking-attribution-isolated.gs` 依前端看得到的 11 欄 POST 契約，另外寫一支只給隔離專案用的實作：缺來源、多來源或格式不對時仍收單，備註原樣寫入，來源欄空白或改成純文字。客人信不放活動代碼；店內信才放來源對帳。步驟與預期的表、信在 `.github/pages-unpublished/booking-attribution-isolated-runbook.md`。本機對帳腳本是 `tools/test-booking-reconciliation.mjs`。
 
 隔離環境要做的檢查（不要用正式試算表、不要部署到正式 web app、不要寫正式訂單）：
 
 1. 不要把隔離腳本貼上正式專案。開一個新的 Apps Script，連一張新的測試試算表。試算表要先有分頁「隔離標記」，A1 為 `SMC-ISOLATED-TEST`，指令碼屬性要寫上這張表的 ID。少了標記或 ID，就應該完全沒有新列、也沒有信。正式腳本原始碼不在 repo，無法在這裡對 diff。
-2. 只用假資料送原有欄位（姓名「測試同學」、電話 `0900000000`、編號例如 `SMC900001`），記下寫進表的欄位與寄出的信。點選方式與 8 筆完整內容在 `docs/booking-attribution-isolated-runbook.md`。
+2. 只用假資料送原有欄位（姓名「測試同學」、電話 `0900000000`、編號例如 `SMC900001`），記下寫進表的欄位與寄出的信。點選方式與 8 筆完整內容在 `.github/pages-unpublished/booking-attribution-isolated-runbook.md`。
 3. 同一隔離複本再送一筆，加上面 9 個欄位。其中一筆的 `utmCampaign` 用 `=1+1` 這類公式開頭的假字串（開頭也可以先有空格、Tab 或換行），確認儲存格是純文字、沒有執行公式。
 4. 比對：原有欄位仍寫入、訂單編號仍會回傳、客人信的正文沒有被新欄位改掉或變成公式。店內信才看得到來源。回應裡沒有備註欄；備註要對提交內容、試算表與兩封信。
 5. 上面四步都通過，而且正式腳本也接上同樣的失敗仍收單行為之後，才把 `js/booking-attribution.js` 的 `SEND_ATTRIBUTION_TO_BACKEND` 改成 `true`，並**另案**部署靜態官網。這份 PR 不改那一行，也不部署。

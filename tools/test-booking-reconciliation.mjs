@@ -3,7 +3,7 @@
 // The in-memory sheet stores setValues strings and does not execute formulas.
 // A leading apostrophe here is not evidence that Google Sheets will skip calculation.
 // Usage: node tools/test-booking-reconciliation.mjs
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
@@ -14,10 +14,12 @@ const require = createRequire(import.meta.url);
 const attr = require(join(root, 'js/booking-attribution.js'));
 const source = readFileSync(join(root, 'js/booking-attribution.js'), 'utf8');
 const html = readFileSync(join(root, 'index.html'), 'utf8');
-const gs = readFileSync(join(root, 'apps-script/booking-attribution-isolated.gs'), 'utf8');
-const runbook = readFileSync(join(root, 'docs/booking-attribution-isolated-runbook.md'), 'utf8');
-const checkPage = readFileSync(join(root, 'tools/isolated-dining-check.html'), 'utf8');
-const checkGuard = readFileSync(join(root, 'tools/isolated-check-guard.js'), 'utf8');
+const unpublishedDir = '.github/pages-unpublished';
+const gs = readFileSync(join(root, unpublishedDir, 'booking-attribution-isolated.gs'), 'utf8');
+const runbook = readFileSync(join(root, unpublishedDir, 'booking-attribution-isolated-runbook.md'), 'utf8');
+const checkPage = readFileSync(join(root, unpublishedDir, 'isolated-dining-check.html'), 'utf8');
+const checkGuard = readFileSync(join(root, unpublishedDir, 'isolated-check-guard.js'), 'utf8');
+const faq = readFileSync(join(root, 'faq.html'), 'utf8');
 const failures = [];
 const assert = (cond, message) => { if (!cond) failures.push(message); };
 
@@ -402,6 +404,7 @@ assert(source.includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '旗標必須維�
 assert(!html.includes('payloadIfAttributionEnabled'), '官網不可呼叫預覽送出');
 assert(!html.includes('booking-attribution-isolated'), '官網不可載入隔離腳本');
 assert(!html.includes('isolated-dining-check'), '官網不可連到隔離驗收頁');
+assert(!html.includes('isolated-check-guard') && !faq.includes('isolated-check-guard'), '公開頁不可載入隔離驗收 guard');
 assert(html.includes('script.google.com/macros/s/' + LIVE_ID + '/exec'), '正式 web app 網址不可改');
 assert(!gs.includes('getActive'), '隔離腳本不可讀取目前打開的試算表');
 assert(!/insertSheet\(\s*MARKER_SHEET/.test(gs), '隔離腳本不可自己建立隔離標記');
@@ -414,6 +417,25 @@ assert(checkGuard.includes(LIVE_ID), '驗收頁要拒絕正式 web app');
 assert(checkGuard.includes('結果未知，先核對試算表、勿重送'), '結果未知時要先核對試算表');
 assert(checkPage.includes('noindex'), '驗收頁不可被索引');
 assert(checkPage.includes('www.sweetmeichicken.com') && checkPage.includes('不要打開'), '驗收頁要寫明不要用正式官網');
+assert(existsSync(join(root, unpublishedDir, 'isolated-dining-check.html')), '驗收頁要留在 repo 的未公開目錄');
+assert(existsSync(join(root, unpublishedDir, 'booking-attribution-isolated.gs')), '隔離腳本要留在 repo 的未公開目錄');
+assert(!existsSync(join(root, 'tools/isolated-dining-check.html')), '驗收頁不可留在會被 Pages 發布的 tools');
+assert(!existsSync(join(root, 'apps-script/booking-attribution-isolated.gs')), '隔離腳本不可留在會被 Pages 發布的 apps-script');
+assert(existsSync(join(root, unpublishedDir, 'booking-attribution-isolated-runbook.md')), '手冊要留在 repo 的未公開目錄');
+assert(existsSync(join(root, unpublishedDir, 'isolated-check-guard.js')), 'guard 要留在 repo 的未公開目錄');
+assert(!existsSync(join(root, 'docs/booking-attribution-isolated-runbook.md')), '手冊不可留在會被 Pages 發布的 docs');
+assert(!existsSync(join(root, 'tools/isolated-check-guard.js')), 'guard 不可留在會被 Pages 發布的 tools');
+assert(unpublishedDir.startsWith('.github/'), '未公開檔必須放在目前建置會排除的 .github');
+assert(checkPage.includes('./isolated-check-guard.js'), '驗收頁要從同一目錄載入 guard');
+assert(checkPage.includes('../../js/booking-attribution.js'), '驗收頁要從新位置載入官網同一支來源腳本');
+assert(runbook.includes('http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html'), '手冊的本機驗收網址要指到未公開路徑');
+assert(runbook.includes('.github/pages-unpublished/booking-attribution-isolated.gs'), '手冊要指向未公開的隔離腳本');
+assert(runbook.includes('.github/pages-unpublished/isolated-check-guard.js'), '手冊要指向未公開的 guard');
+assert(runbook.includes('目前的建置方式會排除'), '手冊要寫明排除只適用目前的建置方式');
+assert(runbook.includes('upload-pages-artifact'), '手冊要提醒 action 換版本後再檢查');
+assert(!runbook.includes('tools/isolated-dining-check.html'), '手冊不可再叫人開公開路徑上的驗收頁');
+assert(!runbook.includes('apps-script/booking-attribution-isolated.gs'), '手冊不可再指向公開路徑上的隔離腳本');
+assert(!runbook.includes('tools/isolated-check-guard.js'), '手冊不可再指向公開路徑上的 guard');
 for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', 'ALLOWED_DEPLOYMENT_IDS', '未全部寄出', 'duplicate']) {
   assert(runbook.includes(phrase), `驗收步驟缺少 ${phrase}`);
 }
