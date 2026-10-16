@@ -396,7 +396,7 @@ assert(checkGuard.includes(LIVE_ID), '驗收頁要拒絕正式 web app');
 assert(checkGuard.includes('結果未知，先核對試算表、勿重送'), '結果未知時要先核對試算表');
 assert(checkPage.includes('noindex'), '驗收頁不可被索引');
 assert(checkPage.includes('www.sweetmeichicken.com') && checkPage.includes('不要打開'), '驗收頁要寫明不要用正式官網');
-for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式']) {
+for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', 'ALLOWED_DEPLOYMENT_IDS', '未全部寄出', 'duplicate']) {
   assert(runbook.includes(phrase), `驗收步驟缺少 ${phrase}`);
 }
 assert(!runbook.includes('備註四邊'), '手冊不可再要求回應裡的備註');
@@ -484,6 +484,7 @@ const beforeMail = sheetRows(isolated, '郵件預覽').length;
 const beforeSent = isolated.box.mails.length;
 const dup = post(isolated, previewPayload(geoFields, 'SMC900101'));
 assertBookingResponse(dup, 'SMC900101');
+assert(dup.duplicate === true && dup.wrote === false && String(dup.message).includes('沒有新增'), '重複編號要明示 duplicate 與 wrote:false，不可理解成這次新增');
 assert(sheetRows(isolated, '訂單').length === beforeDup, '同一編號不可再寫一列');
 assert(sheetRows(isolated, '郵件預覽').length === beforeMail, '同一編號不可再寫一封預覽');
 assert(isolated.box.mails.length === beforeSent, '同一編號不可再寄信');

@@ -115,7 +115,7 @@
       if (verdict && verdict.kind === 'success') {
         var mailLine = verdict.mailed === true
           ? '寄信：已寄出。'
-          : (verdict.mailed === false ? '寄信：沒有寄出。請看試算表的郵件預覽與信箱。' : '寄信：回應沒有附寄信結果，請看信箱。');
+          : (verdict.mailed === false ? '寄信：未全部寄出，請核對信箱。' : '寄信：回應沒有附寄信結果，請看信箱。');
         result.className = 'ok';
         result.textContent = '已送到隔離後端。訂單編號：' + verdict.orderId + '\n' + mailLine + '\n請到隔離試算表、客人信、店內信核對這個編號。回應沒有備註；備註對照上面送出的 note、試算表與兩封信。';
         return;

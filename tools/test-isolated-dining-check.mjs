@@ -55,6 +55,14 @@ assert(guard.classifyResponse('not-json').kind === 'unknown' && guard.classifyRe
 assert(guard.classifyResponse('[]').kind === 'unknown', '陣列回應要當結果未知');
 assert(guard.classifyFetch({ type: 'opaque', status: 0 }, '').kind === 'unknown', '不透明回應要當結果未知');
 assert(guard.classifyFetch({ type: 'basic', status: 200 }, '{"status":"error"}').kind === 'error', '有內文的錯誤仍是錯誤');
+assert(guard.classifyFetch({ type: 'basic', status: 500 }, '{"status":"error","message":"boom"}').kind === 'unknown', '非 2xx 一律結果未知，避免錯誤 JSON 把頁面解鎖');
+assert(guard.endpointProblem('https://script.google.com/macros/s/OTHERDEPLOY/exec') !== '', '白名單以外的部署編號不可送');
+const allowCount = guard.ALLOWED_DEPLOYMENT_IDS.length;
+guard.ALLOWED_DEPLOYMENT_IDS.push(LIVE);
+assert(guard.endpointProblem('https://script.google.com/macros/s/' + LIVE + '/exec') !== '', '正式編號即使寫進白名單也不可送');
+guard.ALLOWED_DEPLOYMENT_IDS.length = allowCount;
+const duplicateVerdict = guard.classifyResponse('{"status":"success","orderId":"SMC900101","duplicate":true,"wrote":false,"mailed":false,"message":"這個編號已經收過，這次沒有新增。"}');
+assert(duplicateVerdict.ok === false && duplicateVerdict.kind !== 'success' && duplicateVerdict.message.includes('沒有新增'), '重複回應不可當成這次新增成功');
 const unknownBody = guard.classifyResponse('{"status":"unknown","orderId":"SMC900401","mailed":false,"message":"結果未知，先核對試算表、勿重送"}');
 assert(unknownBody.kind === 'unknown' && unknownBody.orderId === 'SMC900401' && unknownBody.message.includes('SMC900401') && unknownBody.message.includes('勿重送'), 'unknown 回應要帶訂單編號與勿重送');
 const mailedOk = guard.classifyResponse('{"status":"success","orderId":"SMC900222","mailed":true}');
@@ -222,7 +230,9 @@ await withPage(async (evalExpr, reload, cdpCall) => {
       setTimeout(() => resolve({
         className: document.getElementById('result').className,
         text: document.getElementById('result').textContent,
-        fetches: window.__fetches
+        fetches: window.__fetches,
+        disabled: document.getElementById('submit').disabled,
+        ackHidden: document.getElementById('ack-sheet').hidden
       }), 40);
     })`);
   }
@@ -230,8 +240,15 @@ await withPage(async (evalExpr, reload, cdpCall) => {
   const errorUi = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"error"}') }); }`);
   assert(errorUi.fetches === 1 && errorUi.className === 'bad' && !errorUi.text.includes('已送到'), '錯誤 JSON 不可顯示綠色成功');
 
+  const httpUi = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 500, type: 'basic', text: () => Promise.resolve('{"status":"error","message":"boom"}') }); }`);
+  assert(httpUi.fetches === 1 && httpUi.className === 'warn' && httpUi.text.includes('結果未知') && !httpUi.text.includes('已送到'), '非 2xx 要當結果未知');
+  assert(httpUi.disabled === true && httpUi.ackHidden === false, '非 2xx 不可把頁面解鎖');
+
   const successUi = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC900222","mailed":true}') }); }`);
   assert(successUi.className === 'ok' && successUi.text.includes('SMC900222') && successUi.text.includes('寄信：已寄出'), '有訂單編號的成功才顯示綠色，並寫出寄信結果');
+
+  const partialMail = await submitWith(`() => { window.__fetches += 1; return Promise.resolve({ status: 200, type: 'basic', text: () => Promise.resolve('{"status":"success","orderId":"SMC900333","mailed":false}') }); }`);
+  assert(partialMail.className === 'ok' && partialMail.text.includes('SMC900333') && partialMail.text.includes('未全部寄出，請核對信箱'), '寄信沒有全部成功時要寫未全部寄出');
 
   const holdUi = await evalExpr(`new Promise((resolve) => {
     const ack = document.getElementById('ack-sheet');
@@ -405,6 +422,40 @@ await withPage(async (evalExpr, reload, cdpCall) => {
   assert(priorTab.lock && priorTab.lock.includes('"state":"unknown"') && priorTab.lock.includes('SMC900888') && !priorTab.lock.includes('submitting'), '事先開啟的分頁不可把別人的未知鎖覆寫成空編號');
   assert(priorTab.className !== 'ok' && !priorTab.text.includes('已送到'), '事先開啟的分頁不可顯示成功');
   console.log('test 事先開啟的分頁不可重送: pass');
+
+  const lateUi = await evalExpr(`new Promise((resolve) => {
+    const ack = document.getElementById('ack-sheet');
+    if (ack && !ack.hidden) ack.click();
+    window.SmcIsolatedCheck.SUBMIT_TIMEOUT_MS = 40;
+    window.__fetches = 0;
+    window.fetch = () => {
+      window.__fetches += 1;
+      return new Promise((resolveFetch) => {
+        setTimeout(() => resolveFetch({
+          status: 200,
+          type: 'basic',
+          text: () => Promise.resolve('{"status":"success","orderId":"SMC900777","mailed":true}')
+        }), 150);
+      });
+    };
+    const input = document.getElementById('endpoint');
+    input.value = ${JSON.stringify(OK)};
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('submit').click();
+    setTimeout(() => resolve({
+      fetches: window.__fetches,
+      className: document.getElementById('result').className,
+      text: document.getElementById('result').textContent,
+      disabled: document.getElementById('submit').disabled,
+      ackHidden: document.getElementById('ack-sheet').hidden,
+      lock: localStorage.getItem(${lockKey})
+    }), 260);
+  })`);
+  assert(lateUi.fetches === 1 && lateUi.className === 'warn' && lateUi.text.includes('結果未知，先核對試算表、勿重送'), '逾時後晚到的成功不可翻成綠燈');
+  assert(!lateUi.text.includes('已送到') && !lateUi.text.includes('SMC900777'), '晚到的訂單編號不可覆蓋未知結果');
+  assert(lateUi.disabled === true && lateUi.ackHidden === false, '晚到的成功不可把頁面解鎖');
+  assert(lateUi.lock && lateUi.lock.includes('"state":"unknown"') && !lateUi.lock.includes('SMC900777'), '晚到的成功不可把鎖改成完成');
+  console.log('test 逾時後晚到的成功: pass');
 
   const commitAt = page.indexOf('commitLock', submitAt);
   assert(commitAt > rereadAt && commitAt < fetchAt, '送出前要先寫入鎖並讀回確認');

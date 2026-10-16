@@ -8,6 +8,7 @@
   if (root) root.SmcIsolatedCheck = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   var LIVE_ID = 'AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q';
+  var ALLOWED_DEPLOYMENT_IDS = ['ISOLATEDTEST'];
   var UNKNOWN_MESSAGE = '結果未知，先核對試算表、勿重送';
   var LOCK_KEY = 'smc_isolated_check_lock_v1';
   var PROBE_KEY = 'smc_isolated_check_probe_v1';
@@ -61,6 +62,11 @@
     if (decoded == null) return '部署編號無法解讀。';
     if (decoded === LIVE_ID || parts[3] === LIVE_ID) return '這是正式 web app，已停住，沒有送出。請貼隔離部署的網址。';
     if (!/^[A-Za-z0-9_-]+$/.test(decoded)) return '部署編號格式不對。';
+    var allowed = false;
+    for (var i = 0; i < ALLOWED_DEPLOYMENT_IDS.length; i += 1) {
+      if (ALLOWED_DEPLOYMENT_IDS[i] === decoded) allowed = true;
+    }
+    if (!allowed) return '這個部署編號不在隔離白名單，已停住，沒有送出。';
     return '';
   }
 
@@ -77,6 +83,12 @@
     else if (typeof parsed.orderId === 'number' && isFinite(parsed.orderId)) orderId = String(parsed.orderId);
     var mailed = parsed.mailed === true ? true : (parsed.mailed === false ? false : null);
     if (parsed.status === 'success' && orderId) {
+      if (parsed.duplicate === true || parsed.wrote === false) {
+        var dupMessage = typeof parsed.message === 'string' && parsed.message.trim()
+          ? parsed.message.trim()
+          : '這個編號已經收過，這次沒有新增。';
+        return { ok: false, kind: 'error', orderId: orderId, message: dupMessage, mailed: false };
+      }
       return { ok: true, kind: 'success', orderId: orderId, message: '', mailed: mailed };
     }
     if (parsed.status === 'error') {
@@ -193,11 +205,14 @@
 
   function classifyFetch(response, body) {
     if (!response || response.type === 'opaque' || response.status === 0) return unknownVerdict();
+    var status = Number(response.status);
+    if (!(status >= 200 && status < 300)) return unknownVerdict();
     return classifyResponse(body);
   }
 
   return {
     LIVE_ID: LIVE_ID,
+    ALLOWED_DEPLOYMENT_IDS: ALLOWED_DEPLOYMENT_IDS,
     UNKNOWN_MESSAGE: UNKNOWN_MESSAGE,
     LOCK_KEY: LOCK_KEY,
     SUBMIT_TIMEOUT_MS: SUBMIT_TIMEOUT_MS,

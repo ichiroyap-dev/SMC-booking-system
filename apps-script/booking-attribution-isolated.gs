@@ -380,6 +380,9 @@ function acceptBooking_(payload) {
       );
       if (ids.indexOf(orderId) !== -1) {
         result.response.mailed = false;
+        result.response.duplicate = true;
+        result.response.wrote = false;
+        result.response.message = '這個編號已經收過，這次沒有新增。';
         outcome = { response: result.response, wrote: false, mailed: false };
       } else {
         attemptedWrite = true;
