@@ -154,9 +154,12 @@ Node `v22.14.0`。紅燈是 `tools/test-pr47-r6.mjs` 配上固定腳本 `a50a364
 git show a50a3645f848ef0221411c7589f1ca461539e240:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
 node tools/test-pr47-r6.mjs --item cell
 node tools/test-pr47-r6.mjs --item allow
+git show a50a3645f848ef0221411c7589f1ca461539e240:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
 node tools/test-pr47-r6.mjs --item docs
 node tools/test-pr47-r6.mjs --item nit
 ```
+
+`docs` 紅燈必須連舊手冊一起換回。只換舊 `.gs`、留下新手冊，文件測試不會紅。
 
 | 項目 | 紅燈 | 綠燈 |
 | --- | --- | --- |
@@ -166,6 +169,24 @@ node tools/test-pr47-r6.mjs --item nit
 | helper 私有與重複 wrote/mailed | 結束碼 1，5 項。`isolated-red-pr47-r6-nit.log` | 結束碼 0。`isolated-green-pr47-r6-nit.log` |
 
 本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
+## PR47 第 6 輪 NIT（文件）
+
+Codex 第 6 輪 `APPROVE_WITH_NITS`。這輪只改文件，不改 `.gs`、不改 HTML。程式仍停在 `fa16c4356f8064ae6514d211b9931c0aff9eae61`。
+
+1. `.gs` 第 38 行「不可從編輯器選單或 google.script.run 跑」留著不改。官方只保證 `_` 函式不能被 `google.script.run` 呼叫；編輯器選單有沒有藏起來，這輪沒實證。依硬規則不改 `.gs` 註解。
+2. 手冊補訂單分頁至少1000列、欄擴至 AAA。三筆各自在執行前佈置，不要一次全部放好；預期位置仍是 A9:V9、A11:V11（A10 公式仍在）、A15:V15（AAA14 不可被蓋），最後再跑 201 判重複。
+3. 上面 `docs` 紅燈指令改成同時換回舊手冊。
+
+Node `v22.14.0`。紅燈是這輪新增的文件斷言配上尚未改的手冊與 verification。綠燈是同一指令、文件放回這輪。
+
+```bash
+node tools/test-pr47-r6.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 1000 列／AAA、逐筆佈置、docs 紅燈也換舊手冊 | 結束碼 1，4 項。`isolated-red-pr47-r6-docs-nits.log` | 結束碼 0。`isolated-green-pr47-r6-docs-nits.log` |
 
 ## 合併到 main 之後
 

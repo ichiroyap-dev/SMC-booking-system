@@ -395,6 +395,13 @@ function itemDocs() {
   assert(runbook.includes('A11:V11') && runbook.includes('=""') && runbook.includes('A10'), '手冊要寫 202 寫入 A11:V11，且 A10 公式仍在');
   assert(runbook.includes('A15:V15') && runbook.includes('AAA14'), '手冊要寫 203 寫入 A15:V15，且 AAA14 不可被蓋');
   assert(runbook.includes('再跑') && runbook.includes('201') && (runbook.includes('重複') || runbook.includes('duplicate')), '手冊要寫最後再跑 201 必須判成重複');
+  assert(runbook.includes('至少1000列') && runbook.includes('欄擴至 AAA'), '手冊要寫訂單分頁至少1000列、欄擴至 AAA');
+  assert(runbook.includes('各自在執行前佈置') && runbook.includes('不要一次全部放好'), '三筆要各自在執行前佈置，不要一次全部放好');
+  assert(runbook.includes('A10') && runbook.includes('第 11 列') && runbook.includes('A9:V9'), '手冊要寫若先放 A10 公式，201 會寫到第 11 列而不是 A9:V9');
+  assert(
+    verification.includes('a50a3645f848ef0221411c7589f1ca461539e240:.github/pages-unpublished/booking-attribution-isolated-runbook.md'),
+    'docs 紅燈指令要同時換回舊手冊'
+  );
 }
 
 function itemNit() {
