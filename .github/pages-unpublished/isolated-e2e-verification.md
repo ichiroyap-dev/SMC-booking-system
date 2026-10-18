@@ -87,14 +87,14 @@ Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`�
 
 全套綠燈：`node tools/test-booking-reconciliation.mjs` 結束碼 0，`isolated-green-recon-preflag.log`。`node tools/test-isolated-e2e.mjs` 結束碼 0，`isolated-green-e2e-preflag.log`。`node tools/test-booking-backend-contract.mjs` 結束碼 0。
 
-決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列用 `values.append`、`RAW`、`INSERT_ROWS`，而且在 LockService 裡面，不看快取最後一列加一。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間、收到時間存試算表序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
+決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列在鎖內先 `values.get` 整張表，再用 `values.update` RAW 寫到最後一筆有值的下一列，並核對 `updatedRange`。不看快取最後一列加一，也不用範圍 A1 的 `values.append`。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間存試算表序號。收到時間用試算表時區的牆鐘序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
 
-固定檔案停在 commit `cff5e86a1512734681ef47981c90d776e22497e5`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
+固定檔案停在 commit `46a7254b15884868dff6f5593abfb65ed3fba288`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
 
 | 檔案 | raw 連結 | SHA-256 |
 | --- | --- | --- |
-| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/cff5e86a1512734681ef47981c90d776e22497e5/.github/pages-unpublished/booking-attribution-isolated.gs | `9875b31e3d9b150ae4151c12d32ed4fe0609bf02961ed5ca69056e2ee1b71c9e` |
-| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/cff5e86a1512734681ef47981c90d776e22497e5/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
+| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/46a7254b15884868dff6f5593abfb65ed3fba288/.github/pages-unpublished/booking-attribution-isolated.gs | `9f8a3072cb6ddd77d20238061414f59adf80706c46fb9c727f173e7c5c41221c` |
+| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/46a7254b15884868dff6f5593abfb65ed3fba288/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
 
 ## 第 8 輪原文
 
