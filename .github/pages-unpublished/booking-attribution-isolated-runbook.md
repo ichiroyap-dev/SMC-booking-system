@@ -12,13 +12,13 @@
 
 ## Owner 三步
 
-必須是新建的獨立試算表專案，不要貼進任何既有專案。程式停在 commit `3e6c1854f7ee678407e7f71d74340087fc390a45`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
+必須是新建的獨立試算表專案，不要貼進任何既有專案。程式停在 commit `5f89c717b6763b767ac31bc98a88616ade8bbd76`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
 
 1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。這個信箱就是下一步的 `SMC_SHOP_EMAIL`。
 2. **核對程式，先跑八案例。** 未核對雜湊前不要貼。在 PowerShell 下載後執行 `Get-FileHash .\檔名 -Algorithm SHA256`，要和下面的預期值相同。
-   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/booking-attribution-isolated.gs
-     預期 SHA-256 `b8aaf6eeaf3248875734dfef71796a9534a6c87df6d2534d966046fe30a8eb54`
-   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/IsolatedCheck.html
+   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/booking-attribution-isolated.gs
+     預期 SHA-256 `6e2375b719be7f1d2c165e05c6b800eeffabe8aad9b7f3450b909180d631c054`
+   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/IsolatedCheck.html
      預期 SHA-256 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
    - 從這張新試算表開 Apps Script。貼上腳本，再「+」→ HTML，檔名 `IsolatedCheck`。不必手改 `appsscript.json`。編輯器左側「服務」旁按「+」，選 Google Sheets API，按新增。預設的 Apps Script Cloud 專案會自己打開這個 API，不必再去 Cloud Console。存檔後 `appsscript.json` 會出現 `enabledAdvancedServices`：`userSymbol` 是 `Sheets`、`version` 是 `v4`、`serviceId` 是 `sheets`。
    - 設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。
@@ -194,12 +194,12 @@
 
 ## 固定版本
 
-要貼的兩個檔案停在 commit `3e6c1854f7ee678407e7f71d74340087fc390a45`。這段連結是下一個 commit 寫上的，不會引用自己。
+要貼的兩個檔案停在 commit `5f89c717b6763b767ac31bc98a88616ade8bbd76`。這段連結是下一個 commit 寫上的，不會引用自己。
 
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/booking-attribution-isolated.gs
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/booking-attribution-isolated.gs
   - `Get-FileHash .\booking-attribution-isolated.gs -Algorithm SHA256`
-  - 預期 `b8aaf6eeaf3248875734dfef71796a9534a6c87df6d2534d966046fe30a8eb54`
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/IsolatedCheck.html
+  - 預期 `6e2375b719be7f1d2c165e05c6b800eeffabe8aad9b7f3450b909180d631c054`
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/IsolatedCheck.html
   - `Get-FileHash .\IsolatedCheck.html -Algorithm SHA256`
   - 預期 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
 
