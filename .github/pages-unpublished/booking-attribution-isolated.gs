@@ -7,8 +7,11 @@
  *
  * 來源 9 欄可有可無。缺欄、多欄、型別不對，都仍收單：備註原樣保留意思，壞掉的來源改空白。
  * 客人信不放活動代碼。店內信才放來源對帳。
- * 寫入後先 flush，再讀回同一列。訂單編號或任一欄對不上、或讀不回來，回結果未知且不寄信。
- * 確認成功並放開鎖之後才寄信。
+ * 寫入後先 flush，再讀回同一列。訂單編號或任一欄對不上、或讀不回來，就停下：
+ * 回結果未知、不寄信、請核對原列，不要重送。比對保留防護單引號，少了引號不算一致。
+ * 確認成功並放開鎖之後才寄信。兩封信的收件人都固定為 SMC_SHOP_EMAIL，不採用 payload 的 email。
+ * 網頁驗收用 doGet 的 HtmlService 頁 IsolatedCheck，由 google.script.run 呼叫 submitIsolatedFromPage。
+ * 部署存取維持「只有我」。不要改成「任何人」。
  * 旗標 SEND_ATTRIBUTION_TO_BACKEND 仍由官網控制；這支腳本不會把它打開。
  *
  * 使用前在指令碼屬性設定（試算表 ID 不可省略，腳本也不會改寫「目前打開的那張表」）：
@@ -310,15 +313,17 @@ function unknownOutcome_(orderId) {
     response: {
       status: 'unknown',
       orderId: orderId,
-      message: '結果未知，先核對試算表、勿重送',
-      mailed: false
+      message: '結果未知，先核對試算表、勿重送。讀回與寫入不一致就停下，請核對原列，不要重送',
+      mailed: false,
+      wrote: true,
+      duplicate: false
     },
     wrote: true,
     mailed: false
   };
 }
 
-// flush 之後把剛寫入的那一列讀回來。編號或任一欄對不上，就還沒確認提交。
+// flush 之後把剛寫入的那一列讀回來。編號或任一欄對不上，含少了防護單引號，就停下。不寄信，請核對原列，不要重送。
 function confirmOrderRow_(sheet, orderId, expectedRow) {
   if (!sheet || !expectedRow || !orderId) return false;
   var width = expectedRow.length;
@@ -418,7 +423,7 @@ function acceptBooking_(payload) {
         payload,
         orderId,
         nowIso_(),
-        guestAddress_(payload.email),
+        guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || ''),
         guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
       );
       if (ids.indexOf(orderId) !== -1) {
@@ -433,6 +438,8 @@ function acceptBooking_(payload) {
         var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
         writeRow_(mailSheet, mailPreviewRow_(result));
         result.response.mailed = false;
+        result.response.wrote = true;
+        result.response.duplicate = false;
         pendingMail = result;
         pendingRow = result.row;
         outcome = { response: result.response, wrote: true, mailed: false };
@@ -479,6 +486,25 @@ function acceptBooking_(payload) {
     outcome.mailed = mailed;
   }
   return outcome;
+}
+
+function submitIsolatedFromPage(payload) {
+  try {
+    if (!isIsolated_()) {
+      return { status: 'error', message: BLOCKED_MESSAGE, mailed: false, wrote: false, duplicate: false };
+    }
+    var body = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    return acceptBooking_(body).response;
+  } catch (err) {
+    return { status: 'error', message: '隔離腳本無法完成寫入。', mailed: false, wrote: false, duplicate: false };
+  }
+}
+
+function doGet() {
+  if (!isIsolated_()) return HtmlService.createHtmlOutput(BLOCKED_MESSAGE);
+  return HtmlService.createHtmlOutputFromFile('IsolatedCheck')
+    .setTitle('隔離驗收')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
 }
 
 function doPost(e) {

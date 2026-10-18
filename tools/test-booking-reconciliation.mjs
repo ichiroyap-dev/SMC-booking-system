@@ -572,7 +572,7 @@ for (const id of Object.keys(expectedAttr)) {
   }
   const sentGuest = isolated.box.mails.filter((item) => item.subject === mail['客人主旨']);
   const sentShop = isolated.box.mails.filter((item) => item.subject === mail['店內主旨']);
-  assert(sentGuest.length === 1 && sentGuest[0].body === guest && sentGuest[0].to === 'hub-test@example.com', `${id} 寄出的客人信要與固定預期一致，且只一封`);
+  assert(sentGuest.length === 1 && sentGuest[0].body === guest && sentGuest[0].to === 'shop-test@example.com', `${id} 寄出的客人信要與固定預期一致，收件人固定為測試信箱，且只一封`);
   assert(sentShop.length === 1 && sentShop[0].body === shop && sentShop[0].to === 'shop-test@example.com', `${id} 寄出的店內信要與固定預期一致，且只一封`);
 }
 

@@ -15,6 +15,7 @@ const attr = require(join(root, 'js/booking-attribution.js'));
 const unpublished = '.github/pages-unpublished';
 const gsPath = join(root, unpublished, 'booking-attribution-isolated.gs');
 const pagePath = join(root, unpublished, 'isolated-dining-check.html');
+const appsPagePath = join(root, unpublished, 'IsolatedCheck.html');
 const guardPath = join(root, unpublished, 'isolated-check-guard.js');
 const gs = readFileSync(gsPath, 'utf8');
 const pageHtml = readFileSync(pagePath, 'utf8');
@@ -95,6 +96,12 @@ function memorySpreadsheet(box) {
                   return copy;
                 });
               }
+            if (box.failReadAfterFlush === 'formula') {
+              return out.map((line) => line.map((cell) => {
+                const text = cell == null ? '' : String(cell);
+                return /^'[=+\-@]/.test(text) ? '2' : cell;
+              }));
+            }
             }
             return out;
           },
@@ -125,6 +132,7 @@ function loadIsolated(options = {}) {
     lockLog: [],
     writes: [],
     readbacks: [],
+    htmlFiles: [],
     flushed: false,
     failReadAfterFlush: options.failReadAfterFlush || '',
     partialShopMail: options.partialShopMail === true,
@@ -152,6 +160,24 @@ function loadIsolated(options = {}) {
         return {
           getProperty(key) { return Object.prototype.hasOwnProperty.call(props, key) ? props[key] : null; },
           setProperty(key, value) { props[key] = String(value); },
+        };
+      },
+    },
+    HtmlService: {
+      XFrameOptionsMode: { DEFAULT: 'DEFAULT' },
+      createHtmlOutput(text) {
+        return {
+          setTitle() { return this; },
+          setXFrameOptionsMode() { return this; },
+          getContent() { return String(text); },
+        };
+      },
+      createHtmlOutputFromFile(name) {
+        box.htmlFiles.push(name);
+        return {
+          setTitle() { return this; },
+          setXFrameOptionsMode() { return this; },
+          getContent() { return readFileSync(appsPagePath, 'utf8'); },
         };
       },
     },
@@ -428,10 +454,10 @@ function assertSourceMatches(row, expected, label) {
 }
 
 function assertMails(isolated, orderId, shopNeeds, label) {
-  const guest = isolated.box.mails.filter((item) => item.subject.includes(orderId) && !item.subject.includes('店內對帳'));
+  const guest = isolated.box.mails.filter((item) => item.subject.includes('預約申請已收到') && item.subject.includes(orderId));
   const shop = isolated.box.mails.filter((item) => item.subject.includes('店內對帳') && item.subject.includes(orderId));
-  assert(guest.length === 1 && guest[0].to === 'test@example.com' && guest[0].body.includes('訂單編號：' + orderId), `${label}：客人信要有同一個編號`);
-  assert(shop.length === 1 && shop[0].to === 'shop-test@example.com' && shop[0].body.includes('訂單編號：' + orderId), `${label}：店內信要有同一個編號`);
+  assert(guest.length === 1 && guest[0].to === 'shop-test@example.com' && guest[0].body.includes('訂單編號：' + orderId), `${label}：客人信要寄到 SMC_SHOP_EMAIL，且編號相同`);
+  assert(shop.length === 1 && shop[0].to === 'shop-test@example.com' && shop[0].body.includes('訂單編號：' + orderId), `${label}：店內信要寄到 SMC_SHOP_EMAIL，且編號相同`);
   for (const token of GUEST_CODES) assert(!guest[0] || !guest[0].body.includes(token), `${label}：客人信不可出現 ${token}`);
   for (const token of shopNeeds) assert(shop[0] && shop[0].body.includes(token), `${label}：店內信要有 ${token}`);
 }
@@ -595,9 +621,9 @@ async function partialMailFlow() {
   const response = JSON.parse(responseText(page));
   assert(response.status === 'success' && response.mailed === false && response.orderId, '店內信失敗仍要收單，並標明沒有全部寄出');
   assertReadbackBeforeMail(isolated.box, '部分寄信', 0);
-  const guest = isolated.box.mails.filter((item) => item.to === 'test@example.com');
-  const shop = isolated.box.mails.filter((item) => item.to === 'shop-test@example.com');
-  assert(guest.length === 1 && guest[0].body.includes(response.orderId), '客人信已模擬寄出，編號相同');
+  const guest = isolated.box.mails.filter((item) => item.subject.includes('預約申請已收到'));
+  const shop = isolated.box.mails.filter((item) => item.subject.includes('店內對帳'));
+  assert(guest.length === 1 && guest[0].to === 'shop-test@example.com' && guest[0].body.includes(response.orderId), '客人信已模擬寄到測試信箱，編號相同');
   assert(shop.length === 0, '店內信這次沒有寄出');
   const row = rowById(isolated, response.orderId);
   assert(row && row['點擊識別碼'] === 'TESTGCLID9000' && row['訂單編號'] === response.orderId, '部分寄信失敗時表格仍留著 gclid 與同一個編號');
@@ -605,6 +631,79 @@ async function partialMailFlow() {
   console.log('flow 寄信部分失敗: ' + flowLine(isolated.box));
   console.log('ui 寄信部分失敗: ' + page.elements.result.className + ' | ' + oneLine(page.elements.result.textContent));
   console.log('test 寄信部分失敗: ' + (failures.length === before ? 'pass' : 'FAIL'));
+}
+
+function privateEntryAndFormula() {
+  const before = failures.length;
+  const runbook = readFileSync(join(root, unpublished, 'booking-attribution-isolated-runbook.md'), 'utf8');
+  let appsPage = '';
+  try {
+    appsPage = readFileSync(appsPagePath, 'utf8');
+  } catch (err) {
+    appsPage = '';
+  }
+  assert(appsPage.length > 0, '要有私人 HtmlService 頁 IsolatedCheck.html');
+  assert(gs.includes("HtmlService.createHtmlOutputFromFile('IsolatedCheck')"), '私人頁面要由 HtmlService 從 IsolatedCheck 產出');
+  assert(typeof loadIsolated().sandbox.submitIsolatedFromPage === 'function', '要有 submitIsolatedFromPage 給 google.script.run 呼叫');
+  assert(typeof loadIsolated().sandbox.runIsolatedEightCases === 'function', '編輯器驗收函式 runIsolatedEightCases 要在');
+  assert(appsPage.includes('google.script.run') && appsPage.includes('submitIsolatedFromPage'), '私人頁面要用 google.script.run 呼叫隔離後端');
+  assert(!appsPage.includes('fetch(') && !appsPage.includes('script.google.com'), '私人頁面不可跨來源 fetch 部署網址');
+  assert(runbook.includes('只有我') && runbook.includes('不可') && runbook.includes('任何人'), '手冊要寫明存取維持只有我，不可改成任何人');
+  assert(runbook.includes('實測第一步') && runbook.includes('runIsolatedEightCases'), '實測第一步要在編輯器執行八案例');
+  assert(runbook.includes('google.script.run'), '手冊的網頁驗收要改走 google.script.run');
+  assert(runbook.includes('127.0.0.1') && runbook.includes('不能拿來送私人部署'), '本機頁面要標明不能拿來送私人部署');
+  assert(runbook.includes('mailed') && runbook.includes('duplicate') && runbook.includes('wrote'), '手冊要列出 mailed、duplicate、wrote');
+  assert(gs.includes('原列') && runbook.includes('原列') && runbook.includes('不要重送'), '讀回不一致要寫明停下、核對原列、不要重送');
+  const confirmSrc = gs.slice(gs.indexOf('function confirmOrderRow_'), gs.indexOf('function acceptBooking_'));
+  assert(confirmSrc.includes('actual !== want') && !confirmSrc.includes('replace('), '讀回比對要保留防護單引號，不可放寬');
+  const isolated = loadIsolated({ sheetId: 'private-sheet' });
+  if (typeof isolated.sandbox.submitIsolatedFromPage !== 'function') {
+    console.log('test 私人入口與公式往返: FAIL');
+    return;
+  }
+  const attack = isolated.sandbox.submitIsolatedFromPage({
+    action: 'book', type: 'dining', name: '測試同學', phone: '0900000000', email: 'attacker@example.com',
+    people: '2', tables: '1', date: '2026-10-22', time: '12:00', note: '=1+1', orderItems: '',
+    source: 'google', utmSource: 'google', utmMedium: 'cpc', utmCampaign: '+1+1', utmContent: '-1+1',
+    utmTerm: '@cmd', utmAdgroup: '', adgroupBucket: '', gclid: '',
+  });
+  assert(attack && attack.status === 'success' && attack.orderId, '私人頁面送出要能收單');
+  assert(attack.mailed === true && attack.wrote === true && attack.duplicate !== true, '成功回應要帶 mailed、wrote，且不是重複');
+  const sentTo = isolated.box.mails.map((item) => item.to);
+  assert(sentTo.length === 2 && sentTo.every((to) => to === 'shop-test@example.com'), '兩封信的收件人都要固定為 SMC_SHOP_EMAIL');
+  assert(!sentTo.includes('attacker@example.com'), 'payload 裡的信箱不可拿來寄信');
+  const row = rowById(isolated, attack.orderId);
+  assert(row && row['信箱'] === 'attacker@example.com', '表格信箱欄仍是送出內容，不是收件人');
+  assert(row && row['備註'] === "'=1+1" && row['備註'] !== '2', '等號開頭寫入後讀回仍是文字，不是算式結果');
+  assert(row && row['utm活動'] === "'+1+1" && row['utm內容'] === "'-1+1" && row['utm關鍵字'] === "'@cmd", '+ - @ 開頭讀回要與寫入的防護文字一致');
+  const direct = isolated.sandbox.confirmOrderRow_;
+  assert(direct({
+    getLastRow() { return 1; },
+    getRange() { return { getValues() { return [['SMC900776', "'=1+1"]]; } }; },
+  }, 'SMC900777', ['SMC900777', '=1+1']) === false, '訂單編號對不上不可算讀回成功');
+  assert(direct({
+    getLastRow() { return 1; },
+    getRange() { return { getValues() { return [['SMC900777', "'=1+1"]]; } }; },
+  }, 'SMC900777', ['SMC900777', '=1+1']) === true, '帶防護單引號的讀回要與寫入契約一致');
+  assert(direct({
+    getLastRow() { return 1; },
+    getRange() { return { getValues() { return [['SMC900777', '=1+1']]; } }; },
+  }, 'SMC900777', ['SMC900777', '=1+1']) === false, '讀回少了防護單引號不可放寬成一致');
+  const computed = loadIsolated({ sheetId: 'formula-computed', failReadAfterFlush: 'formula' });
+  const computedRes = computed.sandbox.submitIsolatedFromPage({
+    action: 'book', type: 'dining', name: '測試同學', phone: '0900000000', email: 'attacker@example.com',
+    people: '2', tables: '1', date: '2026-10-22', time: '12:00', note: '=1+1', orderItems: '',
+  });
+  assert(computedRes.status === 'unknown' && computedRes.mailed === false, '讀回變成公式結果就要停下，不可寄信');
+  assert(String(computedRes.message).includes('原列') && String(computedRes.message).includes('不要重送'), '不一致的回應要寫核對原列、不要重送');
+  assert(computed.box.mails.length === 0, '公式讀回不一致不可寄信');
+  const kept = rowById(computed, computedRes.orderId);
+  assert(kept && kept['備註'] === "'=1+1" && kept['備註'] !== '2', '停下後原列仍是寫入的文字，供人工核對');
+  const opened = isolated.sandbox.doGet();
+  assert(isolated.box.htmlFiles.includes('IsolatedCheck') && opened.getContent().includes('google.script.run'), 'doGet 要送出私人頁面');
+  isolated.props.SMC_ATTRIBUTION_ISOLATED = 'no';
+  assert(!isolated.sandbox.doGet().getContent().includes('google.script.run'), '沒標成隔離時不可送出驗收頁');
+  console.log('test 私人入口與公式往返: ' + (failures.length === before ? 'pass' : 'FAIL'));
 }
 
 async function main() {
@@ -615,6 +714,7 @@ async function main() {
   await duplicateFlow();
   await timeoutFlow();
   await partialMailFlow();
+  privateEntryAndFormula();
   if (failures.length) {
     console.error('isolated e2e failed: ' + failures.length);
     for (const line of failures) console.error(' - ' + line);
