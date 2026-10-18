@@ -10,15 +10,15 @@
 
 - `formulaGuard_`：不在前面加單引號，也不刪姓名、備註開頭的 `'`。
 - `textStore_`、`phoneStore_`、`numberStore_`、`dateStore_`、`timeStore_`、`datetimeStore_`：逐欄見 `docs/booking-sheet-columns.md`。
-- `writeRow_`：`values.append`（`Sheets.Spreadsheets.Values.append`），`valueInputOption=RAW`，`insertDataOption=INSERT_ROWS`。
+- `writeRow_`：在鎖內用 `values.get` 看整張表的值，再用 `values.update`、`valueInputOption=RAW` 寫到最後一筆有值的下一列。核對回應的 `updatedRange`。不要用 `A1` 的 `values.append`，那個只接在包含 A1 的表格後面。
 - `applyColumnFormats_`：電話 `@`，人數與桌數 `0`，日期 `yyyy-mm-dd`，時間 `hh:mm`，收到時間 `yyyy-mm-dd hh:mm:ss`。
 - `sameStored_`、`confirmOrderRow_`：文字原樣比對；數字和日期比序號；`getFormula` 必須是空的。對不上就停下，不寄信。
 - `attributionFromPayload_`：9 欄可有可無。缺欄、多欄、型別不對仍收單，壞掉的來源改空白。
-- 寫入前後的 `LockService.getScriptLock`。append 必須在鎖裡面。
+- 寫入前後的 `LockService.getScriptLock`。`values.get` 和 `values.update` 必須在鎖裡面。
 
 不要搬進正式專案：`doGet`、`runIsolatedEightCases`、`submitIsolatedFromPage`、隔離標記、`_testOrderId`、把兩封信都改寄到測試信箱。正式腳本要留下自己的 `doPost`。
 
-隔離腳本在客人信丟錯後仍會嘗試店內信。正式寄信現況不在 repo，不可假設相同。要不要做成一樣，另測再決定。這輪不改正式寄信。
+隔離腳本在客人信丟錯後仍會嘗試店內信。正式要不要一樣，需 Owner 決定。決策前維持正式現況，這輪不改正式寄信。
 
 ## 正式專案要加的服務和範圍
 
@@ -50,3 +50,32 @@
 4. 連續兩筆、以及表尾有空列或格式時，各佔一列，不互相覆蓋。
 5. 客人信沒有活動代碼。11 欄缺來源時仍回訂單編號。
 6. 任一步未知就停，不重送，不補寄，不開旗標。
+
+## 正式表的欄位不能照搬隔離的 22 欄
+
+內用「工作表1」既有的 A–M 共 13 欄維持原欄名、原順序、原位置。不要插入、不要改名、不要換成隔離腳本的表頭。來源和歸因欄只能接在 M 之後。
+
+外帶分頁的欄位和內用不同，要另外列自己的映射。不可沿用工作表1 的 A–M，也不可把隔離腳本的 22 欄表頭抄進去。欄名以正式表副本上看到的為準，這個 repo 沒有正式腳本，不要在這裡猜欄名。
+
+## 不要每次重設整欄格式
+
+隔離腳本的 `ensureSheet_` 現在每次寫入都會對整欄設格式，而且格式錯誤被吃掉。移植時不要重設整欄格式。只格式化新列，或另外做一次明確的初始化。歷史列的顯示格式要留著。
+
+## 電話和桌數維持正式現況
+
+保留正式的 `normalizedPhone`。它會去掉中間的空格，`0936 677 616` 仍要比對到同一支電話。不要改成只 trim、不去中間空格。
+
+桌數維持寫入前的 `parseInt`。不要把隔離腳本「不是整數就留文字」直接套到正式桌數。
+
+## 讀表路徑要在正式表副本上驗
+
+不要用正式訂單表。用副本核對每一條讀取：
+
+- DailyBookingSync／LINE 總覽
+- 取消查詢
+- 桌數上限
+- 有效訂位／查詢列表
+
+日期、時間、收到時間讀回來必須是 Date，不能是裸序號。`new Date(46317)` 會被當成 1970 年的毫秒，日期會錯。
+
+另外核對正式背景通知。隔離的兩封信不能直接套上去。若背景工作已經會寄店內信，再依隔離行為加一封就會多寄。這件事和「客人信失敗後要不要寄店內信」一起等 Owner 決定。

@@ -12,8 +12,8 @@
  * 寫入後先 flush，再讀回同一列。讀回值要等於原值字串，而且 getFormula 為空。
  * 對不上或讀不回來就停下：回結果未知（寫明欄位、原值、讀回值）、不寄信、請核對原列，不要重送。
  * 舊寫法：前導單引號不會被 Sheets 存進格子。setValues 會把 = 算掉。setRichTextValue 會把 + 開頭改成文字 =+。
- * 資料列改走 Sheets API values.append，valueInputOption 必須是 RAW，insertDataOption 必須是 INSERT_ROWS。
- * 資料列不看試算表快取的最後一列。append 在 LockService 裡面，表尾空列或格式不會決定列號。
+ * 資料列在鎖內讀整張表的值，再用 values.update 的 RAW 寫到最後一筆有值的下一列。
+ * 不看試算表快取的最後一列，也不用 A1 的 append。中段空白下方的資料仍算在表尾。
  * 自由文字、電話、來源是 RAW 文字。人數、桌數是數字。日期、時間、收到時間是試算表序號。
  * 電話保留開頭的 0。姓名、備註開頭的單引號不刪，客人可能真的打了。
  * 報告分頁仍用 values.update 的 RAW，以及 values.clear。
@@ -135,12 +135,30 @@ function timeStore_(value) {
   return (hour * 60 + minute) / 1440;
 }
 
-function datetimeStore_(value) {
+function spreadsheetZone_(ss) {
+  try {
+    if (ss && ss.getSpreadsheetTimeZone) return String(ss.getSpreadsheetTimeZone() || '');
+  } catch (err) {}
+  return '';
+}
+
+// 序號是試算表時區的牆鐘，不是 UTC 瞬時。2026-10-18T07:00:00Z 在台北是 15:00。
+function wallClockSerial_(ms, timeZone) {
+  if (!timeZone || typeof Utilities === 'undefined' || !Utilities || typeof Utilities.formatDate !== 'function') return null;
+  var text = Utilities.formatDate(new Date(ms), timeZone, 'yyyy-MM-dd HH:mm:ss');
+  var match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(String(text || ''));
+  if (!match) return null;
+  return serialFromMs_(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])));
+}
+
+function datetimeStore_(value, timeZone) {
   var text = typeof value === 'string' ? value.trim() : '';
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(text)) return formulaGuard_(value);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(text)) return formulaGuard_(value);
   var ms = Date.parse(text);
   if (!isFinite(ms)) return formulaGuard_(value);
-  return serialFromMs_(ms);
+  var serial = wallClockSerial_(ms, timeZone);
+  if (serial == null) return formulaGuard_(value);
+  return serial;
 }
 
 function displayCount_(stored, raw) {
@@ -233,12 +251,12 @@ function shopEmailFor_(booking, attr, orderId, to) {
   };
 }
 
-function buildBookingResult_(payload, orderId, receivedAt, guestTo, shopTo) {
+function buildBookingResult_(payload, orderId, receivedAt, guestTo, shopTo, timeZone) {
   var peopleStored = numberStore_(payload.people);
   var tablesStored = numberStore_(payload.tables);
   var dateStored = dateStore_(payload.date);
   var timeStored = timeStore_(payload.time);
-  var receivedStored = datetimeStore_(receivedAt || '');
+  var receivedStored = datetimeStore_(receivedAt || '', timeZone);
   var booking = {
     action: 'book',
     type: payload.type === 'takeout' ? 'takeout' : 'dining',
@@ -415,7 +433,6 @@ function sheetsApiReady_() {
   try {
     return typeof Sheets !== 'undefined' && !!Sheets && !!Sheets.Spreadsheets && !!Sheets.Spreadsheets.Values
       && typeof Sheets.Spreadsheets.Values.update === 'function'
-      && typeof Sheets.Spreadsheets.Values.append === 'function'
       && typeof Sheets.Spreadsheets.Values.clear === 'function'
       && typeof Sheets.Spreadsheets.Values.get === 'function';
   } catch (err) {
@@ -490,21 +507,55 @@ function rawApiCell_(value) {
   return String(formulaGuard_(value));
 }
 
-// 資料列不看 getLastRow。append 由 Sheets API 接在最後一筆有值的列後面，INSERT_ROWS 不覆蓋。
-// 呼叫端要已握著 LockService，避免兩筆同時 append。
+function lastValueRow_(grid) {
+  var last = 0;
+  var maxCol = 0;
+  for (var r = 0; r < grid.length; r += 1) {
+    var line = grid[r] || [];
+    for (var c = 0; c < line.length; c += 1) {
+      if (line[c] != null && String(line[c]) !== '') {
+        last = r + 1;
+        if (c + 1 > maxCol) maxCol = c + 1;
+      }
+    }
+  }
+  return { row: last, col: maxCol };
+}
+
+function rangeHasRow_(range, row) {
+  var matches = String(range || '').match(/[A-Z]+(\d+)/g);
+  if (!matches) return false;
+  for (var i = 0; i < matches.length; i += 1) {
+    if (Number(matches[i].replace(/[A-Z]+/, '')) === row) return true;
+  }
+  return false;
+}
+
+// A1 的 values.append 只接在包含 A1 的表格後面，中段空白下方的資料不會算進去。
+// 這裡在鎖內讀整張表的值，寫到最後一筆有值的下一列。格式不算值。updatedRange 對不上就不寄信。
 function writeRow_(sheet, row) {
   if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
-  var line = [];
-  for (var c = 0; c < row.length; c += 1) line.push(rawApiCell_(row[c]));
   var parent = sheet.getParent();
   var id = parent && parent.getId ? parent.getId() : '';
   if (!id) throw new Error('找不到試算表 ID');
-  Sheets.Spreadsheets.Values.append(
+  var read = Sheets.Spreadsheets.Values.get(id, quotedSheet_(sheet) + '!A:ZZ');
+  var grid = read && read.values ? read.values : [];
+  var used = lastValueRow_(grid);
+  var targetRow = used.row + 1;
+  var line = [];
+  for (var c = 0; c < row.length; c += 1) line.push(rawApiCell_(row[c]));
+  var range = literalRange_(sheet, targetRow, 1, line.length);
+  var response = Sheets.Spreadsheets.Values.update(
     { values: [line] },
     id,
-    quotedSheet_(sheet) + '!A1',
-    { valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS' }
+    range,
+    { valueInputOption: 'RAW' }
   );
+  var updated = response && response.updatedRange ? String(response.updatedRange) : '';
+  var tableEndCol = used.col > 0 ? used.col : line.length;
+  var tableRange = used.row > 0 ? quotedSheet_(sheet) + '!A1:' + columnLetter_(tableEndCol) + used.row : '';
+  console.log('tableRange=' + tableRange + ' updatedRange=' + updated);
+  if (!rangeHasRow_(updated, targetRow)) throw new Error('寫入位置不符');
 }
 
 function unknownOutcome_(orderId, detail) {
@@ -532,14 +583,11 @@ function isDateObject_(value) {
   return Object.prototype.toString.call(value) === '[object Date]';
 }
 
-function serialOf_(value) {
+function serialOf_(value, timeZone) {
   if (typeof value === 'number' && isFinite(value)) return value;
   if (!isDateObject_(value)) return null;
-  var ms = value.getTime();
-  if (!isFinite(ms)) return null;
-  // getValue 對日期格式回傳試算表時區的本地時間。用本地年月日時分換回序號。
-  var local = Date.UTC(value.getFullYear(), value.getMonth(), value.getDate(), value.getHours(), value.getMinutes(), value.getSeconds(), value.getMilliseconds());
-  return serialFromMs_(local);
+  // 不用本地 getters，也不用專案時區。Date 的牆鐘以試算表時區解讀。
+  return wallClockSerial_(value.getTime(), timeZone);
 }
 
 function showStored_(value) {
@@ -548,9 +596,9 @@ function showStored_(value) {
   return String(formulaGuard_(value));
 }
 
-function sameStored_(actual, expected) {
+function sameStored_(actual, expected, timeZone) {
   if (typeof expected === 'number' && isFinite(expected)) {
-    var got = serialOf_(actual);
+    var got = serialOf_(actual, timeZone);
     return got != null && Math.abs(got - expected) < 1e-6;
   }
   var want = String(formulaGuard_(expected));
@@ -561,6 +609,7 @@ function sameStored_(actual, expected) {
 function confirmOrderRow_(sheet, orderId, expectedRow) {
   var miss = { ok: false, header: '', want: '', actual: '', formula: '' };
   if (!sheet || !expectedRow || !orderId) return miss;
+  var timeZone = spreadsheetZone_(sheet.getParent ? sheet.getParent() : null);
   var width = expectedRow.length;
   var last = sheet.getLastRow();
   if (last < 1 || width < 1) return miss;
@@ -580,7 +629,7 @@ function confirmOrderRow_(sheet, orderId, expectedRow) {
       } catch (err) {
         formula = '讀取失敗';
       }
-      if (!sameStored_(actual, want) || formula !== '') {
+      if (!sameStored_(actual, want, timeZone) || formula !== '') {
         return {
           ok: false,
           header: ORDER_HEADERS[c] || String(c),
@@ -693,7 +742,9 @@ function acceptBooking_(payload) {
     if (!orderId) {
       outcome = { response: { status: 'error', message: '測試編號已用完，沒有收單。' }, wrote: false, mailed: false };
     } else {
-      var result = buildBookingResult_(payload, orderId, nowIso_(), shopTo, shopTo);
+      var zone = spreadsheetZone_(opened.ss);
+      if (!zone) throw new Error('找不到試算表時區');
+      var result = buildBookingResult_(payload, orderId, nowIso_(), shopTo, shopTo, zone);
       if (ids.indexOf(orderId) !== -1) {
         result.response.mailed = false;
         result.response.duplicate = true;

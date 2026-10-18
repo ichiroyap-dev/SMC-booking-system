@@ -126,11 +126,22 @@ function parseA1(range) {
   throw new Error('bad range ' + range);
 }
 
+function formatInZone(date, timeZone, pattern) {
+  const parts = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date instanceof Date ? date : new Date(date))) parts[part.type] = part.value;
+  const map = { yyyy: parts.year, MM: parts.month, dd: parts.day, HH: parts.hour === '24' ? '00' : parts.hour, mm: parts.minute, ss: parts.second };
+  return pattern.replace(/yyyy|MM|dd|HH|mm|ss/g, (token) => map[token]);
+}
+
 function memorySpreadsheet(options = {}) {
   const sheets = {};
   const ss = {
     id: '',
+    timeZone: 'Asia/Taipei',
     getId() { return ss.id; },
+    getSpreadsheetTimeZone() { return ss.timeZone; },
     getSheetByName(name) { return sheets[name] || null; },
     insertSheet(name) {
       sheets[name] = make(name);
@@ -240,9 +251,9 @@ function memorySpreadsheet(options = {}) {
             for (let r = 0; r < rowsN; r += 1) {
               for (let c = 0; c < colsN; c += 1) {
                 const cell = values[r] ? values[r][c] : '';
-                const text = cell == null ? '' : String(cell);
-                putCache(row - 1 + r, col - 1 + c, text, '');
-                putServer(row - 1 + r, col - 1 + c, text, '');
+                const stored = typeof cell === 'number' && Number.isFinite(cell) ? cell : (cell == null ? '' : String(cell));
+                putCache(row - 1 + r, col - 1 + c, stored, '');
+                putServer(row - 1 + r, col - 1 + c, stored, '');
               }
             }
           },
@@ -289,6 +300,7 @@ function loadIsolated(options = {}) {
   const sandbox = {
     console,
     Date,
+    Utilities: { formatDate: formatInZone },
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(text) {
@@ -393,6 +405,7 @@ function loadIsolated(options = {}) {
           const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
           if (mode === 'RAW') target.setRawValues(values);
           else target.setValues(values);
+          return { updatedRange: range };
         },
         append(resource, spreadsheetId, range, options) {
           const mode = options && options.valueInputOption;
@@ -414,7 +427,8 @@ function loadIsolated(options = {}) {
           sheet.clearServer();
         },
         get(spreadsheetId, range) {
-          if (box.blankReportRead) return { values: [] };
+          const parsedEarly = parseA1(range);
+          if (box.blankReportRead && (parsedEarly.name === '驗收結果' || parsedEarly.name === '公式核對')) return { values: [] };
           const ss = box.byId[spreadsheetId];
           if (!ss) throw new Error('spreadsheet not open');
           const parsed = parseA1(range);
@@ -505,7 +519,7 @@ function displayStored(header, value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     const epoch = Date.UTC(1899, 11, 30);
     if (header === '日期') return new Date(Math.round(epoch + value * 86400000)).toISOString().slice(0, 10);
-    if (header === '收到時間') return new Date(Math.round(epoch + value * 86400000)).toISOString();
+    if (header === '收到時間') return new Date(Math.round(epoch + value * 86400000) - 8 * 60 * 60 * 1000).toISOString();
     if (header === '時間') {
       const minutes = Math.round(value * 1440);
       return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
@@ -672,7 +686,7 @@ assert(runbook.includes('upload-pages-artifact'), '手冊要提醒 action 換版
 assert(!runbook.includes('tools/isolated-dining-check.html'), '手冊不可再叫人開公開路徑上的驗收頁');
 assert(!runbook.includes('apps-script/booking-attribution-isolated.gs'), '手冊不可再指向公開路徑上的隔離腳本');
 assert(!runbook.includes('tools/isolated-check-guard.js'), '手冊不可再指向公開路徑上的 guard');
-for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', '未全部寄出', 'duplicate']) {
+for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', '未確認全部寄出', 'duplicate']) {
   assert(runbook.includes(phrase), `驗收步驟缺少 ${phrase}`);
 }
 assert(!runbook.includes('備註四邊'), '手冊不可再要求回應裡的備註');

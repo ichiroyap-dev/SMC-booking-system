@@ -8,9 +8,11 @@
 
 客人信不可以出現 `launch_202610`、`ag_brand`、`ag_geo_dining`。那些只出現在「訂單」分頁與「店內對帳」信。
 
-回應有 `status`、`orderId`、`message`。成功或重複時還有 `mailed`、`duplicate`、`wrote`。`mailed` 為 true 才是兩封都交給寄信；false 是沒有全部寄出。`duplicate` 為 true 是這個編號已經收過。`wrote` 為 false 是這次沒有新增一列。**回應沒有備註**。備註要對這三處：你送出的內容、試算表「備註」欄、客人信與店內信。不要在回應裡找備註。讀回與寫入不一致就停下，請核對原列，不要重送。
+回應有 `status`、`orderId`、`message`。成功或重複時還有 `mailed`、`duplicate`、`wrote`。`mailed` 為 true 才是兩封都交給寄信；false 是未確認全部寄出。`duplicate` 為 true 是這個編號已經收過。`wrote` 為 false 是這次沒有新增一列。**回應沒有備註**。備註要對這三處：你送出的內容、試算表「備註」欄、客人信與店內信。不要在回應裡找備註。讀回與寫入不一致就停下，請核對原列，不要重送。
 
 ## Owner 三步
+
+需 Owner GO。沒有這句授權，不要貼上、不要執行、不要寫表、不要寄信。
 
 必須是新建的獨立試算表專案，不要貼進任何既有專案。程式停在 commit `cff5e86a1512734681ef47981c90d776e22497e5`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
 

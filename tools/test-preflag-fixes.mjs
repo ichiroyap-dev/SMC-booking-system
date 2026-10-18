@@ -26,7 +26,8 @@ const FIXED_TIME = '2026-10-08T00:00:00.000Z';
 const EPOCH = Date.UTC(1899, 11, 30);
 const DATE_SERIAL = (Date.UTC(2026, 9, 22) - EPOCH) / 86400000;
 const TIME_SERIAL = 0.5;
-const RECEIVED_SERIAL = (Date.parse(FIXED_TIME) - EPOCH) / 86400000;
+// 2026-10-08T00:00:00.000Z 的台北牆鐘是 08:00。不是把 UTC 瞬時直接換成序號。
+const RECEIVED_SERIAL = (Date.UTC(2026, 9, 8, 8, 0, 0) - EPOCH) / 86400000;
 const LIVE_ID = 'AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q';
 const NOTE = '散客 大人2位；靠窗';
 
@@ -62,11 +63,22 @@ function enterLikeSheets(input) {
   return text;
 }
 
+function formatInZone(date, timeZone, pattern) {
+  const parts = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date instanceof Date ? date : new Date(date))) parts[part.type] = part.value;
+  const map = { yyyy: parts.year, MM: parts.month, dd: parts.day, HH: parts.hour === '24' ? '00' : parts.hour, mm: parts.minute, ss: parts.second };
+  return pattern.replace(/yyyy|MM|dd|HH|mm|ss/g, (token) => map[token]);
+}
+
 function memorySpreadsheet() {
   const sheets = {};
   const ss = {
     id: '',
+    timeZone: 'Asia/Taipei',
     getId() { return ss.id; },
+    getSpreadsheetTimeZone() { return ss.timeZone; },
     getSheetByName(name) { return sheets[name] || null; },
     insertSheet(name) {
       sheets[name] = make(name);
@@ -204,6 +216,7 @@ function loadIsolated() {
   const sandbox = {
     console,
     Date,
+    Utilities: { formatDate: formatInZone },
     ContentService: { MimeType: { JSON: 'application/json' }, createTextOutput(text) { return { setMimeType() { return this; }, getContent() { return text; } }; } },
     PropertiesService: {
       getScriptProperties() {
@@ -244,6 +257,7 @@ function loadIsolated() {
             const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
             if (mode === 'RAW') target.setRawValues(values);
             else target.setValues(values);
+            return { updatedRange: range };
           },
           append(resource, spreadsheetId, range, options) {
             const mode = options && options.valueInputOption;
@@ -368,8 +382,8 @@ function item1() {
 }
 
 function item2() {
-  assert(/Spreadsheets\.Values\.append/.test(gs), '資料列要改走 values.append');
-  assert(gs.includes('INSERT_ROWS'), 'append 要用 INSERT_ROWS');
+  assert(!/Values\.append/.test(gs), '資料列不可再 append 到 A1');
+  assert(gs.includes('tableRange=') && gs.includes('updatedRange'), '要寫出 tableRange，並核對 updatedRange');
   assert(!/getLastRow\(\)\s*\+\s*1/.test(gs), '不可再使用 getLastRow()+1 決定寫入列');
   guard(() => {
     const isolated = loadIsolated();
@@ -386,8 +400,8 @@ function item2() {
     isolated.sandbox.writeRow_(sheet, rowB);
     const ids = sheet.rows().map((row) => row[0]);
     assert(ids.filter((id) => id === 'SMC910011').length === 1 && ids.filter((id) => id === 'SMC910012').length === 1, '並發或快取停住時，兩筆不可寫進同一列');
-    const appends = isolated.box.rawWrites.filter((item) => item.op === 'append');
-    assert(appends.length === 2 && appends.every((item) => item.mode === 'RAW' && item.insert === 'INSERT_ROWS'), '兩筆都要 RAW + INSERT_ROWS');
+    const writes = isolated.box.rawWrites.filter((item) => item.op === 'update' && item.range && !String(item.range).includes('1:'));
+    assert(writes.length === 2 && writes.every((item) => item.mode === 'RAW'), '兩筆都要 RAW 寫到明確的列');
   });
   guard(() => {
     const isolated = loadIsolated();
@@ -407,8 +421,8 @@ function item2() {
     const isolated = loadIsolated();
     const res = isolated.sandbox.acceptBooking_(basePayload({ _testOrderId: 'SMC910031' }));
     assert(res.response && res.response.status === 'success', '改走 append 後一般收單仍要成功');
-    const appends = isolated.box.rawWrites.filter((item) => item.op === 'append');
-    assert(appends.length >= 1 && appends.every((item) => item.lockHeld === true && item.mode === 'RAW' && item.insert === 'INSERT_ROWS'), 'append 時要握著 LockService');
+    const writes = isolated.box.rawWrites.filter((item) => item.op === 'update');
+    assert(writes.length >= 1 && writes.every((item) => item.lockHeld === true && item.mode === 'RAW'), '寫入時要握著 LockService');
     const orders = sheetRows(isolated, '訂單');
     assert(orders[0] && orders[0][0] === '訂單編號' && orders[1] && orders[1][0] === 'SMC910031', '表頭先落地，資料列接在表頭下一列');
   });
@@ -463,7 +477,7 @@ function item4() {
   const path = join(root, unpublished, 'production-port-checklist.md');
   const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   assert(text.length > 0, '要有正式腳本移植清單');
-  for (const phrase of ['doPost', '11', 'values.append', 'INSERT_ROWS', 'https://www.googleapis.com/auth/spreadsheets', LIVE_ID, '回滾', 'Sheets']) {
+  for (const phrase of ['doPost', '11', 'values.update', 'updatedRange', 'https://www.googleapis.com/auth/spreadsheets', LIVE_ID, '回滾', 'Sheets']) {
     assert(text.includes(phrase), `移植清單要寫到 ${phrase}`);
   }
   assert(text.includes('不要部署') || text.includes('這輪不部署'), '清單要寫這輪不部署');

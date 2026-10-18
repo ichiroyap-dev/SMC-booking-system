@@ -38,7 +38,36 @@ node tools/test-isolated-e2e.mjs
 `test-booking-reconciliation.mjs` 結束碼 1，14 項。紀錄 `.github/pages-unpublished/isolated-red-r8-recon-docs.log`。
 `test-isolated-e2e.mjs` 結束碼 1，11 項。紀錄 `.github/pages-unpublished/isolated-red-r8-e2e-docs.log`。
 
-若改用這輪的測試、只換 `355da77` 的腳本，對帳仍是 9 項，端到端變成 9 項。測試、腳本、兩份文件都換回 `355da77` 時，對帳仍是 14 項，端到端變成 13 項。多出來的是這輪新增的「確認寄出／未確認寄出」斷言，不是第 8 輪那組 9／7 和 14／11。紀錄 `isolated-red-preflag-recon-gs-only.log`、`isolated-red-preflag-e2e-gs-only.log`、`isolated-red-preflag-recon-docs.log`、`isolated-red-preflag-e2e-docs.log`。
+若改用這輪的測試、只換 `355da77` 的腳本，文件留在這輪，對帳是 9 項，端到端是 9 項。這輪的測試留著，只把腳本和兩份文件換回 `355da77`，對帳是 14 項，端到端是 13 項。不是把測試也換回 `355da77`。多出來的是這輪新增的「確認寄出／未確認寄出」斷言，不是第 8 輪那組 9／7 和 14／11。紀錄 `isolated-red-preflag-recon-gs-only.log`、`isolated-red-preflag-e2e-gs-only.log`、`isolated-red-preflag-recon-docs.log`、`isolated-red-preflag-e2e-docs.log`。
+
+## PR47 第 1 輪紅燈與綠燈
+
+Node `v22.14.0`。紅燈是測試配上 `3ebf58a` 的腳本。F2 的紅燈要用 `TZ=UTC`，讓專案時區和試算表的 `Asia/Taipei` 不同。綠燈是同一指令、腳本放回這輪，結束碼 0。`TZ=Asia/Taipei` 再跑 F2 也是 0，讀回不再靠行程時區。
+
+```bash
+git show 3ebf58a:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+TZ=UTC node tools/test-pr47-r1.mjs --item f1
+TZ=UTC node tools/test-pr47-r1.mjs --item f2
+TZ=UTC node tools/test-pr47-r1.mjs --item f6
+TZ=UTC node tools/test-pr47-r1.mjs --item checklist
+TZ=UTC node tools/test-pr47-r1.mjs --item nit-doc
+TZ=UTC node tools/test-pr47-r1.mjs --item nit-pages
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| f1 收到時間序號 | 結束碼 1，3 項 | 0 |
+| f2 Date 讀回 | 結束碼 1，5 項 | 0 |
+| f6 表尾位置 | 結束碼 1，6 項 | 0 |
+| 移植清單補欄 | 結束碼 1，12 項 | 0 |
+| 文件用詞 | 結束碼 1，8 項 | 0 |
+| Pages 環境不足 | 結束碼 1，3 項 | 0 |
+
+紀錄在 `isolated-red-pr47-r1-f1.log` 到 `isolated-red-pr47-r1-nit-pages.log`，綠燈是 `isolated-green-pr47-r1-*.log`。跑完要把腳本放回這支分支。
+
+## 合併到 main 之後
+
+合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
 
 ## 開旗標前必修的紅燈與綠燈
 
