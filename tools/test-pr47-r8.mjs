@@ -343,39 +343,33 @@ function itemAlert() {
   const eight = loadIsolated();
   armAlertSameText(eight);
   const eightMsg = String(eight.sandbox.runIsolatedEightCases());
-  assert(eightMsg.includes('結果未知') && eightMsg.includes(EDITOR_UI_ERR), '八案例：alert 丟出相同文字仍要結果未知，實際 ' + eightMsg);
-  assert(!eightMsg.includes('四種前綴都通過'), '八案例：alert 失敗不可回通過，實際 ' + eightMsg);
+  assert(eightMsg.includes('四種前綴都通過') && !eightMsg.includes('結果未知'), '八案例：只記執行紀錄，alert 丟錯不可改摘要，實際 ' + eightMsg);
 
   for (const id of ['SMC900201', 'SMC900202', 'SMC900203']) {
     const isolated = loadIsolated();
     armAlertSameText(isolated);
     const msg = String(isolated.sandbox['runIsolatedOneBooking' + id.slice(-3)]());
-    assert(msg.includes('結果未知') && msg.includes(EDITOR_UI_ERR), '單筆成功 ' + id + '：alert 丟出相同文字仍要結果未知，實際 ' + msg);
-    assert(!msg.includes('已收單') || msg.includes('結果未知'), '單筆成功 ' + id + '：不可只報已收單，實際 ' + msg);
+    assert(msg.includes('已收單') && msg.includes(id) && !msg.includes('結果未知'), '單筆成功 ' + id + '：只記執行紀錄，alert 丟錯不可改摘要，實際 ' + msg);
   }
 
   const dup = loadIsolated();
   dup.sandbox.runIsolatedOneBooking201();
   armAlertSameText(dup);
   const dupMsg = String(dup.sandbox.runIsolatedOneBooking201());
-  assert(dupMsg.includes('結果未知') && dupMsg.includes(EDITOR_UI_ERR), '單筆重複：alert 丟出相同文字仍要結果未知，實際 ' + dupMsg);
-  assert(!dupMsg.includes('已經收過') || dupMsg.includes('結果未知'), '單筆重複：alert 失敗不可只報已經收過，實際 ' + dupMsg);
+  assert(dupMsg.includes('已經收過') && !dupMsg.includes('結果未知'), '單筆重複：只記執行紀錄，alert 丟錯不可改摘要，實際 ' + dupMsg);
   assert(dup.box.mails.length === 2, '單筆重複：不可再寄信，實際 ' + dup.box.mails.length);
 
   const stillLog = loadIsolated();
   armEditorUi(stillLog);
   const stillMsg = String(stillLog.sandbox.runIsolatedEightCases());
   assert(!stillMsg.includes('結果未知'), 'getUi 自己丟錯仍不可降成結果未知，實際 ' + stillMsg);
-  assert(stillLog.box.logs.some((line) => line.includes(EDITOR_NOTE)), 'getUi 自己丟錯要寫無彈窗註記');
-  assert(stillLog.box.logs.some((line) => line.includes(EDITOR_UI_ERR)), 'getUi 自己丟錯要保留原始錯誤文字');
+  assert(stillMsg.includes('四種前綴都通過'), 'getUi 自己丟錯仍要回成功摘要，實際 ' + stillMsg);
 }
 
 function itemDocs() {
   assert(!runbook.includes('從編輯器執行時沒有試算表彈窗'), '手冊不可再說編輯器執行一定沒有彈窗');
   assert(!runbook.includes('從編輯器執行沒有彈窗'), '手冊不可再說從編輯器執行沒有彈窗');
-  assert(runbook.includes('有沒有 UI') || runbook.includes('當下有沒有 UI') || runbook.includes('當下沒有 UI'), '手冊要依實際有沒有 UI 描述');
-  assert(runbook.includes('原始錯誤'), '手冊要寫執行紀錄保留原始錯誤');
-  assert(runbook.includes('alert 自己失敗') && runbook.includes('結果未知'), '手冊要寫 alert 自己失敗仍是結果未知');
+  assert(runbook.includes('只記執行紀錄') && runbook.includes('沒有彈窗'), '手冊要寫編輯器入口只記執行紀錄、設計上沒有彈窗');
   assert(runbook.includes(EDITOR_NOTE), '手冊仍要保留無彈窗註記原文');
   assert(!/^function doPost\s*\(/m.test(gs), '不可新增 doPost');
 }

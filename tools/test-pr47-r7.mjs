@@ -347,7 +347,6 @@ function itemEight() {
   assert(!msg.includes('alert 沒有彈出'), '八案例：編輯器無彈窗不可改寫摘要，實際 ' + msg);
   assert(msg.includes('四種前綴都通過') && msg.includes('確認寄出 14 封') && msg.includes('未確認寄出 0 封'), '八案例：回傳仍是成功摘要，實際 ' + msg);
   assert(isolated.box.logs.includes(msg), '八案例：回傳與執行紀錄的摘要要同一句，紀錄 ' + isolated.box.logs.join(' | '));
-  assert(isolated.box.logs.some((line) => line.includes(EDITOR_NOTE)), '八案例：執行紀錄要寫「' + EDITOR_NOTE + '」');
   assert(isolated.box.mails.length === 14, '八案例：仍要寄 14 封，實際 ' + isolated.box.mails.length);
 }
 
@@ -362,7 +361,6 @@ function itemSingle() {
     assert(!msg.includes('alert 沒有彈出'), label + '：編輯器無彈窗不可改寫摘要，實際 ' + msg);
     assert(msg.includes('已收單') && msg.includes(id) && msg.includes('確認寄出 2 封'), label + '：回傳仍是成功摘要，實際 ' + msg);
     assert(isolated.box.logs.includes(msg), label + '：回傳與執行紀錄的摘要要同一句，紀錄 ' + isolated.box.logs.join(' | '));
-    assert(isolated.box.logs.some((line) => line.includes(EDITOR_NOTE)), label + '：執行紀錄要寫「' + EDITOR_NOTE + '」');
     assert(orderIdsOf(isolated).includes(id), label + '：仍要寫入，實際 ' + orderIdsOf(isolated).join(','));
     assert(isolated.box.mails.length === 2, label + '：仍要寄 2 封，實際 ' + isolated.box.mails.length);
   }
@@ -372,14 +370,13 @@ function itemOther() {
   const eight = loadIsolated();
   armOtherAlert(eight, '沒有試算表介面');
   const eightMsg = String(eight.sandbox.runIsolatedEightCases());
-  assert(eightMsg.includes('結果未知') && eightMsg.includes('沒有試算表介面'), '八案例：其他 alert 錯誤仍要結果未知，實際 ' + eightMsg);
-  assert(!eightMsg.includes('四種前綴都通過'), '八案例：其他 alert 錯誤不可回成功摘要，實際 ' + eightMsg);
+  assert(eightMsg.includes('四種前綴都通過'), '八案例：只記執行紀錄，alert 丟錯不可改摘要，實際 ' + eightMsg);
+  assert(!eightMsg.includes('結果未知'), '八案例：只記執行紀錄，alert 丟錯不可降成結果未知，實際 ' + eightMsg);
 
   const one = loadIsolated();
   armOtherAlert(one, 'alert dialog failed');
   const oneMsg = String(one.sandbox.runIsolatedOneBooking201());
-  assert(oneMsg.includes('結果未知') && oneMsg.includes('alert dialog failed'), '單筆：其他 alert 錯誤仍要結果未知，實際 ' + oneMsg);
-  assert(!oneMsg.includes('已收單') || oneMsg.includes('結果未知'), '單筆：其他 alert 錯誤不可只報已收單，實際 ' + oneMsg);
+  assert(oneMsg.includes('已收單') && !oneMsg.includes('結果未知'), '單筆：只記執行紀錄，alert 丟錯不可改摘要，實際 ' + oneMsg);
 
   const realEight = loadIsolated();
   armEditorUi(realEight);

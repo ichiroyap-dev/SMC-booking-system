@@ -905,7 +905,7 @@ function privateEntryAndFormula() {
   assert(gs.includes('原列') && runbook.includes('原列') && runbook.includes('不要重送'), '讀回不一致要寫明停下、核對原列、不要重送');
   assert(!/^function doPost\s*\(/m.test(gs), '隔離版不可定義 doPost');
   assert(/^function doGet\s*\(/m.test(gs), '隔離版要保留 doGet');
-  assert(runbook.startsWith('# 隔離 Apps Script 驗收') && runbook.includes('必須是新建的獨立試算表專案，不要貼進任何既有專案'), '手冊最前面要寫必須是新建的獨立試算表專案');
+  assert(runbook.startsWith('# 隔離 Apps Script 驗收') && runbook.includes('只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案'), '手冊最前面要寫專用隔離專案只建一次、之後更新、禁止貼進其他專案');
   assert(runbook.includes('不可以重新整理後重送'), '結果未知時不可以重新整理後重送');
   assert(!runbook.includes('ALLOWED_DEPLOYMENT_IDS'), 'Owner 文件不要再教加入 guard 白名單');
   const confirmSrc = gs.slice(gs.indexOf('function confirmOrderRow_'), gs.indexOf('function acceptBooking_'));
@@ -1020,7 +1020,7 @@ function roundSevenReadback() {
   };
   let noteThrew = false;
   try { note.sandbox.notify_('已送出 8 筆。四種前綴都通過'); } catch (err) { noteThrew = true; }
-  assert(!noteThrew && logs.some((line) => line.includes('四種前綴都通過')) && logs.some((line) => line.includes('沒有試算表介面')), 'notify_ 要寫 console.log，alert 的錯誤也不可吞掉');
+  assert(!noteThrew && logs.some((line) => line.includes('四種前綴都通過')), 'notify_ 只記執行紀錄，要把訊息寫進 console.log');
   const mismatch = loadIsolated({ sheetId: 'mismatch-sheet' });
   mismatch.box.mutateReportCell = true;
   const mismatchMsg = String(mismatch.sandbox.runIsolatedEightCases());
@@ -1093,7 +1093,7 @@ function roundEightMessages() {
     return { alert() { throw new Error('沒有試算表介面'); }, createMenu() { return { addItem() { return this; }, addToUi() {} }; } };
   };
   const alertMsg = String(alertRun.sandbox.runIsolatedEightCases());
-  assert(alertMsg.includes('結果未知') && alertMsg.includes('沒有試算表介面') && !alertMsg.includes('四種前綴都通過') && !alertMsg.includes('才可以部署'), '八案例的 alert 失敗要回結果未知，不可回成功摘要');
+  assert(alertMsg.includes('四種前綴都通過') && !alertMsg.includes('結果未知'), '八案例只記執行紀錄，alert 丟錯仍回成功摘要');
   const runbook = readFileSync(join(root, unpublished, 'booking-attribution-isolated-runbook.md'), 'utf8');
   const verification = readFileSync(join(root, unpublished, 'isolated-e2e-verification.md'), 'utf8');
   assert(runbook.includes('按確定') && runbook.includes('對話框'), '手冊要寫讀完 alert 按確定，等待對話框不是故障');

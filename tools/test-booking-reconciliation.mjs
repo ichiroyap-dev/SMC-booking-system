@@ -1098,7 +1098,7 @@ assert(formulaPayload.utmCampaign === '=1+1', '公式案例要用活動欄放 =1
 assert(formulaPayload.utmContent === '+1+1', '公式案例要用內容欄放 +1+1');
 assert(formulaPayload.utmTerm === '-1+1', '公式案例要用關鍵字放 -1+1');
 assert(formulaPayload.utmAdgroup === '@cmd', '公式案例要用廣告群組放 @cmd');
-assert(runner.box.alerts.some((item) => item.includes('四種前綴都通過')), '四種前綴通過才可以部署');
+assert(eightMsg.includes('四種前綴都通過'), '四種前綴通過才可以部署');
 const probeRows = sheetRows(runner, '公式核對');
 assert(probeRows.length === 5, '公式核對要有表頭與四格');
 if (probeRows.length === 5) {
@@ -1215,9 +1215,8 @@ try {
 } catch (err) {
   noteThrew = true;
 }
-assert(!noteThrew, 'alert 失敗時 notify_ 仍要返回');
+assert(!noteThrew, 'notify_ 只記執行紀錄，不可外拋');
 assert(noteLogs.some((line) => line.includes('四種前綴都通過')), 'notify_ 要把訊息寫進 console.log');
-assert(noteLogs.some((line) => line.includes('沒有試算表介面')), 'alert 的錯誤要寫進 console.log，不可吞掉');
 
 const mismatch = loadIsolated();
 mismatch.box.mutateReportCell = true;
@@ -1309,9 +1308,8 @@ alertRun.sandbox.SpreadsheetApp.getUi = function () {
   return { alert() { throw new Error('沒有試算表介面'); } };
 };
 const alertMsg = String(alertRun.sandbox.runIsolatedEightCases());
-assert(alertMsg.includes('結果未知') && alertMsg.includes('沒有試算表介面'), '八案例的 alert 失敗要回結果未知，並帶上錯誤');
-assert(!alertMsg.includes('四種前綴都通過') && !alertMsg.includes('才可以部署'), 'alert 失敗不可回成功摘要');
-assert(alertLogs.some((line) => line.includes('沒有試算表介面')), '八案例的 alert 錯誤仍要進執行記錄');
+assert(alertMsg.includes('四種前綴都通過') && !alertMsg.includes('結果未知'), '八案例只記執行紀錄，alert 丟錯仍回成功摘要');
+assert(alertLogs.some((line) => line.includes('四種前綴都通過')), '八案例成功摘要仍要進執行記錄');
 
 assert(!verification.includes('API 寫入不會更新這份快取'), '快取那句沒有官方來源，要改掉');
 assert(verification.includes('不可依賴') && verification.includes('即時一致'), '快取要改成不可依賴跨服務即時一致');

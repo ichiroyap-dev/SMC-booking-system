@@ -1,5 +1,5 @@
 /**
- * 隔離測試用。必須貼在新建的獨立試算表專案，不要貼進任何既有專案。
+ * 隔離測試用。只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。
  * 這支沒有 doPost，只有 doGet。誤貼進正式專案會蓋掉同名入口，所以不要貼。
  * 不要部署成正式 web app，不要寫正式試算表。
  *
@@ -34,6 +34,7 @@
  * 對不上就不會寫入任何訂單、也不會寄信。腳本不會自動幫你做出這個標記。
  *
  * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
+ * 這些入口只記執行紀錄，設計上沒有彈窗。結果以執行紀錄的摘要為準，不要等彈窗。
  * 表尾三筆只用編輯器入口 runIsolatedOneBooking201／202／203，每次只送一筆固定編號。
  * 帶編號的 helper 是私有函式，網頁呼叫不到（google.script.run 不能呼叫尾綴 _ 的函式）。
  * 編輯器只選 runIsolatedOneBooking201／202／203。沒有新的 doGet／doPost，也不要為了這三筆重新部署。
@@ -725,9 +726,29 @@ function invalidMailboxOutcome_() {
 }
 
 function errorText_(err) {
-  if (err && err.message) return String(err.message);
-  if (err) return String(err);
-  return '沒有錯誤內容';
+  try {
+    if (err == null) return '沒有錯誤內容';
+    var message;
+    try {
+      message = err.message;
+    } catch (readErr) {
+      return '錯誤內容無法讀取';
+    }
+    if (message != null && message !== '') {
+      try {
+        return String(message);
+      } catch (stringErr) {
+        return '錯誤內容無法讀取';
+      }
+    }
+    try {
+      return String(err);
+    } catch (stringErr) {
+      return '錯誤內容無法讀取';
+    }
+  } catch (outer) {
+    return '錯誤內容無法讀取';
+  }
 }
 
 function mailNote_(sent, failed) {
@@ -879,27 +900,27 @@ function runIsolatedFixedBooking_(orderId) {
   var id = String(orderId || '').trim();
   if (id !== 'SMC900201' && id !== 'SMC900202' && id !== 'SMC900203') {
     var badId = '編號只能是 SMC900201、SMC900202 或 SMC900203。沒有寫入，也沒有寄信。';
-    notify_(badId);
+    notify_(badId, 'log');
     return badId;
   }
   if (!isIsolated_()) {
-    notify_(BLOCKED_MESSAGE);
+    notify_(BLOCKED_MESSAGE, 'log');
     return BLOCKED_MESSAGE;
   }
   var shop = shopMailbox_();
   if (!shop) {
     var badMail = 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。';
-    notify_(badMail);
+    notify_(badMail, 'log');
     return badMail;
   }
   if (!sheetsApiReady_()) {
     var missingSheets = sheetsMissingMessage_();
-    notify_(missingSheets);
+    notify_(missingSheets, 'log');
     return missingSheets;
   }
   var opened = openIsolatedSpreadsheet_();
   if (!opened.ok) {
-    notify_(opened.message);
+    notify_(opened.message, 'log');
     return opened.message;
   }
   var outcome;
@@ -915,28 +936,30 @@ function runIsolatedFixedBooking_(orderId) {
   if (res.status === 'unknown' || res.status !== 'success') {
     var fail = '結果未知。停在單筆「' + id + '」。原因：' + (res.message || res.status || '沒有回應') + '。'
       + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
-    notify_(fail);
+    notify_(fail, 'log');
     return fail;
   }
   if (res.duplicate === true) {
     if (outcome.wrote !== false || outcome.mailed !== false) {
       var badDup = '結果未知。停在單筆「' + id + '」。原因：預期重複編號，要 duplicate=true、wrote=false、mailed=false。實際 wrote=' + outcome.wrote + '、mailed=' + outcome.mailed + '。'
         + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
-      notify_(badDup);
+      notify_(badDup, 'log');
       return badDup;
     }
     var dup = '這個編號已經收過，這次沒有新增。duplicate=true、wrote=false、mailed=false。'
       + mailNote_(sent, failed) + '。';
-    return afterNotify_(dup, notify_(dup));
+    notify_(dup, 'log');
+    return dup;
   }
   if (outcome.wrote !== true || outcome.mailed !== true) {
     var unconf = '結果未知。停在單筆「' + id + '」。原因：寄信未確認。'
       + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
-    notify_(unconf);
+    notify_(unconf, 'log');
     return unconf;
   }
   var ok = '單筆 ' + id + ' 已收單。' + mailNote_(sent, failed) + '。';
-  return afterNotify_(ok, notify_(ok));
+  notify_(ok, 'log');
+  return ok;
 }
 
 function runIsolatedOneBooking201() {
@@ -1070,46 +1093,18 @@ function isolatedEightPayloads_(email) {
   ];
 }
 
-function isEditorUiUnavailable_(err) {
-  var text = errorText_(err);
-  return text.indexOf('getUi') !== -1 && text.indexOf('from this context') !== -1;
-}
-
-function notify_(message) {
-  var ui;
+function notify_(message, mode) {
+  // Isolated runners choose LOG-ONLY: runIsolatedEightCases (including the onOpen menu)
+  // and runIsolatedOneBooking201／202／203 never call SpreadsheetApp.getUi() or alert().
+  if (mode !== 'log') mode = 'log';
   try {
-    ui = SpreadsheetApp.getUi();
-  } catch (err) {
-    var text = errorText_(err);
-    if (isEditorUiUnavailable_(err)) {
-      console.log('編輯器執行，無彈窗，以執行紀錄為準');
-      console.log(text);
-      console.log(message);
-      return { ok: true, error: text };
-    }
     console.log(message);
-    console.log(text);
-    return { ok: false, error: text };
+  } catch (logErr) {
+    try {
+      console.log('錯誤內容無法讀取');
+    } catch (ignored) {}
   }
-  try {
-    ui.alert(message);
-  } catch (alertErr) {
-    var alertText = errorText_(alertErr);
-    console.log(message);
-    console.log(alertText);
-    return { ok: false, error: alertText };
-  }
-  console.log(message);
   return { ok: true, error: '' };
-}
-
-function afterNotify_(summary, notice) {
-  if (notice && notice.ok === false && String(summary).indexOf('結果未知') === -1) {
-    var alertUnknown = '結果未知。試算表分頁的 alert 沒有彈出。錯誤：' + (notice.error || '沒有錯誤內容') + '。不要把成功摘要當成通過。不要重跑，不要部署。';
-    console.log(alertUnknown);
-    return alertUnknown;
-  }
-  return summary;
 }
 
 function showLiteral_(value) {
@@ -1245,7 +1240,7 @@ function finishStopped_(opened, lines, summary, extras) {
   if (extras.formulaNotRun) summary += '本輪公式核對未執行。';
   summary += writeStopReports_(opened.ss, lines);
   if (summary.indexOf('不要重跑') === -1) summary += '不要重跑，不要補寄，不要部署，不要開網頁驗收。';
-  notify_(summary);
+  notify_(summary, 'log');
   return summary;
 }
 
@@ -1268,23 +1263,23 @@ function caseStopReason_(item, outcome) {
 
 function runIsolatedEightCases() {
   if (!isIsolated_()) {
-    notify_(BLOCKED_MESSAGE);
+    notify_(BLOCKED_MESSAGE, 'log');
     return BLOCKED_MESSAGE;
   }
   var shop = shopMailbox_();
   if (!shop) {
     var badMail = 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。';
-    notify_(badMail);
+    notify_(badMail, 'log');
     return badMail;
   }
   if (!sheetsApiReady_()) {
     var missingSheets = sheetsMissingMessage_();
-    notify_(missingSheets);
+    notify_(missingSheets, 'log');
     return missingSheets;
   }
   var opened = openIsolatedSpreadsheet_();
   if (!opened.ok) {
-    notify_(opened.message);
+    notify_(opened.message, 'log');
     return opened.message;
   }
   var cases = isolatedEightPayloads_(shop);
@@ -1337,7 +1332,7 @@ function runIsolatedEightCases() {
         } catch (stopReportErr) {
           probeFail += '「驗收結果」也沒有留住。錯誤：' + errorText_(stopReportErr) + '。';
         }
-        notify_(probeFail);
+        notify_(probeFail, 'log');
         return probeFail;
       }
       var pass = outcome.response.status === 'success';
@@ -1356,7 +1351,7 @@ function runIsolatedEightCases() {
     resultWritten = writeResultSheet_(opened.ss, lines);
   } catch (resultErr) {
     var resultFail = '結果未知。「驗收結果」沒有留住。錯誤：' + errorText_(resultErr) + '。不要重跑，不要部署。';
-    notify_(resultFail);
+    notify_(resultFail, 'log');
     return resultFail;
   }
   var readError = '';
@@ -1396,16 +1391,13 @@ function runIsolatedEightCases() {
   }
   if (readError) {
     var unknownReport = '結果未知。' + readError + '。不要重跑，不要部署。';
-    notify_(unknownReport);
+    notify_(unknownReport, 'log');
     return unknownReport;
   }
   var summary = stopped
     ? '公式核對失敗。' + (failNote ? failNote + '。' : '') + '請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。'
     : '已送出 8 筆。四種前綴都通過，才可以部署。' + mailNote_(sentMails, failedMails) + '。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
-  var notice = notify_(summary);
-  if (notice && notice.ok === false && summary.indexOf('四種前綴都通過') !== -1) {
-    return afterNotify_(summary, notice);
-  }
+  notify_(summary, 'log');
   return summary;
 }
 

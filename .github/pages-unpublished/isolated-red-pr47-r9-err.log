@@ -1,0 +1,37 @@
+pr47 r9 item err failed: 36
+ - 八案例 無原型 不可外拋，實際 Cannot convert object to primitive value
+ - 八案例 無原型 要結果未知，實際 
+ - 八案例 無原型 要用安全文字，實際 
+ - 單筆 201 無原型 不可外拋，實際 Cannot convert object to primitive value
+ - 單筆 201 無原型 要結果未知，實際 
+ - 單筆 201 無原型 要用安全文字，實際 
+ - 單筆 202 無原型 不可外拋，實際 Cannot convert object to primitive value
+ - 單筆 202 無原型 要結果未知，實際 
+ - 單筆 202 無原型 要用安全文字，實際 
+ - 單筆 203 無原型 不可外拋，實際 Cannot convert object to primitive value
+ - 單筆 203 無原型 要結果未知，實際 
+ - 單筆 203 無原型 要用安全文字，實際 
+ - 八案例 message getter 丟錯 不可外拋，實際 message getter failed
+ - 八案例 message getter 丟錯 要結果未知，實際 
+ - 八案例 message getter 丟錯 要用安全文字，實際 
+ - 單筆 201 message getter 丟錯 不可外拋，實際 message getter failed
+ - 單筆 201 message getter 丟錯 要結果未知，實際 
+ - 單筆 201 message getter 丟錯 要用安全文字，實際 
+ - 單筆 202 message getter 丟錯 不可外拋，實際 message getter failed
+ - 單筆 202 message getter 丟錯 要結果未知，實際 
+ - 單筆 202 message getter 丟錯 要用安全文字，實際 
+ - 單筆 203 message getter 丟錯 不可外拋，實際 message getter failed
+ - 單筆 203 message getter 丟錯 要結果未知，實際 
+ - 單筆 203 message getter 丟錯 要用安全文字，實際 
+ - 八案例 toString 丟錯 不可外拋，實際 toString failed
+ - 八案例 toString 丟錯 要結果未知，實際 
+ - 八案例 toString 丟錯 要用安全文字，實際 
+ - 單筆 201 toString 丟錯 不可外拋，實際 toString failed
+ - 單筆 201 toString 丟錯 要結果未知，實際 
+ - 單筆 201 toString 丟錯 要用安全文字，實際 
+ - 單筆 202 toString 丟錯 不可外拋，實際 toString failed
+ - 單筆 202 toString 丟錯 要結果未知，實際 
+ - 單筆 202 toString 丟錯 要用安全文字，實際 
+ - 單筆 203 toString 丟錯 不可外拋，實際 toString failed
+ - 單筆 203 toString 丟錯 要結果未知，實際 
+ - 單筆 203 toString 丟錯 要用安全文字，實際 

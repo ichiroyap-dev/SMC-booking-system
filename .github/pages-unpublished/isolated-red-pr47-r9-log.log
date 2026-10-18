@@ -1,0 +1,16 @@
+pr47 r9 item log failed: 15
+ - 八案例成功：不可呼叫 getUi，實際 1
+ - 八案例成功：不可呼叫 alert，實際 1
+ - 201 成功：不可呼叫 getUi，實際 1
+ - 201 成功：不可呼叫 alert，實際 1
+ - 202 成功：不可呼叫 getUi，實際 1
+ - 202 成功：不可呼叫 alert，實際 1
+ - 203 成功：不可呼叫 getUi，實際 1
+ - 203 成功：不可呼叫 alert，實際 1
+ - 重複 201：不可呼叫 getUi／alert
+ - 重複 202：不可呼叫 getUi／alert
+ - 重複 203：不可呼叫 getUi／alert
+ - 八案例失敗：不可呼叫 getUi／alert
+ - 失敗 201：不可呼叫 getUi／alert
+ - 失敗 202：不可呼叫 getUi／alert
+ - 失敗 203：不可呼叫 getUi／alert
