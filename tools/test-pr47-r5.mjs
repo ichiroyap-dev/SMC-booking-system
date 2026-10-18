@@ -408,7 +408,6 @@ function itemCase7() {
 function itemSingle() {
   assert(!/^function doPost\s*\(/m.test(gs), '不可新增 doPost');
   assert(!html.includes('runIsolatedOneBooking') && !html.includes('runIsolatedFixedBooking'), '不可在網頁加單筆入口');
-  assert(typeof loadIsolated().sandbox.runIsolatedOneBooking === 'function', '編輯器要能跑 runIsolatedOneBooking');
   assert(typeof loadIsolated().sandbox.runIsolatedOneBooking201 === 'function', '編輯器要能跑 runIsolatedOneBooking201');
   assert(typeof loadIsolated().sandbox.runIsolatedOneBooking202 === 'function', '編輯器要能跑 runIsolatedOneBooking202');
   assert(typeof loadIsolated().sandbox.runIsolatedOneBooking203 === 'function', '編輯器要能跑 runIsolatedOneBooking203');
@@ -427,10 +426,9 @@ function itemSingle() {
   assert(orderIds(first).filter((id) => id === 'SMC900201').length === 1, '重複不可再寫一列');
   assert(first.box.mails.length === 2, '重複不可再寄信，實際 ' + first.box.mails.length);
 
-  const viaConst = loadIsolated();
-  viaConst.sandbox.ISOLATED_ONE_ORDER_ID = 'SMC900202';
-  viaConst.sandbox.runIsolatedOneBooking();
-  assert(orderIds(viaConst).includes('SMC900202'), '常數改成 SMC900202 時，runIsolatedOneBooking 要送那一筆');
+  const via202 = loadIsolated();
+  via202.sandbox.runIsolatedOneBooking202();
+  assert(orderIds(via202).includes('SMC900202'), 'runIsolatedOneBooking202 要送 SMC900202');
 
   const lied = loadIsolated();
   lied.box.lieUpdatedRange = "'其他'!A2:V2";

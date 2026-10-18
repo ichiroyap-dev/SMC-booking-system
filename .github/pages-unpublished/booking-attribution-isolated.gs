@@ -34,8 +34,8 @@
  * 對不上就不會寫入任何訂單、也不會寄信。腳本不會自動幫你做出這個標記。
  *
  * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
- * 表尾三筆用編輯器入口 runIsolatedOneBooking201／202／203，或改 ISOLATED_ONE_ORDER_ID 再跑 runIsolatedOneBooking。
- * 每次只送一筆固定編號。沒有新的 doGet／doPost，也不要為了這三筆重新部署。
+ * 表尾三筆只用編輯器入口 runIsolatedOneBooking201／202／203，每次只送一筆固定編號。
+ * 帶編號的 helper 是私有函式，不可從編輯器選單或 google.script.run 跑。沒有新的 doGet／doPost，也不要為了這三筆重新部署。
  * 這個檔在 .github/pages-unpublished/booking-attribution-isolated.gs。
  * 目前的建置方式不會公開 .github，請從 repo 複製，不要從官網網址下載。
  * 換建置流程或 upload-pages-artifact 換版本後，要再確認這個目錄沒有被公開。
@@ -47,8 +47,6 @@ var ORDER_HEADERS = [
 ];
 var MAIL_HEADERS = ['訂單編號', '客人信箱', '客人主旨', '客人正文', '店內信箱', '店內主旨', '店內正文'];
 var RESULT_HEADERS = ['案例', '訂單編號', '結果', '寫入', '寄信'];
-var ISOLATED_ONE_ORDER_ID = 'SMC900201';
-var ISOLATED_ONE_ORDER_IDS = { SMC900201: true, SMC900202: true, SMC900203: true };
 var ATTRIBUTION_FIELDS = ['source', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm', 'utmAdgroup', 'adgroupBucket', 'gclid'];
 var MARKER_SHEET = '隔離標記';
 var MARKER_VALUE = 'SMC-ISOLATED-TEST';
@@ -876,9 +874,9 @@ function acceptBooking_(payload) {
   return outcome;
 }
 
-function runIsolatedFixedBooking(orderId) {
-  var id = String(orderId || ISOLATED_ONE_ORDER_ID || '').trim();
-  if (!ISOLATED_ONE_ORDER_IDS[id]) {
+function runIsolatedFixedBooking_(orderId) {
+  var id = String(orderId || '').trim();
+  if (id !== 'SMC900201' && id !== 'SMC900202' && id !== 'SMC900203') {
     var badId = '編號只能是 SMC900201、SMC900202 或 SMC900203。沒有寫入，也沒有寄信。';
     notify_(badId);
     return badId;
@@ -920,7 +918,13 @@ function runIsolatedFixedBooking(orderId) {
     return fail;
   }
   if (res.duplicate === true) {
-    var dup = '這個編號已經收過，這次沒有新增。duplicate=true、wrote=' + outcome.wrote + '、mailed=' + outcome.mailed + '。'
+    if (outcome.wrote !== false || outcome.mailed !== false) {
+      var badDup = '結果未知。停在單筆「' + id + '」。原因：預期重複編號，要 duplicate=true、wrote=false、mailed=false。實際 wrote=' + outcome.wrote + '、mailed=' + outcome.mailed + '。'
+        + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+      notify_(badDup);
+      return badDup;
+    }
+    var dup = '這個編號已經收過，這次沒有新增。duplicate=true、wrote=false、mailed=false。'
       + mailNote_(sent, failed) + '。';
     notify_(dup);
     return dup;
@@ -936,20 +940,16 @@ function runIsolatedFixedBooking(orderId) {
   return ok;
 }
 
-function runIsolatedOneBooking() {
-  return runIsolatedFixedBooking(ISOLATED_ONE_ORDER_ID);
-}
-
 function runIsolatedOneBooking201() {
-  return runIsolatedFixedBooking('SMC900201');
+  return runIsolatedFixedBooking_('SMC900201');
 }
 
 function runIsolatedOneBooking202() {
-  return runIsolatedFixedBooking('SMC900202');
+  return runIsolatedFixedBooking_('SMC900202');
 }
 
 function runIsolatedOneBooking203() {
-  return runIsolatedFixedBooking('SMC900203');
+  return runIsolatedFixedBooking_('SMC900203');
 }
 
 function submitIsolatedFromPage(payload) {
@@ -1163,14 +1163,10 @@ function inspectFormulaProbes_(sheet, orderId, probes) {
     var formula = '讀取失敗';
     var ok = false;
     if (rowIndex > 0 && col > 0) {
-      try {
-        var cell = sheet.getRange(rowIndex, col);
-        read = cell.getValue() == null ? '' : String(cell.getValue());
-        formula = cell.getFormula() == null ? '' : String(cell.getFormula());
-        ok = formula === '' && read === want;
-      } catch (err) {
-        ok = false;
-      }
+      var cell = sheet.getRange(rowIndex, col);
+      read = cell.getValue() == null ? '' : String(cell.getValue());
+      formula = cell.getFormula() == null ? '' : String(cell.getFormula());
+      ok = formula === '' && read === want;
     }
     checks.push({ header: probe.header, raw: raw, read: read, formula: formula, ok: ok });
   }

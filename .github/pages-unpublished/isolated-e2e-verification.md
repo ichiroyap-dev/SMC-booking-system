@@ -144,6 +144,29 @@ node tools/test-pr47-r5.mjs --item docs
 
 本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
 
+## PR47 第 6 輪：Codex 第 5 輪退回
+
+儲存格 `getValue`／`getFormula` 丟錯要走既有停止摘要：案例、階段（公式核對讀取）、錯誤、確認／未確認封數。單筆編號改成直接比對 `SMC900201`／`SMC900202`／`SMC900203`，不再用物件鍵。帶編號的 helper 改成 `runIsolatedFixedBooking_`；刪掉公開的 `runIsolatedOneBooking`。單筆重複要 `wrote=false`、`mailed=false`。手冊補 201／202／203 佈置、寫入位置，以及「人工確認測試表 ID 和收件信箱是測試用」。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r6.mjs` 配上固定腳本 `a50a3645f848ef0221411c7589f1ca461539e240`。綠燈是同一指令、腳本放回這輪。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show a50a3645f848ef0221411c7589f1ca461539e240:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r6.mjs --item cell
+node tools/test-pr47-r6.mjs --item allow
+node tools/test-pr47-r6.mjs --item docs
+node tools/test-pr47-r6.mjs --item nit
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 儲存格 getValue／getFormula 丟錯 | 結束碼 1，10 項。摘要只寫「公式核對失敗」，缺案例、階段、錯誤與封數。`isolated-red-pr47-r6-cell.log` | 結束碼 0。`isolated-green-pr47-r6-cell.log` |
+| 編號白名單 | 結束碼 1，9 項。`toString`／`constructor`／`__proto__` 寫入 `SMC900001` 並寄 2 封。`isolated-red-pr47-r6-allow.log` | 結束碼 0。`isolated-green-pr47-r6-allow.log` |
+| 手冊佈置與人工確認 | 結束碼 1，4 項。`isolated-red-pr47-r6-docs.log` | 結束碼 0。`isolated-green-pr47-r6-docs.log` |
+| helper 私有與重複 wrote/mailed | 結束碼 1，5 項。`isolated-red-pr47-r6-nit.log` | 結束碼 0。`isolated-green-pr47-r6-nit.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
 ## 合併到 main 之後
 
 合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
