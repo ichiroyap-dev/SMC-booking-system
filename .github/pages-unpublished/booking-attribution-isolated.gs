@@ -34,6 +34,8 @@
  * 對不上就不會寫入任何訂單、也不會寄信。腳本不會自動幫你做出這個標記。
  *
  * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
+ * 表尾三筆用編輯器入口 runIsolatedOneBooking201／202／203，或改 ISOLATED_ONE_ORDER_ID 再跑 runIsolatedOneBooking。
+ * 每次只送一筆固定編號。沒有新的 doGet／doPost，也不要為了這三筆重新部署。
  * 這個檔在 .github/pages-unpublished/booking-attribution-isolated.gs。
  * 目前的建置方式不會公開 .github，請從 repo 複製，不要從官網網址下載。
  * 換建置流程或 upload-pages-artifact 換版本後，要再確認這個目錄沒有被公開。
@@ -45,6 +47,8 @@ var ORDER_HEADERS = [
 ];
 var MAIL_HEADERS = ['訂單編號', '客人信箱', '客人主旨', '客人正文', '店內信箱', '店內主旨', '店內正文'];
 var RESULT_HEADERS = ['案例', '訂單編號', '結果', '寫入', '寄信'];
+var ISOLATED_ONE_ORDER_ID = 'SMC900201';
+var ISOLATED_ONE_ORDER_IDS = { SMC900201: true, SMC900202: true, SMC900203: true };
 var ATTRIBUTION_FIELDS = ['source', 'utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm', 'utmAdgroup', 'adgroupBucket', 'gclid'];
 var MARKER_SHEET = '隔離標記';
 var MARKER_VALUE = 'SMC-ISOLATED-TEST';
@@ -872,6 +876,82 @@ function acceptBooking_(payload) {
   return outcome;
 }
 
+function runIsolatedFixedBooking(orderId) {
+  var id = String(orderId || ISOLATED_ONE_ORDER_ID || '').trim();
+  if (!ISOLATED_ONE_ORDER_IDS[id]) {
+    var badId = '編號只能是 SMC900201、SMC900202 或 SMC900203。沒有寫入，也沒有寄信。';
+    notify_(badId);
+    return badId;
+  }
+  if (!isIsolated_()) {
+    notify_(BLOCKED_MESSAGE);
+    return BLOCKED_MESSAGE;
+  }
+  var shop = shopMailbox_();
+  if (!shop) {
+    var badMail = 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。';
+    notify_(badMail);
+    return badMail;
+  }
+  if (!sheetsApiReady_()) {
+    var missingSheets = sheetsMissingMessage_();
+    notify_(missingSheets);
+    return missingSheets;
+  }
+  var opened = openIsolatedSpreadsheet_();
+  if (!opened.ok) {
+    notify_(opened.message);
+    return opened.message;
+  }
+  var outcome;
+  try {
+    outcome = acceptBooking_(isolatedBasePayload_(shop, id));
+  } catch (err) {
+    outcome = { response: { status: 'error', message: errorText_(err) }, wrote: false, mailed: false };
+  }
+  if (!outcome || !outcome.response) outcome = { response: { status: 'error', message: '沒有回應' }, wrote: false, mailed: false };
+  var res = outcome.response;
+  var sent = outcome.sentCount || 0;
+  var failed = outcome.failedCount || 0;
+  if (res.status === 'unknown' || res.status !== 'success') {
+    var fail = '結果未知。停在單筆「' + id + '」。原因：' + (res.message || res.status || '沒有回應') + '。'
+      + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+    notify_(fail);
+    return fail;
+  }
+  if (res.duplicate === true) {
+    var dup = '這個編號已經收過，這次沒有新增。duplicate=true、wrote=' + outcome.wrote + '、mailed=' + outcome.mailed + '。'
+      + mailNote_(sent, failed) + '。';
+    notify_(dup);
+    return dup;
+  }
+  if (outcome.wrote !== true || outcome.mailed !== true) {
+    var unconf = '結果未知。停在單筆「' + id + '」。原因：寄信未確認。'
+      + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+    notify_(unconf);
+    return unconf;
+  }
+  var ok = '單筆 ' + id + ' 已收單。' + mailNote_(sent, failed) + '。';
+  notify_(ok);
+  return ok;
+}
+
+function runIsolatedOneBooking() {
+  return runIsolatedFixedBooking(ISOLATED_ONE_ORDER_ID);
+}
+
+function runIsolatedOneBooking201() {
+  return runIsolatedFixedBooking('SMC900201');
+}
+
+function runIsolatedOneBooking202() {
+  return runIsolatedFixedBooking('SMC900202');
+}
+
+function runIsolatedOneBooking203() {
+  return runIsolatedFixedBooking('SMC900203');
+}
+
 function submitIsolatedFromPage(payload) {
   try {
     if (!isIsolated_()) {
@@ -1117,6 +1197,33 @@ function writeProbeSheet_(ss, checks) {
 
 // 新單要 success、有寫入、兩封都確認寄出。重複那一筆要 duplicate=true、wrote=false、mailed=false。
 // 回空字串代表這個案例可以繼續，否則回停下的原因。
+function markUnverified_(lines) {
+  for (var r = 1; r < lines.length; r += 1) {
+    var result = String(lines[r][2] || '');
+    if (result.indexOf('未驗證') === -1) lines[r][2] = result ? result + '／未驗證' : '未驗證';
+  }
+}
+
+function writeStopReports_(ss, lines) {
+  var note = '';
+  try {
+    writeResultSheet_(ss, lines);
+  } catch (err) {
+    note += '「驗收結果」也沒有留住。錯誤：' + errorText_(err) + '。';
+  }
+  return note;
+}
+
+function finishStopped_(opened, lines, summary, extras) {
+  extras = extras || {};
+  markUnverified_(lines);
+  if (extras.formulaNotRun) summary += '本輪公式核對未執行。';
+  summary += writeStopReports_(opened.ss, lines);
+  if (summary.indexOf('不要重跑') === -1) summary += '不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+  notify_(summary);
+  return summary;
+}
+
 function caseStopReason_(item, outcome) {
   var res = outcome && outcome.response ? outcome.response : {};
   var status = res.status || '';
@@ -1183,22 +1290,28 @@ function runIsolatedEightCases() {
     if (stopReason) {
       var caseFail = '結果未知。停在「' + cases[i].label + '」。原因：' + stopReason + '。後面的案例沒有執行。'
         + mailNote_(sentMails, failedMails) + '。';
-      try {
-        writeResultSheet_(opened.ss, lines);
-      } catch (stopReportErr) {
-        caseFail += '「驗收結果」也沒有留住。錯誤：' + errorText_(stopReportErr) + '。';
-      }
-      caseFail += '不要重跑，不要補寄，不要部署，不要開網頁驗收。';
-      notify_(caseFail);
-      return caseFail;
+      return finishStopped_(opened, lines, caseFail, { formulaNotRun: !writtenProbe && i < 5 });
     }
     if (cases[i].probes) {
       var orderSheet = opened.ss.getSheetByName('訂單');
-      var checks = inspectFormulaProbes_(orderSheet, outcome.response.orderId || '', cases[i].probes);
+      var checks;
+      try {
+        checks = inspectFormulaProbes_(orderSheet, outcome.response.orderId || '', cases[i].probes);
+      } catch (probeReadErr) {
+        var probeReadFail = '結果未知。停在「' + cases[i].label + '」的公式核對讀取。錯誤：' + errorText_(probeReadErr) + '。'
+          + mailNote_(sentMails, failedMails) + '。';
+        return finishStopped_(opened, lines, probeReadFail, { formulaNotRun: false });
+      }
       try {
         writtenProbe = writeProbeSheet_(opened.ss, checks);
       } catch (probeErr) {
         var probeFail = '結果未知。停在「' + cases[i].label + '」的公式核對寫入。' + mailNote_(sentMails, failedMails) + '。錯誤：' + errorText_(probeErr) + '。不要重跑，不要部署。';
+        markUnverified_(lines);
+        try {
+          writeResultSheet_(opened.ss, lines);
+        } catch (stopReportErr) {
+          probeFail += '「驗收結果」也沒有留住。錯誤：' + errorText_(stopReportErr) + '。';
+        }
         notify_(probeFail);
         return probeFail;
       }

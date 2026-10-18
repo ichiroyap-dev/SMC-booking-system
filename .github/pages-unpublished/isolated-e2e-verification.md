@@ -117,6 +117,33 @@ node tools/test-pr47-r3.mjs --item evidence
 - Pages：這台 gh 已登入、能連網，`node tools/check-pages-unpublished.mjs` 結束碼 0，`node tools/test-preflag-fixes.mjs --item 5` 結束碼 0。
 - Pages BLOCKED：gh 未登入時，`node tools/check-pages-unpublished.mjs` 是 BLOCKED，結束碼 2。`node tools/test-preflag-fixes.mjs --item 5` 在同樣環境下結束碼 1。這是環境不足，不是通過，也不算 Pages 已公開。需要的環境：能連到 https://www.sweetmeichicken.com，gh 已登入並能讀 Pages 設定與 pages-build-deployment。
 
+## PR47 第 5 輪：Codex 第 4 輪退回
+
+案例 6 公式核對讀取丟錯要接住，留下案例、階段、錯誤和當時封數；盡力寫報告，報告寫入失敗不可蓋掉摘要。案例 7 的位置錯誤、讀回不符、寄信未確認要有自動測試。表尾三筆用編輯器單筆入口，每次一個編號。中途停下時，驗收結果已寫的列標「未驗證」；案例 6 前停下要寫「本輪公式核對未執行」。總管的停止矩陣改成會失敗的斷言。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r5.mjs` 配上固定腳本 `b7a67f5dad9218775ec373b73dddc5c5d95c1ae1`。綠燈是同一指令、腳本放回這輪。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show b7a67f5dad9218775ec373b73dddc5c5d95c1ae1:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r5.mjs --item probe
+node tools/test-pr47-r5.mjs --item case7
+node tools/test-pr47-r5.mjs --item single
+node tools/test-pr47-r5.mjs --item matrix
+node tools/test-pr47-r5.mjs --item nit
+node tools/test-pr47-r5.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 案例 6 公式核對讀取丟錯 | 結束碼 1，9 項 | 結束碼 0 |
+| 案例 7 停下 | 結束碼 0（`b7a67f5` 已會停；這輪補成回歸測試） | 結束碼 0 |
+| 編輯器單筆入口 | 結束碼 1，4 項 | 結束碼 0 |
+| 停止矩陣 1–8 | 結束碼 0（總管探測已對；這輪改成斷言） | 結束碼 0 |
+| 未驗證與公式核對未執行 | 結束碼 1，2 項 | 結束碼 0 |
+| 手冊清空與單筆入口 | 結束碼 1，3 項 | 結束碼 0 |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
 ## 合併到 main 之後
 
 合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
