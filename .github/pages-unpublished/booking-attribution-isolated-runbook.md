@@ -14,17 +14,17 @@
 
 需 Owner GO。沒有這句授權，不要貼上、不要執行、不要寫表、不要寄信。
 
-只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。程式停在 commit `404b6c41b75733ab91ae22065e4f4eca629eca62`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
+只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。程式停在 commit `57da6221c36d97cce201d8b2de349efe96b8d4d3`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
 
-2026-10-18 16:02（台北）用 `355da77` 重跑，8 個案例全部通過。16:07 已部署成私人網頁應用程式：版本 1，存取只有自己。私人網頁維持 `355da77` 版本 1。這輪不要重新部署，也不要把這輪的腳本貼上後在真表執行。這輪改了寫入方式、欄位型別，以及客人信失敗後仍寄店內信，不是只改錯誤訊息。下面的 raw 連結和 SHA-256 只供核對檔案。固定 commit 是 `404b6c41b75733ab91ae22065e4f4eca629eca62`。
+2026-10-18 16:02（台北）用 `355da77` 重跑，8 個案例全部通過。16:07 已部署成私人網頁應用程式：版本 1，存取只有自己。私人網頁維持 `355da77` 版本 1。這輪不要重新部署，也不要把這輪的腳本貼上後在真表執行。這輪改了寫入方式、欄位型別，以及客人信失敗後仍寄店內信，不是只改錯誤訊息。下面的 raw 連結和 SHA-256 只供核對檔案。固定 commit 是 `57da6221c36d97cce201d8b2de349efe96b8d4d3`。
 
 2026-10-18 Owner 已用編輯器跑過 `fa16c43` 的八案例。資料核對通過：確認寄出 14 封、未確認 0 封，訂單／郵件預覽／驗收結果／公式核對列數 8／8／9／5，案例 8 是 `duplicate=true`、`wrote=false`、`mailed=false`，公式核對通過。最後因編輯器沒有 `getUi`，舊程式把成功摘要改成結果未知。那張測試表當證據保留，不要清掉當下一輪。核准後要換新固定版，清空後從頭重跑。
 
 1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。這個信箱就是下一步的 `SMC_SHOP_EMAIL`。重跑前清空四張分頁（訂單、郵件預覽、驗收結果、公式核對，表頭以下）。「隔離標記」不要清。訂單分頁至少1000列、欄擴至 AAA。
 2. **核對程式。這輪不要貼上、不要執行八案例。** 未核對雜湊前不要貼。在 PowerShell 下載後執行 `Get-FileHash .\檔名 -Algorithm SHA256`，要和下面的預期值相同。
-   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/404b6c41b75733ab91ae22065e4f4eca629eca62/.github/pages-unpublished/booking-attribution-isolated.gs
-     預期 SHA-256 `0f42dc724733729b9826f31d132186070b32585d066a54241dac47f56d3f4b3c`
-   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/404b6c41b75733ab91ae22065e4f4eca629eca62/.github/pages-unpublished/IsolatedCheck.html
+   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/booking-attribution-isolated.gs
+     預期 SHA-256 `3aac1336d0f21b6e7ca62637bf1e23e94abc2aaa5d8ff7ae5b365365641be14c`
+   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/IsolatedCheck.html
      預期 SHA-256 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
    - 從這張新試算表開 Apps Script。貼上腳本，再「+」→ HTML，檔名 `IsolatedCheck`。不必手改 `appsscript.json`。編輯器左側「服務」旁按「+」，選 Google Sheets API，按新增。預設的 Apps Script Cloud 專案會自己打開這個 API，不必再去 Cloud Console。存檔後 `appsscript.json` 會出現 `enabledAdvancedServices`：`userSymbol` 是 `Sheets`、`version` 是 `v4`、`serviceId` 是 `sheets`。
    - 設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。
@@ -212,12 +212,12 @@
 
 ## 固定版本
 
-要核對的兩個檔案停在 commit `404b6c41b75733ab91ae22065e4f4eca629eca62`。這段連結是下一個 commit 寫上的，不會引用自己。這輪不要貼上、不要重新部署。
+要核對的兩個檔案停在 commit `57da6221c36d97cce201d8b2de349efe96b8d4d3`。這段連結是下一個 commit 寫上的，不會引用自己。這輪不要貼上、不要重新部署。
 
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/404b6c41b75733ab91ae22065e4f4eca629eca62/.github/pages-unpublished/booking-attribution-isolated.gs
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/booking-attribution-isolated.gs
   - `Get-FileHash .\booking-attribution-isolated.gs -Algorithm SHA256`
-  - 預期 `0f42dc724733729b9826f31d132186070b32585d066a54241dac47f56d3f4b3c`
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/404b6c41b75733ab91ae22065e4f4eca629eca62/.github/pages-unpublished/IsolatedCheck.html
+  - 預期 `3aac1336d0f21b6e7ca62637bf1e23e94abc2aaa5d8ff7ae5b365365641be14c`
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/IsolatedCheck.html
   - `Get-FileHash .\IsolatedCheck.html -Algorithm SHA256`
   - 預期 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
 

@@ -234,6 +234,30 @@ node tools/test-pr47-r8.mjs --item docs
 
 本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
 
+## PR47 第 9 輪：入口明確只記執行紀錄
+
+Owner 決定不再用錯誤文字判斷有沒有 UI。`runIsolatedEightCases`（含 onOpen 選單）與 `runIsolatedOneBooking201`／`202`／`203` 一律 LOG-ONLY：不呼叫 `SpreadsheetApp.getUi()`，也不呼叫 `alert()`。完整摘要寫進 `console.log`，回傳同一句。刪掉 `isEditorUiUnavailable_`。`errorText_` 遇無原型、`message` getter 丟錯或 `toString` 丟錯時回「錯誤內容無法讀取」，不外拋。先前資料失敗再加上通知失敗時，原失敗摘要與「結果未知」都要留下。檔頭與手冊改成：只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。編輯器入口只記執行紀錄，設計上沒有彈窗，結果以執行紀錄為準。`fa16c43` 測試表仍當證據保留，核准後從頭重跑。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r9.mjs` 配上固定腳本 `404b6c41b75733ab91ae22065e4f4eca629eca62`。綠燈是同一指令、腳本放回這輪。
+
+```bash
+git show 404b6c41b75733ab91ae22065e4f4eca629eca62:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r9.mjs --item log
+node tools/test-pr47-r9.mjs --item err
+node tools/test-pr47-r9.mjs --item keep
+git show 404b6c41b75733ab91ae22065e4f4eca629eca62:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-pr47-r9.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 八案例與 201／202／203 成功、重複、失敗都不呼叫 getUi／alert | 結束碼 1，15 項。`isolated-red-pr47-r9-log.log` | 結束碼 0。`isolated-green-pr47-r9-log.log` |
+| 無原型／message getter／toString 丟錯 | 結束碼 1，36 項。`isolated-red-pr47-r9-err.log` | 結束碼 0。`isolated-green-pr47-r9-err.log` |
+| 先前失敗加上通知失敗仍保留原摘要 | 結束碼 1，12 項。`isolated-red-pr47-r9-keep.log` | 結束碼 0。`isolated-green-pr47-r9-keep.log` |
+| 專案措辭與只記執行紀錄 | 結束碼 1，5 項。`isolated-red-pr47-r9-docs.log` | 結束碼 0。`isolated-green-pr47-r9-docs.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
 ## 合併到 main 之後
 
 合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
@@ -258,12 +282,12 @@ Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`�
 
 決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列在鎖內先 `values.get` 整張分頁的公式（`FORMULA`，不設 `A:ZZ` 上限），再用 `values.update` RAW 寫到最後一筆有值的下一列。`updatedRange` 要對上分頁、正好那一列、欄從 A 到最後一欄。記錄裡的 `tableRange` 是推算。不看快取最後一列加一，也不用範圍 A1 的 `values.append`。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間存試算表序號。收到時間用試算表時區的牆鐘序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
 
-固定檔案停在 commit `404b6c41b75733ab91ae22065e4f4eca629eca62`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
+固定檔案停在 commit `57da6221c36d97cce201d8b2de349efe96b8d4d3`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
 
 | 檔案 | raw 連結 | SHA-256 |
 | --- | --- | --- |
-| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/404b6c41b75733ab91ae22065e4f4eca629eca62/.github/pages-unpublished/booking-attribution-isolated.gs | `0f42dc724733729b9826f31d132186070b32585d066a54241dac47f56d3f4b3c` |
-| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/404b6c41b75733ab91ae22065e4f4eca629eca62/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
+| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/booking-attribution-isolated.gs | `3aac1336d0f21b6e7ca62637bf1e23e94abc2aaa5d8ff7ae5b365365641be14c` |
+| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
 
 ## 第 8 輪原文
 
@@ -436,10 +460,10 @@ node tools/test-isolated-e2e.mjs
 
 ## 請 Owner 做的三步
 
-必須是新建的獨立試算表專案，不要貼進任何既有專案。未核對雜湊前不要貼。不要打開 `www.sweetmeichicken.com`。不要覆寫正式部署。信箱用 Owner 自己的測試信箱。結果未知時，不可以重新整理後重送。
+只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。未核對雜湊前不要貼。不要打開 `www.sweetmeichicken.com`。不要覆寫正式部署。信箱用 Owner 自己的測試信箱。結果未知時，不可以重新整理後重送。
 
 1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。
-2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。從試算表開 Apps Script，貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。結果會寫進編輯器執行記錄，也會嘗試在試算表分頁彈出 alert。沒有看到這段結果、還在執行，或出現錯誤，就停止回報。首次執行可能再授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown、報告空白或讀回不符就停，不部署。重跑前先留下 14:59 的 CSV 和郵件紀錄。同一張表要清除內容：訂單、郵件預覽、驗收結果、公式核對。表頭可以留著。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
+2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。從試算表開 Apps Script，貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。編輯器入口只記執行紀錄，設計上沒有彈窗。結果以執行紀錄為準。沒有看到這段結果、還在執行，或出現錯誤，就停止回報。首次執行可能再授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown、報告空白或讀回不符就停，不部署。重跑前先留下 14:59 的 CSV 和郵件紀錄。同一張表要清除內容：訂單、郵件預覽、驗收結果、公式核對。表頭可以留著。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
 3. **全部核對通過才開私人頁。** 新增網路應用程式部署，執行身分「我」、存取「只有我」。不要覆寫正式部署。用同帳號開新網址，帶入品牌欄位送一次。網頁每一筆新單再 2 封。未知或沒有回應就停，不可以重新整理後重送。`127.0.0.1` 那頁只留給模擬測試，不要拿來送這個部署。
 
 做完後一次回傳：測試表 ID、測試信箱、八案例的驗收結果、公式核對四格、exec 網址、存取是不是「只有我」，以及確認沒有改正式環境。
