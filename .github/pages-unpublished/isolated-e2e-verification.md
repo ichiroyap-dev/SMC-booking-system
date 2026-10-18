@@ -43,9 +43,9 @@ node tools/test-isolated-e2e.mjs
 
 ## 第 6 輪紅燈與綠燈
 
-Owner 用 `5f89c71` 在 2026-10-18 14:59（台北）跑了 `runIsolatedEightCases`。`.gs` 的 SHA-256 是 `6e2375b719be7f1d2c165e05c6b800eeffabe8aad9b7f3450b909180d631c054`，Sheets API 已經加過。訂單分頁 7 個編號各一列，郵件預覽 7 列，信 14 封。案例 6 的 `=1+1`、`+1+1`、`-1+1`、`@cmd` 都是文字。案例 8 是重複編號，沒寫、沒寄。執行約 18.5 秒，沒有錯誤。但是「驗收結果」和「公式核對」整張是空的，匯出的 CSV 是 0 bytes。沒有部署。
+真表上觀察到的是：Owner 用 `5f89c71` 在 2026-10-18 14:59（台北）跑了 `runIsolatedEightCases`。`.gs` 的 SHA-256 是 `6e2375b719be7f1d2c165e05c6b800eeffabe8aad9b7f3450b909180d631c054`，Sheets API 已經加過。訂單分頁 7 個編號各一列，郵件預覽 7 列，信 14 封。案例 6 的 `=1+1`、`+1+1`、`-1+1`、`@cmd` 都是文字。案例 8 是重複編號，沒寫、沒寄。執行約 18.5 秒，沒有錯誤。但是「驗收結果」和「公式核對」整張是空的，匯出的 CSV 是 0 bytes。沒有部署。那次沒有留下能證明 flush 先後順序的執行追蹤。
 
-程式裡 `writeResultSheet_` 和 `writeProbeSheet_` 先呼叫 `sheet.clear()`。SpreadsheetApp 會把清除延後。接著 `values.update` 立刻把報告寫進伺服器。案例 7 的 `SpreadsheetApp.flush()`，以及腳本結束時的 flush，才把那個清除送出，報告被洗掉。案例 8 是重複編號，沒有寫入，不會 flush。訂單和郵件預覽沒有呼叫 clear，所以 7 列和 14 封信還在。RAW 這段是有效的。
+模擬重現的是：當時的 `writeResultSheet_` 和 `writeProbeSheet_` 先呼叫 `sheet.clear()`。模擬裡 SpreadsheetApp 會把清除延後。接著 `values.update` 立刻把報告寫進伺服器。案例 7 的 `SpreadsheetApp.flush()`，以及腳本結束時的 flush，才把那個清除送出，報告被洗掉。案例 8 是重複編號，沒有寫入，不會 flush。這能對上真表上看到的空白報告，但不是 14:59 那次真表的內部追蹤。訂單和郵件預覽沒有呼叫 clear，所以真表上的 7 列和 14 封信還在。RAW 這段是有效的。
 
 模擬把 SpreadsheetApp 的 appendRow、setValues、setRichTextValue、clear 留到 flush 才寫進儲存的列。API 的 update、clear、get 立刻作用在儲存的列。Node `v22.14.0`。
 
@@ -66,11 +66,12 @@ node tools/test-isolated-e2e.mjs
 
 ## 開旗標前
 
-這輪不打開 `SEND_ATTRIBUTION_TO_BACKEND`。開旗標前要先做完下面三項：
+這輪不打開 `SEND_ATTRIBUTION_TO_BACKEND`。開旗標前要先做完下面四項，這輪都不改程式：
 
 1. PR37 前端的單引號。`js/booking-attribution.js` 的 `plainSheetText` 在值以 `=`、`+`、`-`、`@` 開頭時會先加 `'`。隔離後端的 RAW 會把這個引號原樣留下，所以可能核對成功，但格子和店內信多一個字。開旗標前要分開規定原文怎麼寫、已經加了引號的值怎麼寫。姓名和備註裡本來就有的單引號不能刪掉。還要補官網送到後端的整合測試，以及真表驗證。
-2. getLastRow()+1。訂單和郵件預覽的新列仍用試算表快取的 `getLastRow()+1` 再交給 API 寫入。API 寫入不會更新這份快取。這次是單人、同一張表、先清過內容，所以 14:59 的七筆各佔一列。開旗標前要改成不靠這份快取決定列號，並用測試證明連續寫入不會蓋到同一列。
+2. getLastRow()+1。訂單和郵件預覽的新列仍用試算表快取的 `getLastRow()+1` 再交給 API 寫入。不可依賴試算表快取和 Sheets API 即時一致。官方說明有讀寫快取，但沒有保證 API 寫入之後 getLastRow 立刻對得上。14:59 的七筆各佔一列是那次真表看到的結果，不是快取內部的追蹤。開旗標前要改成不靠這份快取決定列號，並用測試證明連續寫入不會蓋到同一列。這輪不改這段寫入。
 3. RAW 全文字。這支腳本送進 RAW 之前把每個值都轉成字串。RAW 本身可以存數字和布林，但現在非空資料都會以文字留下。開旗標前要定數字、日期、公式文字和下游讀表的契約。
+4. 確認 Pages 建置仍把 .github/pages-unpublished 排除在公開網站之外。目前的建置會排除 `.github`。換建置流程或 `upload-pages-artifact` 換版本之後，要再確認驗收頁、隔離腳本、手冊和 guard 沒有進公開網站。這輪不改建置。
 
 移植到正式腳本要另外驗證。正式腳本不在這個 repo，隔離通過不能當成正式環境已經接上。
 

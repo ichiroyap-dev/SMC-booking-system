@@ -968,6 +968,68 @@ function roundSevenReadback() {
   console.log('test 讀回前 flush 與錯誤訊息: ' + (failures.length === before ? 'pass' : 'FAIL'));
 }
 
+function roundEightMessages() {
+  const before = failures.length;
+  const flushBoom = loadIsolated({ sheetId: 'flush-boom-sheet' });
+  const realFlushWrite = flushBoom.sandbox.writeResultSheet_;
+  let resultSheetWritten = false;
+  flushBoom.sandbox.writeResultSheet_ = function (ss, lines) {
+    const written = realFlushWrite(ss, lines);
+    resultSheetWritten = true;
+    return written;
+  };
+  const realFlush = flushBoom.sandbox.SpreadsheetApp.flush;
+  flushBoom.sandbox.SpreadsheetApp.flush = function () {
+    if (resultSheetWritten) throw new Error('最終 flush 失敗');
+    return realFlush.apply(this, arguments);
+  };
+  const flushMsg = String(flushBoom.sandbox.runIsolatedEightCases());
+  assert(flushMsg.includes('結果未知') && flushMsg.includes('驗收結果') && flushMsg.includes('公式核對') && flushMsg.includes('flush') && flushMsg.includes('最終 flush 失敗'), '最終 flush 失敗要寫明階段、兩張分頁和錯誤');
+  assert(!flushMsg.includes('讀不回來'), 'flush 失敗不可說成讀不回來');
+  const probeRead = loadIsolated({ sheetId: 'probe-read-sheet' });
+  const realProbeGet = probeRead.sandbox.Sheets.Spreadsheets.Values.get;
+  probeRead.sandbox.Sheets.Spreadsheets.Values.get = function (id, range) {
+    if (String(range).includes('公式核對')) throw new Error('公式核對 get 失敗');
+    return realProbeGet.apply(this, arguments);
+  };
+  const probeReadMsg = String(probeRead.sandbox.runIsolatedEightCases());
+  assert(probeReadMsg.includes('公式核對') && probeReadMsg.includes('公式核對 get 失敗'), '公式核對讀回失敗要寫明分頁和錯誤');
+  const resultBoom = loadIsolated({ sheetId: 'result-boom-sheet' });
+  resultBoom.sandbox.writeResultSheet_ = function () { throw new Error('驗收結果寫入失敗'); };
+  const resultBoomMsg = String(resultBoom.sandbox.runIsolatedEightCases());
+  assert(resultBoomMsg.includes('驗收結果') && resultBoomMsg.includes('驗收結果寫入失敗'), '驗收結果寫入失敗要寫明分頁和錯誤');
+  const partialCount = loadIsolated({ sheetId: 'partial-count-sheet' });
+  const realPartialSend = partialCount.sandbox.MailApp.sendEmail;
+  let shopSends = 0;
+  partialCount.sandbox.MailApp.sendEmail = function (to, subject, body) {
+    if (String(subject).includes('店內對帳')) {
+      shopSends += 1;
+      if (shopSends === 6) throw new Error('第二封店內信失敗');
+    }
+    return realPartialSend.apply(this, arguments);
+  };
+  partialCount.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
+  const partialCountMsg = String(partialCount.sandbox.runIsolatedEightCases());
+  assert(partialCount.box.mails.length === 11, '案例 1–5 各兩封，加上案例 6 的客人信，實際成功 11 封');
+  assert(partialCountMsg.includes('已經寄出 11 封信') && !partialCountMsg.includes('已經寄出 10 封信'), '部分寄信要算已確認成功的 11 封');
+  assert(partialCountMsg.includes('另有 1 封沒有寄出') && partialCountMsg.includes('不要補寄'), '沒寄出的那封要另外標示，而且不要補寄');
+  const alertLogs = [];
+  const alertRun = loadIsolated({ sheetId: 'alert-run-sheet' });
+  alertRun.sandbox.console = { log(...args) { alertLogs.push(args.map((item) => String(item)).join(' ')); } };
+  alertRun.sandbox.SpreadsheetApp.getUi = function () {
+    return { alert() { throw new Error('沒有試算表介面'); }, createMenu() { return { addItem() { return this; }, addToUi() {} }; } };
+  };
+  const alertMsg = String(alertRun.sandbox.runIsolatedEightCases());
+  assert(alertMsg.includes('結果未知') && alertMsg.includes('沒有試算表介面') && !alertMsg.includes('四種前綴都通過') && !alertMsg.includes('才可以部署'), '八案例的 alert 失敗要回結果未知，不可回成功摘要');
+  const runbook = readFileSync(join(root, unpublished, 'booking-attribution-isolated-runbook.md'), 'utf8');
+  const verification = readFileSync(join(root, unpublished, 'isolated-e2e-verification.md'), 'utf8');
+  assert(runbook.includes('按確定') && runbook.includes('對話框'), '手冊要寫讀完 alert 按確定，等待對話框不是故障');
+  assert(!verification.includes('API 寫入不會更新這份快取') && verification.includes('不可依賴') && verification.includes('即時一致'), '快取描述要改成不可依賴即時一致');
+  assert(verification.includes('真表上觀察到') && verification.includes('模擬重現'), '根因要分開真表觀察和模擬重現');
+  assert(verification.includes('確認 Pages 建置仍把 .github/pages-unpublished 排除在公開網站之外'), '開旗標前要確認 Pages 仍排除未公開目錄');
+  console.log('test 錯誤訊息與部分寄信: ' + (failures.length === before ? 'pass' : 'FAIL'));
+}
+
 async function main() {
   productionChecks();
   await liveEndpointBlocked();
@@ -979,6 +1041,7 @@ async function main() {
   privateEntryAndFormula();
   deferredReportSurvivesFlush();
   roundSevenReadback();
+  roundEightMessages();
   if (failures.length) {
     console.error('isolated e2e failed: ' + failures.length);
     for (const line of failures) console.error(' - ' + line);

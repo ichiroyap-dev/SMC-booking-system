@@ -376,7 +376,7 @@ function writeLiteralMatrix_(sheet, startRow, matrix) {
   return values;
 }
 
-// 資料列仍用 getLastRow()+1。快取若過期會指到錯的列。開旗標前要換掉，這輪不改。
+// 資料列仍用 getLastRow()+1。不可依賴試算表快取和 Sheets API 即時一致。開旗標前要換掉，這輪不改。
 function writeRow_(sheet, row) {
   writeLiteralMatrix_(sheet, sheet.getLastRow() + 1, [row]);
 }
@@ -469,17 +469,33 @@ function invalidMailboxOutcome_() {
   };
 }
 
+function errorText_(err) {
+  if (err && err.message) return String(err.message);
+  if (err) return String(err);
+  return '沒有錯誤內容';
+}
+
+function mailNote_(sent, failed) {
+  var note = '已經寄出 ' + sent + ' 封信';
+  if (failed > 0) note += '。另有 ' + failed + ' 封沒有寄出，不要補寄';
+  return note;
+}
+
 function sendEmails_(result) {
   var sent = 0;
-  if (result.guestEmail.to) {
-    MailApp.sendEmail(result.guestEmail.to, result.guestEmail.subject, result.guestEmail.body);
-    sent += 1;
+  var failed = 0;
+  function deliver_(mail) {
+    if (!mail || !mail.to) return;
+    try {
+      MailApp.sendEmail(mail.to, mail.subject, mail.body);
+      sent += 1;
+    } catch (err) {
+      failed += 1;
+    }
   }
-  if (result.shopEmail.to) {
-    MailApp.sendEmail(result.shopEmail.to, result.shopEmail.subject, result.shopEmail.body);
-    sent += 1;
-  }
-  return sent;
+  deliver_(result.guestEmail);
+  deliver_(result.shopEmail);
+  return { sent: sent, failed: failed };
 }
 
 function acceptBooking_(payload) {
@@ -572,13 +588,22 @@ function acceptBooking_(payload) {
   }
   if (pendingMail && outcome.response && outcome.response.status === 'success') {
     var mailed = false;
+    var sentCount = 0;
+    var failedCount = 0;
     try {
-      mailed = sendEmails_(pendingMail) === 2;
+      var mailResult = sendEmails_(pendingMail);
+      if (mailResult && typeof mailResult === 'object') {
+        sentCount = mailResult.sent || 0;
+        failedCount = mailResult.failed || 0;
+      }
+      mailed = sentCount === 2 && failedCount === 0;
     } catch (mailErr) {
       mailed = false;
     }
     pendingMail.response.mailed = mailed;
     outcome.mailed = mailed;
+    outcome.sentCount = sentCount;
+    outcome.failedCount = failedCount;
   }
   return outcome;
 }
@@ -706,8 +731,11 @@ function notify_(message) {
   console.log(message);
   try {
     SpreadsheetApp.getUi().alert(message);
+    return { ok: true, error: '' };
   } catch (err) {
-    console.log(err && err.message ? String(err.message) : String(err));
+    var text = errorText_(err);
+    console.log(text);
+    return { ok: false, error: text };
   }
 }
 
@@ -850,9 +878,11 @@ function runIsolatedEightCases() {
   var failNote = '';
   var writtenProbe = null;
   var sentMails = 0;
+  var failedMails = 0;
   for (var i = 0; i < cases.length; i += 1) {
     var outcome = acceptBooking_(cases[i].payload);
-    if (outcome.mailed) sentMails += 2;
+    sentMails += outcome.sentCount || 0;
+    failedMails += outcome.failedCount || 0;
     lines.push([
       cases[i].label,
       outcome.response.orderId || '',
@@ -866,7 +896,7 @@ function runIsolatedEightCases() {
       try {
         writtenProbe = writeProbeSheet_(opened.ss, checks);
       } catch (probeErr) {
-        var probeFail = '結果未知。停在「' + cases[i].label + '」的公式核對寫入。已經寄出 ' + sentMails + ' 封信。不要重跑，不要部署。';
+        var probeFail = '結果未知。停在「' + cases[i].label + '」的公式核對寫入。' + mailNote_(sentMails, failedMails) + '。錯誤：' + errorText_(probeErr) + '。不要重跑，不要部署。';
         notify_(probeFail);
         return probeFail;
       }
@@ -885,17 +915,35 @@ function runIsolatedEightCases() {
   try {
     resultWritten = writeResultSheet_(opened.ss, lines);
   } catch (resultErr) {
-    var resultFail = '結果未知。驗收結果沒有留住。不要重跑，不要部署。';
+    var resultFail = '結果未知。「驗收結果」沒有留住。錯誤：' + errorText_(resultErr) + '。不要重跑，不要部署。';
     notify_(resultFail);
     return resultFail;
   }
   var readError = '';
+  var resultActual = [];
+  var probeActual = [];
   try {
     SpreadsheetApp.flush();
-    var resultSheet = opened.ss.getSheetByName('驗收結果');
-    var probeSheet = opened.ss.getSheetByName('公式核對');
-    var resultActual = resultSheet ? readSheetValues_(resultSheet) : [];
-    var probeActual = probeSheet ? readSheetValues_(probeSheet) : [];
+  } catch (flushErr) {
+    readError = '停在讀回「驗收結果」和「公式核對」之前的 flush。錯誤：' + errorText_(flushErr);
+  }
+  if (!readError) {
+    try {
+      var resultSheet = opened.ss.getSheetByName('驗收結果');
+      resultActual = resultSheet ? readSheetValues_(resultSheet) : [];
+    } catch (resultReadErr) {
+      readError = '「驗收結果」讀回失敗。錯誤：' + errorText_(resultReadErr);
+    }
+  }
+  if (!readError) {
+    try {
+      var probeSheet = opened.ss.getSheetByName('公式核對');
+      probeActual = probeSheet ? readSheetValues_(probeSheet) : [];
+    } catch (probeReadErr) {
+      readError = '「公式核對」讀回失敗。錯誤：' + errorText_(probeReadErr);
+    }
+  }
+  if (!readError) {
     var problems = [];
     var resultProblem = reportProblem_('驗收結果', resultActual, resultWritten);
     if (resultProblem) problems.push(resultProblem);
@@ -905,8 +953,6 @@ function runIsolatedEightCases() {
       if (probeProblem) problems.push(probeProblem);
     }
     readError = problems.join('。');
-  } catch (readErr) {
-    readError = '驗收結果或公式核對讀不回來';
   }
   if (readError) {
     var unknownReport = '結果未知。' + readError + '。不要重跑，不要部署。';
@@ -916,7 +962,12 @@ function runIsolatedEightCases() {
   var summary = stopped
     ? '公式核對失敗。' + (failNote ? failNote + '。' : '') + '請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。'
     : '已送出 8 筆。四種前綴都通過，才可以部署。全成功應有 14 封測試信。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
-  notify_(summary);
+  var notice = notify_(summary);
+  if (notice && notice.ok === false && summary.indexOf('四種前綴都通過') !== -1) {
+    var alertUnknown = '結果未知。試算表分頁的 alert 沒有彈出。錯誤：' + (notice.error || '沒有錯誤內容') + '。不要把成功摘要當成通過。不要重跑，不要部署。';
+    console.log(alertUnknown);
+    return alertUnknown;
+  }
   return summary;
 }
 
