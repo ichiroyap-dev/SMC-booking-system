@@ -2,7 +2,7 @@
 
 必須是新建的獨立試算表專案，不要貼進任何既有專案。這支腳本沒有 `doPost`，只有 `doGet`。貼進既有專案會蓋掉同名的訂位入口。
 
-這份給 Owner 或 hub 在**自己的 Google 帳號**做。不必自己組 JSON，也不必會寫程式。本機測試沒有連 Google，也沒有寄出真信。假試算表**不會執行公式**，所以不能代替你打開 Google 試算表看那一格是不是數字。結果未知時，不可以重新整理後重送。
+這份給 Owner 或 hub 在**自己的 Google 帳號**做。不必自己組 JSON，也不必會寫程式。本機測試沒有連 Google，也沒有寄出真信。本機模擬會把以 `=` 開頭的儲存格字串算掉，用來重現試算表；`+`、`-`、`@` 與其他函式不會執行公式。這仍不能代替你打開 Google 試算表看那一格。結果未知時，不可以重新整理後重送。
 
 不要把 `.github/pages-unpublished/booking-attribution-isolated.gs` 貼上正式預約專案，不要改正式 web app 網址，不要寫正式試算表，也不要打開正式官網 `www.sweetmeichicken.com` 來送這次測試。官網 `SEND_ATTRIBUTION_TO_BACKEND` 維持 `false`。正式腳本原始碼不在這個 repo，這支隔離腳本**不是**正式腳本的補丁；這裡通過之後，還要把同樣的「缺來源仍收單」移植到正式腳本，才能另案開旗標。
 
@@ -12,21 +12,36 @@
 
 ## Owner 三步
 
-必須是新建的獨立試算表專案，不要貼進任何既有專案。程式停在 commit `319ca184f94d9639f49f635fac7901aae17a76fc`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
+必須是新建的獨立試算表專案，不要貼進任何既有專案。程式停在 commit `3e6c1854f7ee678407e7f71d74340087fc390a45`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
 
 1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。這個信箱就是下一步的 `SMC_SHOP_EMAIL`。
 2. **核對程式，先跑八案例。** 未核對雜湊前不要貼。在 PowerShell 下載後執行 `Get-FileHash .\檔名 -Algorithm SHA256`，要和下面的預期值相同。
-   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/booking-attribution-isolated.gs
-     預期 SHA-256 `12a4232da55dcfd38d248c3a3d923a4f92a7017b6719642e7131605bbfcc3dd3`
-   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/IsolatedCheck.html
+   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/booking-attribution-isolated.gs
+     預期 SHA-256 `b8aaf6eeaf3248875734dfef71796a9534a6c87df6d2534d966046fe30a8eb54`
+   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/IsolatedCheck.html
      預期 SHA-256 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
    - 從這張新試算表開 Apps Script。貼上腳本，再「+」→ HTML，檔名 `IsolatedCheck`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。
    - **實測第一步：** 先不要部署。函數選單選 `runIsolatedEightCases`，按執行。首次執行可能出現 Google 授權畫面。
    - 全成功應收到 14 封測試信（7 筆新單各 2 封，重複那筆不寄）。網頁驗收每一筆新單再 2 封。封數不同時，以「驗收結果」的寄信欄為準，不要只靠封數。
-   - 核對「訂單」「郵件預覽」「驗收結果」「公式核對」。案例 6 的四格要是：原值 `=1+1`、`+1+1`、`-1+1`、`@cmd`，讀回是帶前導單引號的文字，`getFormula` 為空。任何 unknown、讀回不符或公式異常，就停止，不重跑、不部署、不要開網頁驗收，先回報原列。結果未知時，不可以重新整理後重送。
+   - 核對「訂單」「郵件預覽」「驗收結果」「公式核對」。案例 6 的四格要是：原值 `=1+1`、`+1+1`、`-1+1`、`@cmd`，讀回值等於原值字串，而且 `getFormula` 為空。Sheets 用 getValue 或 getDisplayValue 不會帶前導單引號，不要再拿引號當通過條件。任何 unknown、讀回不符或公式異常，就停止，不部署、不要開網頁驗收，先回報原列。結果未知時，不可以重新整理後重送。
 3. **全部核對通過才開私人頁。** 新增網路應用程式部署，執行身分「我」、存取「只有我」，**不可**改成「任何人」。不要覆寫正式部署。用同帳號開新網址，按鈕經 `google.script.run` 送一次品牌欄位。核對新編號、原列及兩封信。未知或沒有回應就停，不可以重新整理後重送。不要用 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 送這個部署；那頁只留給模擬測試。
 
 做完後一次回傳：測試表 ID、測試信箱、八案例的驗收結果、公式核對四格、exec 網址、存取是不是「只有我」，以及確認沒有改正式環境。
+
+## 2026-10-18 那次失敗之後要怎麼重跑
+
+那次用 commit `319ca18`，時間 13:40–13:43（台北）。案例 1–5 已寫入也有寄信。案例 6（`SMC900105`）的 utm活動被算成 `2`，結果是未知，沒有寄信。案例 7、8 沒有跑。還沒部署。
+
+前導單引號有加到四個欄位，但 `setValues` 會把引號吃掉，然後仍把 `=` 當公式。同一輪已經呼叫 `setNumberFormat('@')`，utm活動還是變成 `2`，`getFormula` 是空的。`+`、`-`、`@` 不是公式開頭，讀回其實等於原值；舊判定因為少了引號而判失敗。核對發生在寫入之後，所以那一列已經在，信沒有寄，案例 7、8 沒有繼續。
+
+不要在這張表上直接再執行。`_testOrderId` 已經在「訂單」裡時，腳本走重複編號：不改寫、不寄信。`SMC900105` 的 utm活動會一直停在 `2`，公式核對會再失敗。案例 1–5 也會被當成重複。
+
+重跑前二選一：
+
+1. 留同一張試算表。保留表頭，刪掉「訂單」「郵件預覽」「驗收結果」「公式核對」表頭以下的列。「隔離標記」A1 維持 `SMC-ISOLATED-TEST`。
+2. 或新建一張試算表，A1 再填 `SMC-ISOLATED-TEST`，把 `SMC_TEST_SHEET_ID` 改成新的 ID。
+
+然後貼第 2 步的 raw 連結（不要再用 `319ca18`），先不要部署，再執行 `runIsolatedEightCases`。四格的讀回值要等於原值字串，而且 `getFormula` 為空，才可以部署。
 
 收到時間欄是按下當下的時間。本機測試把它固定成 `2026-10-08T00:00:00.000Z`。試算表上不必相同，但不可空白。
 
@@ -126,19 +141,19 @@
 
 | 欄位 | 原值 | 讀回值 | 不是公式 |
 | --- | --- | --- | --- |
-| utm活動 | `=1+1` | `'=1+1` | `getFormula` 為空 |
-| utm內容 | `+1+1` | `'+1+1` | `getFormula` 為空 |
-| utm關鍵字 | `-1+1` | `'-1+1` | `getFormula` 為空 |
-| utm廣告群組 | `@cmd` | `'@cmd` | `getFormula` 為空 |
+| utm活動 | `=1+1` | `=1+1` | `getFormula` 為空 |
+| utm內容 | `+1+1` | `+1+1` | `getFormula` 為空 |
+| utm關鍵字 | `-1+1` | `-1+1` | `getFormula` 為空 |
+| utm廣告群組 | `@cmd` | `@cmd` | `getFormula` 為空 |
 
 ```json
 {"action":"book","type":"dining","name":"測試同學","phone":"0900000000","email":"你的測試信箱@example.com","people":"2","tables":"1","date":"2026-10-22","time":"12:00","note":"散客 大人2位；靠窗","orderItems":"","_testOrderId":"SMC900105","source":"google","utmSource":"google","utmMedium":"cpc","utmCampaign":"=1+1","utmContent":"+1+1","utmTerm":"-1+1","utmAdgroup":"@cmd","adgroupBucket":"品牌","gclid":""}
 ```
 
 - 訂單編號四處相同。備註四處相同（不含回應），仍是 `散客 大人2位；靠窗`。
-- 打開「公式核對」分頁。四列的判定都要是「通過」。讀回值是帶前導單引號的文字，`getFormula` 欄是「（空）」。任一格不符，腳本會停住，後面的案例不會再送。不要部署，不要開網頁驗收，不要重跑。
-- 這四格都不是數字 2。店內信要有這四個帶引號的讀回值。客人信不得出現 `=1+1`。
-- 開頭若先有空格、Tab 或換行，也一樣先去掉再當文字，不可算出來。本機測試不會執行公式，這一步一定要在 Google 試算表用眼睛看。
+- 打開「公式核對」分頁。四列的判定都要是「通過」。通過條件是讀回值等於原值字串，而且 `getFormula` 欄是「（空）」。前導單引號不會出現在讀回值裡。任一格不符，腳本會停住，並在訊息裡寫明欄位、原值、讀回值。後面的案例不會再送。不要部署，不要開網頁驗收。
+- 這四格都不是數字 2。店內信要有這四個原值字串。客人信不得出現 `=1+1`。
+- 開頭若先有空格、Tab 或換行，也一樣先去掉再當文字，不可算出來。本機模擬只會把 `=` 開頭算掉；這一步一定要在 Google 試算表用眼睛看。
 
 ## 案例 7｜格式壞掉仍收單
 
@@ -171,7 +186,7 @@
 1. 點「帶入品牌欄位」。預覽要有來源 `google`、utm內容 `ag_brand`、群組分類 `品牌`。
 2. 姓名維持 `測試同學`、電話 `0900000000`、備註維持 `散客 大人2位；靠窗`。表格信箱可以留 `test@example.com`。它不會變成收件人。
 3. 點「送到隔離後端」。成功時畫面列出 `status`、`orderId`、`message`、`mailed`、`duplicate`、`wrote`。用那個編號到「訂單」、客人信、店內信對同一個編號。兩封信都在 `SMC_SHOP_EMAIL`。店內信要有 `ag_brand` 與 `品牌`。客人信不要有這些代碼。
-4. 若 `status` 是 `unknown`，或訊息要你核對原列，就停下。結果未知時，不可以重新整理後重送。先看試算表那一列。以 `=`、`+`、`-`、`@` 開頭的格子要仍是文字（前面可能有單引號），不可變成數字。讀回少了防護單引號也不算一致。網頁每一筆新單是 2 封信。
+4. 若 `status` 是 `unknown`，或訊息要你核對原列，就停下。結果未知時，不可以重新整理後重送。訊息會寫明欄位、原值、讀回值。先看試算表那一列。以 `=`、`+`、`-`、`@` 開頭的格子，讀回值要等於原值字串，而且 `getFormula` 為空，不可變成數字。網頁每一筆新單是 2 封信。
 
 ## 本機頁面不能拿來送私人部署
 
@@ -182,17 +197,17 @@
 
 ## 固定版本
 
-要貼的兩個檔案停在 commit `319ca184f94d9639f49f635fac7901aae17a76fc`。這段連結是下一個 commit 寫上的，不會引用自己。
+要貼的兩個檔案停在 commit `3e6c1854f7ee678407e7f71d74340087fc390a45`。這段連結是下一個 commit 寫上的，不會引用自己。
 
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/booking-attribution-isolated.gs
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/booking-attribution-isolated.gs
   - `Get-FileHash .\booking-attribution-isolated.gs -Algorithm SHA256`
-  - 預期 `12a4232da55dcfd38d248c3a3d923a4f92a7017b6719642e7131605bbfcc3dd3`
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/IsolatedCheck.html
+  - 預期 `b8aaf6eeaf3248875734dfef71796a9534a6c87df6d2534d966046fe30a8eb54`
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/3e6c1854f7ee678407e7f71d74340087fc390a45/.github/pages-unpublished/IsolatedCheck.html
   - `Get-FileHash .\IsolatedCheck.html -Algorithm SHA256`
   - 預期 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
 
 ## 對過才算過
 
-本機可先跑 `node tools/test-booking-reconciliation.mjs`（不連 Google）。它通過只代表隔離腳本的邏輯，而且**不會執行公式**，不能證明 Google 試算表沒有把儲存格算掉。試算表、真信，以及私人頁面那一筆，仍要你做。以 `=`、`+`、`-`、`@` 開頭的格子若讀回不一致，就停下，核對原列，不要重送。
+本機可先跑 `node tools/test-booking-reconciliation.mjs`（不連 Google）。它通過只代表隔離腳本的邏輯。本機模擬會把 `=` 開頭算掉；`+`、`-`、`@` 與其他函式不會執行公式，不能證明 Google 試算表沒有把儲存格算掉。試算表、真信，以及私人頁面那一筆，仍要你做。以 `=`、`+`、`-`、`@` 開頭的格子若讀回值不等於原值字串，或 `getFormula` 不是空的，就停下，核對原列，不要重送。
 
 通過之後也不要把 `js/booking-attribution.js` 的 `SEND_ATTRIBUTION_TO_BACKEND` 改成 `true`。正式腳本還沒接上之前，開了旗標會把來源送進一支尚未驗證的正式 web app。
