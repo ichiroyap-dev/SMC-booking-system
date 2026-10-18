@@ -10,23 +10,23 @@
 
 回應有 `status`、`orderId`、`message`。成功或重複時還有 `mailed`、`duplicate`、`wrote`。`mailed` 為 true 才是兩封都交給寄信；false 是沒有全部寄出。`duplicate` 為 true 是這個編號已經收過。`wrote` 為 false 是這次沒有新增一列。**回應沒有備註**。備註要對這三處：你送出的內容、試算表「備註」欄、客人信與店內信。不要在回應裡找備註。讀回與寫入不一致就停下，請核對原列，不要重送。
 
-## 準備（照著點）
+## Owner 三步
 
-1. 打開 [Google 雲端硬碟](https://drive.google.com)，新增 → Google 試算表。名稱打「隔離測試」。不要共用給客人。
-2. 試算表下方的「+」新增分頁。在分頁名稱上按右鍵 → 重新命名，打 `隔離標記`。
-3. 點那一頁的 **A1**，打上 `SMC-ISOLATED-TEST`，按 Enter。不要改字、不要加空白。腳本不會幫你建立這個分頁。
-4. 看瀏覽器網址，`/d/` 和 `/edit` 中間那一串就是試算表 ID。先複製下來。
-5. 選單「擴充功能」→「Apps Script」。若問要登入，用你自己的 Google 帳號。
-6. 把編輯器裡原有的內容全部刪掉，貼上固定版本的 `.github/pages-unpublished/booking-attribution-isolated.gs`，按磁碟圖示存檔。檔名維持 `Code.gs` 即可。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開；請從下面的固定連結複製，不要從官網網址下載。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄裡的驗收頁、隔離腳本、手冊和 guard 是否又被公開。
-7. 左側「檔案」旁的「+」→「HTML」。檔名打 `IsolatedCheck`（不要加 `.html`，編輯器會自己加）。把固定版本的 `.github/pages-unpublished/IsolatedCheck.html` 全部貼上，存檔。
-8. 左側齒輪「專案設定」→ 往下到「指令碼內容」→「新增指令碼內容」，加三列（ID **不可留白**，腳本不會改去你正在看的另一張表）：
-   - `SMC_ATTRIBUTION_ISOLATED` = `yes`
-   - `SMC_SHOP_EMAIL` = 你自己的測試信箱
-   - `SMC_TEST_SHEET_ID` = 第 4 步複製的 ID
-9. **實測第一步**是在編輯器執行 `runIsolatedEightCases`，先不要部署。上方函數選單選 `runIsolatedEightCases`，按「執行」。若選單裡沒有這個函式，代表貼錯檔，先停下來回報，不要自己另寫一支。
-10. 執行完會跳出說明。到試算表看三個分頁：「訂單」、「郵件預覽」、「驗收結果」。也看你的信箱（客人信與店內信都會寄到 `SMC_SHOP_EMAIL`，不看表格「信箱」欄）。八案例通過後才做下一步。
-11. 右上「部署」→「新增部署」→ 齒輪 →「網路應用程式」。執行身分選「我」，誰可以存取選「只有我」。**不可**改成「任何人」；改了這支就會變成別人也能觸發寄信的端點。按「部署」，同意授權。複製新的網址。不要覆蓋正式那支 `AKfycby…`。
-12. 用同一個 Google 帳號打開第 11 步的部署網址。畫面上是私人 HtmlService 頁，按鈕用 `google.script.run` 呼叫 `submitIsolatedFromPage`。不要把網址貼進本機頁面。
+必須是新建的獨立試算表專案，不要貼進任何既有專案。程式停在 commit `319ca184f94d9639f49f635fac7901aae17a76fc`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
+
+1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。這個信箱就是下一步的 `SMC_SHOP_EMAIL`。
+2. **核對程式，先跑八案例。** 未核對雜湊前不要貼。在 PowerShell 下載後執行 `Get-FileHash .\檔名 -Algorithm SHA256`，要和下面的預期值相同。
+   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/booking-attribution-isolated.gs
+     預期 SHA-256 `12a4232da55dcfd38d248c3a3d923a4f92a7017b6719642e7131605bbfcc3dd3`
+   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/IsolatedCheck.html
+     預期 SHA-256 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
+   - 從這張新試算表開 Apps Script。貼上腳本，再「+」→ HTML，檔名 `IsolatedCheck`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。
+   - **實測第一步：** 先不要部署。函數選單選 `runIsolatedEightCases`，按執行。首次執行可能出現 Google 授權畫面。
+   - 全成功應收到 14 封測試信（7 筆新單各 2 封，重複那筆不寄）。網頁驗收每一筆新單再 2 封。封數不同時，以「驗收結果」的寄信欄為準，不要只靠封數。
+   - 核對「訂單」「郵件預覽」「驗收結果」「公式核對」。案例 6 的四格要是：原值 `=1+1`、`+1+1`、`-1+1`、`@cmd`，讀回是帶前導單引號的文字，`getFormula` 為空。任何 unknown、讀回不符或公式異常，就停止，不重跑、不部署、不要開網頁驗收，先回報原列。結果未知時，不可以重新整理後重送。
+3. **全部核對通過才開私人頁。** 新增網路應用程式部署，執行身分「我」、存取「只有我」，**不可**改成「任何人」。不要覆寫正式部署。用同帳號開新網址，按鈕經 `google.script.run` 送一次品牌欄位。核對新編號、原列及兩封信。未知或沒有回應就停，不可以重新整理後重送。不要用 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 送這個部署；那頁只留給模擬測試。
+
+做完後一次回傳：測試表 ID、測試信箱、八案例的驗收結果、公式核對四格、exec 網址、存取是不是「只有我」，以及確認沒有改正式環境。
 
 收到時間欄是按下當下的時間。本機測試把它固定成 `2026-10-08T00:00:00.000Z`。試算表上不必相同，但不可空白。
 
@@ -182,7 +182,14 @@
 
 ## 固定版本
 
-Raw 連結、`Get-FileHash -Algorithm SHA256` 與預期雜湊寫在下一個 commit 的驗證報告。這兩個程式檔與那份報告分開，避免說明引用尚未產生的 SHA。下載後先核對，對不上就不要貼。部署存取維持「只有我」，不可改成「任何人」。
+要貼的兩個檔案停在 commit `319ca184f94d9639f49f635fac7901aae17a76fc`。這段連結是下一個 commit 寫上的，不會引用自己。
+
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/booking-attribution-isolated.gs
+  - `Get-FileHash .\booking-attribution-isolated.gs -Algorithm SHA256`
+  - 預期 `12a4232da55dcfd38d248c3a3d923a4f92a7017b6719642e7131605bbfcc3dd3`
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/319ca184f94d9639f49f635fac7901aae17a76fc/.github/pages-unpublished/IsolatedCheck.html
+  - `Get-FileHash .\IsolatedCheck.html -Algorithm SHA256`
+  - 預期 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
 
 ## 對過才算過
 
