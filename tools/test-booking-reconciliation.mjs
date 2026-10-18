@@ -3,6 +3,10 @@
 // setValues reproduces Sheets: a leading apostrophe is discarded, and a string starting with = is calculated.
 // setNumberFormat('@') does not stop that. setRichTextValue of a leading + stores the text =+ with an empty formula.
 // Sheets.Spreadsheets.Values.update with valueInputOption RAW stores the string unchanged.
+// SpreadsheetApp appendRow, setValues, setRichTextValue, and clear change the local cache immediately,
+// but stored rows change only when SpreadsheetApp.flush() replays those calls.
+// A deferred clear therefore wipes a Sheets API write that landed in between.
+// values.clear and values.get change or read stored rows immediately.
 // Usage: node tools/test-booking-reconciliation.mjs
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -101,6 +105,8 @@ function parseA1(range) {
   let name = text.slice(0, bang);
   const cells = text.slice(bang + 1);
   if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");
+  const columns = cells.match(/^([A-Z]+):([A-Z]+)$/);
+  if (columns) return { name, entire: true };
   const match = cells.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
   if (!match) throw new Error('bad range ' + range);
   return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
@@ -118,20 +124,65 @@ function memorySpreadsheet(options = {}) {
     },
   };
   function make(name) {
-    const data = [];
-    const formulas = {};
-    function put(r, c, value, formula) {
-      const line = data[r] ? data[r].slice() : [];
+    const cache = [];
+    const cacheFormulas = {};
+    const server = [];
+    const serverFormulas = {};
+    const pending = [];
+    function putCache(r, c, value, formula) {
+      const line = cache[r] ? cache[r].slice() : [];
       line[c] = value;
-      data[r] = line;
-      formulas[r + ':' + c] = formula || '';
+      cache[r] = line;
+      cacheFormulas[r + ':' + c] = formula || '';
+    }
+    function putServer(r, c, value, formula) {
+      const line = server[r] ? server[r].slice() : [];
+      line[c] = value;
+      server[r] = line;
+      serverFormulas[r + ':' + c] = formula || '';
+    }
+    function queueCell(r, c, value, formula) {
+      putCache(r, c, value, formula);
+      pending.push({ type: 'cell', r, c, value, formula: formula || '' });
+    }
+    function syncCache() {
+      cache.length = 0;
+      for (let i = 0; i < server.length; i += 1) cache.push(server[i] ? server[i].slice() : []);
+      Object.keys(cacheFormulas).forEach((key) => { delete cacheFormulas[key]; });
+      Object.keys(serverFormulas).forEach((key) => { cacheFormulas[key] = serverFormulas[key]; });
     }
     return {
-      getLastRow() { return data.length; },
-      appendRow(row) { data.push(row.slice()); },
+      getLastRow() { return cache.length; },
+      appendRow(row) {
+        const copy = row.slice();
+        const index = cache.length;
+        cache.push(copy);
+        pending.push({ type: 'row', index, row: copy });
+      },
       clear() {
-        data.length = 0;
-        Object.keys(formulas).forEach((key) => { delete formulas[key]; });
+        cache.length = 0;
+        Object.keys(cacheFormulas).forEach((key) => { delete cacheFormulas[key]; });
+        pending.push({ type: 'clear' });
+      },
+      clearServer() {
+        server.length = 0;
+        Object.keys(serverFormulas).forEach((key) => { delete serverFormulas[key]; });
+        cache.length = 0;
+        Object.keys(cacheFormulas).forEach((key) => { delete cacheFormulas[key]; });
+      },
+      applyPending() {
+        const ops = pending.splice(0, pending.length);
+        for (const op of ops) {
+          if (op.type === 'clear') {
+            server.length = 0;
+            Object.keys(serverFormulas).forEach((key) => { delete serverFormulas[key]; });
+          } else if (op.type === 'row') {
+            server[op.index] = op.row.slice();
+          } else if (op.type === 'cell') {
+            putServer(op.r, op.c, op.value, op.formula);
+          }
+        }
+        syncCache();
       },
       getRange(row, col, numRows, numCols) {
         const rowsN = numRows == null ? 1 : numRows;
@@ -140,27 +191,29 @@ function memorySpreadsheet(options = {}) {
           setNumberFormat() { return this; },
           setValues(values) {
             for (let r = 0; r < rowsN; r += 1) {
-              for (let c = 0; c < colsN; c += 1) put(row - 1 + r, col - 1 + c, enterLikeSheets(values[r][c]), '');
+              for (let c = 0; c < colsN; c += 1) queueCell(row - 1 + r, col - 1 + c, enterLikeSheets(values[r][c]), '');
             }
           },
           setRichTextValue(rich) {
             let text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
             if (text.charAt(0) === '+') text = '=' + text;
-            put(row - 1, col - 1, text, '');
+            queueCell(row - 1, col - 1, text, '');
             return this;
           },
           setRawValues(values) {
             for (let r = 0; r < rowsN; r += 1) {
               for (let c = 0; c < colsN; c += 1) {
                 const cell = values[r] ? values[r][c] : '';
-                put(row - 1 + r, col - 1 + c, cell == null ? '' : String(cell), '');
+                const text = cell == null ? '' : String(cell);
+                putCache(row - 1 + r, col - 1 + c, text, '');
+                putServer(row - 1 + r, col - 1 + c, text, '');
               }
             }
           },
           getValues() {
             const out = [];
             for (let r = 0; r < rowsN; r += 1) {
-              const line = data[row - 1 + r] || [];
+              const line = cache[row - 1 + r] || [];
               const slice = [];
               for (let c = 0; c < colsN; c += 1) {
                 const cell = line[col - 1 + c];
@@ -171,21 +224,28 @@ function memorySpreadsheet(options = {}) {
             return out;
           },
           getValue() {
-            const line = data[row - 1] || [];
+            const line = cache[row - 1] || [];
             return line[col - 1] == null ? '' : line[col - 1];
           },
           getFormula() {
-            const text = data[row - 1] && data[row - 1][col - 1] != null ? String(data[row - 1][col - 1]) : '';
+            const text = cache[row - 1] && cache[row - 1][col - 1] != null ? String(cache[row - 1][col - 1]) : '';
             if (options.forceFormula && text === '=1+1') return '=1+1';
-            return formulas[(row - 1) + ':' + (col - 1)] || '';
+            return cacheFormulas[(row - 1) + ':' + (col - 1)] || '';
           },
         };
       },
-      rows() { return data.map((row) => row.slice()); },
+      rows() {
+        const out = [];
+        for (let i = 0; i < server.length; i += 1) out.push(server[i] ? server[i].slice() : []);
+        return out;
+      },
       getName() { return name; },
       getParent() { return ss; },
     };
   }
+  ss.flushPending = function flushPending() {
+    Object.keys(sheets).forEach((name) => sheets[name].applyPending());
+  };
   return ss;
 }
 
@@ -246,6 +306,10 @@ function loadIsolated(options = {}) {
     },
     flush() {
       box.lockLog.push(box.lockHeld ? 'flush-held' : 'flush-free');
+      Object.keys(box.byId).forEach((id) => {
+        const book = box.byId[id];
+        if (book && typeof book.flushPending === 'function') book.flushPending();
+      });
     },
     newRichTextValue() {
       const rich = {
@@ -292,6 +356,23 @@ function loadIsolated(options = {}) {
           const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
           if (mode === 'RAW') target.setRawValues(values);
           else target.setValues(values);
+        },
+        clear(resource, spreadsheetId, range) {
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          sheet.clearServer();
+        },
+        get(spreadsheetId, range) {
+          if (box.blankReportRead) return { values: [] };
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          return { values: sheet.rows() };
         },
       },
     },
@@ -792,7 +873,9 @@ const eight = runner.sandbox.isolatedEightPayloads_('shop-test@example.com');
 assert(eight.length === 8, '按鈕要送 8 筆');
 assert(eight[5].payload.utmCampaign === '=1+1' && eight[5].payload.note === NOTE, '第 6 筆公式在活動欄，備註仍是原句');
 assert(eight[7].payload._testOrderId === 'SMC900101' && eight[7].payload.utmContent === 'ag_brand', '第 8 筆是品牌同一編號');
-assert(String(runner.sandbox.runIsolatedEightCases()).includes('8'), '按鈕要回報已送出 8 筆');
+const eightMsg = String(runner.sandbox.runIsolatedEightCases());
+assert(eightMsg.includes('8') && !eightMsg.includes('結果未知'), '按鈕要回報已送出 8 筆');
+runner.sandbox.SpreadsheetApp.flush();
 const runnerOrders = sheetRows(runner, '訂單');
 assert(runnerOrders.length === 8, '8 筆裡同一編號只佔一列，加上表頭是 8 列');
 for (const id of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106']) {
@@ -808,6 +891,9 @@ const runnerFormula = asMap(runnerOrders[0], runnerOrders.find((row) => row[0] =
 assert(runnerFormula['utm活動'] === '=1+1' && runnerFormula['utm活動'] !== '2' && runnerFormula['utm內容'] === '+1+1' && runnerFormula['utm內容'] !== '=+1+1' && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列要留下原值字串，加號不可變成 =+，訂位欄不變');
 assert(runner.box.rawWrites.length > 0 && runner.box.rawWrites.every((item) => item.mode === 'RAW'), '寫入必須走 Sheets API 的 RAW');
 assert(gs.includes("valueInputOption: 'RAW'") && gs.includes('Sheets.Spreadsheets.Values.update'), '隔離腳本要用 Sheets API，而且 valueInputOption 是 RAW');
+assert(gs.includes('舊寫法'), '檔頭要註明前導單引號那句是舊寫法');
+assert(gs.includes('Sheets.Spreadsheets.Values.clear') && gs.includes('Sheets.Spreadsheets.Values.get'), '報告分頁要用 API 清除，最後再用 API 讀回');
+assert(!gs.includes('sheet.clear()'), '不可再呼叫會延後的 sheet.clear');
 
 function withoutTestId(fields) {
   const payload = attr.payloadIfAttributionEnabled(baseOrder(), fields);
@@ -946,8 +1032,10 @@ const forcedMsg = String(forced.sandbox.runIsolatedEightCases());
 assert(forcedMsg.includes('不要部署') && forcedMsg.includes('不要開網頁驗收'), '任一格不符就要失敗，不准進入部署和網頁驗收');
 assert(!sheetRows(forced, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對失敗後不可繼續後面的案例');
 assert(runbook.includes('getFormula') && runbook.includes('+1+1') && runbook.includes('-1+1') && runbook.includes('@cmd'), '手冊要列出四種原值與 getFormula');
-assert(runbook.includes('Google Sheets API') && runbook.includes('RAW') && runbook.includes('同一張表') && runbook.includes('表頭以下'), '手冊要寫進階服務、RAW，以及同一張表清表頭以下的列');
-assert(!runbook.includes('或新建一張試算表'), '重跑說明只留同一張表清列，不要再教換新試算表');
+assert(runbook.includes('Google Sheets API') && runbook.includes('RAW') && runbook.includes('同一張表') && runbook.includes('表頭以下'), '手冊要寫進階服務、RAW，以及同一張表清除表頭以下的內容');
+assert(!runbook.includes('或新建一張試算表'), '重跑說明只留同一張表清除內容，不要再教換新試算表');
+assert(runbook.includes('可能再授權') && runbook.includes('清除內容') && runbook.includes('所有案例都會被判成重複'), '手冊要寫可能再授權、清除內容，以及沒清訂單和郵件預覽時全部變成重複');
+assert(!runbook.includes('會再授權'), '手冊不要寫成一定會再授權');
 
 const reportSheet = loadIsolated();
 reportSheet.box.byId['isolated-test-sheet'].id = 'isolated-test-sheet';
@@ -955,8 +1043,41 @@ reportSheet.sandbox.writeResultSheet_(reportSheet.box.byId['isolated-test-sheet'
   ['案例', '訂單編號', '結果', '寫入', '寄信'],
   ['加號', '+1+1', 'success', '是', '是'],
 ]);
+reportSheet.sandbox.SpreadsheetApp.flush();
 const reportRows = sheetRows(reportSheet, '驗收結果');
 assert(reportRows[1] && reportRows[1][1] === JSON.stringify('+1+1') && reportRows[1][1] !== '=+1+1', '驗收結果裡以 + 開頭的內容要原樣呈現');
+
+const deferred = loadIsolated();
+const deferredBook = deferred.box.byId['isolated-test-sheet'];
+const deferredDemo = deferredBook.insertSheet('延後清除');
+deferredDemo.appendRow(['仍在']);
+assert(deferredDemo.rows().length === 0, 'SpreadsheetApp 的 appendRow 要等 flush 才寫進儲存的列');
+deferred.sandbox.SpreadsheetApp.flush();
+assert(deferredDemo.rows().length === 1 && deferredDemo.rows()[0][0] === '仍在', 'flush 後 appendRow 才生效');
+deferredDemo.clear();
+assert(deferredDemo.rows().length === 1, 'SpreadsheetApp 的 clear 要等 flush 才生效');
+deferred.sandbox.SpreadsheetApp.flush();
+assert(deferredDemo.rows().length === 0, 'flush 後 clear 才把儲存的列清掉');
+deferredBook.id = 'isolated-test-sheet';
+for (const name of ['驗收結果', '公式核對']) {
+  const seeded = deferredBook.insertSheet(name);
+  seeded.appendRow(name === '驗收結果' ? ['案例', '訂單編號', '結果', '寫入', '寄信'] : ['欄位', '原值', '讀回值', 'getFormula', '判定']);
+}
+deferred.sandbox.SpreadsheetApp.flush();
+const deferredMsg = String(deferred.sandbox.runIsolatedEightCases());
+deferred.sandbox.SpreadsheetApp.flush();
+const deferredResults = sheetRows(deferred, '驗收結果');
+const deferredProbes = sheetRows(deferred, '公式核對');
+assert(deferredResults.length === 9, '報告被延後的 clear 洗掉：腳本結束的 flush 之後，驗收結果應仍有 9 列');
+assert(deferredProbes.length === 5, '報告被延後的 clear 洗掉：腳本結束的 flush 之後，公式核對應仍有 5 列');
+assert(deferredMsg.includes('四種前綴都通過') && !deferredMsg.includes('結果未知'), '報告留住時八案例才算通過');
+
+const blankRead = loadIsolated();
+blankRead.box.blankReportRead = true;
+const blankReadMsg = String(blankRead.sandbox.runIsolatedEightCases());
+assert(blankReadMsg.includes('結果未知') && blankReadMsg.includes('驗收結果') && blankReadMsg.includes('公式核對'), '讀回列數不對要標成未知，並寫明兩張分頁');
+assert(blankReadMsg.includes('讀回') && blankReadMsg.includes('預期'), '讀回失敗要寫明實際列數和預期列數');
+assert(!blankReadMsg.includes('才可以部署'), '報告讀回是空白時不可說可以部署');
 
 const noSheets = loadIsolated();
 delete noSheets.sandbox.Sheets;

@@ -11,7 +11,7 @@
  * 客人信不放活動代碼。店內信才放來源對帳。
  * 寫入後先 flush，再讀回同一列。讀回值要等於原值字串，而且 getFormula 為空。
  * 對不上或讀不回來就停下：回結果未知（寫明欄位、原值、讀回值）、不寄信、請核對原列，不要重送。
- * 前導單引號不會被 Sheets 存進格子。setValues 會把 = 算掉。setRichTextValue 會把 + 開頭改成文字 =+。
+ * 舊寫法：前導單引號不會被 Sheets 存進格子。setValues 會把 = 算掉。setRichTextValue 會把 + 開頭改成文字 =+。
  * 寫入改走 Sheets API values.update，valueInputOption 必須是 RAW。RAW 不解析，原樣儲存。
  * 使用前要在編輯器左側「服務」加入 Google Sheets API。不必另外手改 appsscript.json。
  * 確認成功並放開鎖之後才寄信。兩封信的收件人都固定為 SMC_SHOP_EMAIL，不採用 payload 的 email。
@@ -287,6 +287,8 @@ function ensureSheet_(ss, name, headers) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
+    // 表頭是 SpreadsheetApp 寫入，要等 flush 才進伺服器。訂單與郵件預覽沒有 clear，
+    // 之後的 flush 只補上這一列，不會清掉 API 寫在下面的資料列。
     sheet.appendRow(headers);
   }
   return sheet;
@@ -303,7 +305,10 @@ function readColumn_(sheet, col) {
 
 function sheetsApiReady_() {
   try {
-    return typeof Sheets !== 'undefined' && !!Sheets && !!Sheets.Spreadsheets && !!Sheets.Spreadsheets.Values && typeof Sheets.Spreadsheets.Values.update === 'function';
+    return typeof Sheets !== 'undefined' && !!Sheets && !!Sheets.Spreadsheets && !!Sheets.Spreadsheets.Values
+      && typeof Sheets.Spreadsheets.Values.update === 'function'
+      && typeof Sheets.Spreadsheets.Values.clear === 'function'
+      && typeof Sheets.Spreadsheets.Values.get === 'function';
   } catch (err) {
     return false;
   }
@@ -338,16 +343,19 @@ function columnLetter_(col) {
   return out;
 }
 
+function quotedSheet_(sheet) {
+  return "'" + String(sheet.getName()).replace(/'/g, "''") + "'";
+}
+
 function literalRange_(sheet, startRow, numRows, numCols) {
   var endRow = startRow + numRows - 1;
-  var name = "'" + String(sheet.getName()).replace(/'/g, "''") + "'";
-  return name + '!' + columnLetter_(1) + startRow + ':' + columnLetter_(numCols) + endRow;
+  return quotedSheet_(sheet) + '!' + columnLetter_(1) + startRow + ':' + columnLetter_(numCols) + endRow;
 }
 
 // 2026-10-18 14:31 真表：setRichTextValue 對 = - @ 有效，但 +1+1 被存成文字 =+1+1，getFormula 仍是空的。
 // 官方 values.update 的 RAW 不解析輸入，=1+2 會以字串原樣留下。訂單、郵件、驗收、公式核對都走這條。
 function writeLiteralMatrix_(sheet, startRow, matrix) {
-  if (!matrix || !matrix.length) return;
+  if (!matrix || !matrix.length) return [];
   if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
   var width = matrix[0].length;
   var values = [];
@@ -365,8 +373,10 @@ function writeLiteralMatrix_(sheet, startRow, matrix) {
     literalRange_(sheet, startRow, values.length, width),
     { valueInputOption: 'RAW' }
   );
+  return values;
 }
 
+// 資料列仍用 getLastRow()+1。快取若過期會指到錯的列。開旗標前要換掉，這輪不改。
 function writeRow_(sheet, row) {
   writeLiteralMatrix_(sheet, sheet.getLastRow() + 1, [row]);
 }
@@ -712,13 +722,50 @@ function protectReportLine_(line) {
   return out;
 }
 
+function clearSheetContents_(sheet) {
+  // 先送出可能還排著的表頭 appendRow，再由 API 清除。
+  // SpreadsheetApp 的 clear 會延後到下一次 flush，把中間用 API 寫好的報告洗掉。
+  SpreadsheetApp.flush();
+  if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
+  var parent = sheet.getParent();
+  var id = parent && parent.getId ? parent.getId() : '';
+  if (!id) throw new Error('找不到試算表 ID');
+  Sheets.Spreadsheets.Values.clear({}, id, quotedSheet_(sheet) + '!A:ZZ');
+}
+
+function readSheetValues_(sheet) {
+  if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
+  var parent = sheet.getParent();
+  var id = parent && parent.getId ? parent.getId() : '';
+  if (!id) throw new Error('找不到試算表 ID');
+  var response = Sheets.Spreadsheets.Values.get(id, quotedSheet_(sheet) + '!A:ZZ');
+  return response && response.values ? response.values : [];
+}
+
+function reportProblem_(name, actual, expected) {
+  var got = actual ? actual.length : 0;
+  var want = expected ? expected.length : 0;
+  if (got !== want) return name + '讀回 ' + got + ' 列，預期 ' + want + ' 列';
+  for (var r = 0; r < want; r += 1) {
+    var row = actual[r] || [];
+    var exp = expected[r] || [];
+    if (row.length < exp.length) return name + '第 ' + (r + 1) + ' 列內容與寫入不一致';
+    for (var c = 0; c < exp.length; c += 1) {
+      var left = row[c] == null ? '' : String(row[c]);
+      var right = exp[c] == null ? '' : String(exp[c]);
+      if (left !== right) return name + '第 ' + (r + 1) + ' 列內容與寫入不一致';
+    }
+  }
+  return '';
+}
+
 function writeResultSheet_(ss, lines) {
   var sheet = ensureSheet_(ss, '驗收結果', RESULT_HEADERS);
-  sheet.clear();
-  if (!lines.length) return;
+  clearSheetContents_(sheet);
+  if (!lines.length) return [];
   var safe = [];
   for (var r = 0; r < lines.length; r += 1) safe.push(protectReportLine_(lines[r]));
-  writeLiteralMatrix_(sheet, 1, safe);
+  return writeLiteralMatrix_(sheet, 1, safe);
 }
 
 function inspectFormulaProbes_(sheet, orderId, probes) {
@@ -754,7 +801,7 @@ function inspectFormulaProbes_(sheet, orderId, probes) {
 function writeProbeSheet_(ss, checks) {
   var headers = ['欄位', '原值', '讀回值', 'getFormula', '判定'];
   var sheet = ensureSheet_(ss, '公式核對', headers);
-  sheet.clear();
+  clearSheetContents_(sheet);
   var rows = [headers];
   for (var i = 0; i < checks.length; i += 1) {
     var item = checks[i];
@@ -766,7 +813,7 @@ function writeProbeSheet_(ss, checks) {
       item.ok ? '通過' : '失敗'
     ]);
   }
-  writeLiteralMatrix_(sheet, 1, rows);
+  return writeLiteralMatrix_(sheet, 1, rows);
 }
 
 function runIsolatedEightCases() {
@@ -794,6 +841,7 @@ function runIsolatedEightCases() {
   var lines = [RESULT_HEADERS];
   var stopped = false;
   var failNote = '';
+  var writtenProbe = null;
   for (var i = 0; i < cases.length; i += 1) {
     var outcome = acceptBooking_(cases[i].payload);
     lines.push([
@@ -806,7 +854,13 @@ function runIsolatedEightCases() {
     if (cases[i].probes) {
       var orderSheet = opened.ss.getSheetByName('訂單');
       var checks = inspectFormulaProbes_(orderSheet, outcome.response.orderId || '', cases[i].probes);
-      writeProbeSheet_(opened.ss, checks);
+      try {
+        writtenProbe = writeProbeSheet_(opened.ss, checks);
+      } catch (probeErr) {
+        var probeFail = '結果未知。公式核對沒有留住。不要重跑，不要部署。';
+        notify_(probeFail);
+        return probeFail;
+      }
       var pass = outcome.response.status === 'success';
       for (var c = 0; c < checks.length; c += 1) {
         if (!checks[c].ok) pass = false;
@@ -818,7 +872,37 @@ function runIsolatedEightCases() {
       }
     }
   }
-  writeResultSheet_(opened.ss, lines);
+  var resultWritten = [];
+  try {
+    resultWritten = writeResultSheet_(opened.ss, lines);
+  } catch (resultErr) {
+    var resultFail = '結果未知。驗收結果沒有留住。不要重跑，不要部署。';
+    notify_(resultFail);
+    return resultFail;
+  }
+  var readError = '';
+  try {
+    var resultSheet = opened.ss.getSheetByName('驗收結果');
+    var probeSheet = opened.ss.getSheetByName('公式核對');
+    var resultActual = resultSheet ? readSheetValues_(resultSheet) : [];
+    var probeActual = probeSheet ? readSheetValues_(probeSheet) : [];
+    var problems = [];
+    var resultProblem = reportProblem_('驗收結果', resultActual, resultWritten);
+    if (resultProblem) problems.push(resultProblem);
+    if (!writtenProbe) problems.push('公式核對沒有寫入');
+    else {
+      var probeProblem = reportProblem_('公式核對', probeActual, writtenProbe);
+      if (probeProblem) problems.push(probeProblem);
+    }
+    readError = problems.join('。');
+  } catch (readErr) {
+    readError = '驗收結果或公式核對讀不回來';
+  }
+  if (readError) {
+    var unknownReport = '結果未知。' + readError + '。不要重跑，不要部署。';
+    notify_(unknownReport);
+    return unknownReport;
+  }
   var summary = stopped
     ? '公式核對失敗。' + (failNote ? failNote + '。' : '') + '請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。'
     : '已送出 8 筆。四種前綴都通過，才可以部署。全成功應有 14 封測試信。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
