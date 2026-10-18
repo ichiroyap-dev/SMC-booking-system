@@ -9,8 +9,10 @@
  *
  * 來源 9 欄可有可無。缺欄、多欄、型別不對，都仍收單：備註原樣保留意思，壞掉的來源改空白。
  * 客人信不放活動代碼。店內信才放來源對帳。
- * 寫入後先 flush，再讀回同一列。訂單編號或任一欄對不上、或讀不回來，就停下：
- * 回結果未知、不寄信、請核對原列，不要重送。比對保留防護單引號，少了引號不算一致。
+ * 寫入後先 flush，再讀回同一列。讀回值要等於原值字串，而且 getFormula 為空。
+ * 對不上或讀不回來就停下：回結果未知（寫明欄位、原值、讀回值）、不寄信、請核對原列，不要重送。
+ * 前導單引號不會被 Sheets 存進格子。setValues 仍會把 = 開頭當公式，setNumberFormat('@') 擋不住。
+ * 以 = + - @ 開頭的格子改用 setRichTextValue 寫成文字。
  * 確認成功並放開鎖之後才寄信。兩封信的收件人都固定為 SMC_SHOP_EMAIL，不採用 payload 的 email。
  * 網頁驗收用 doGet 的 HtmlService 頁 IsolatedCheck，由 google.script.run 呼叫 submitIsolatedFromPage。
  * 部署存取維持「只有我」。不要改成「任何人」。
@@ -48,7 +50,8 @@ function formulaGuard_(value) {
   var raw = stripInvisible_(value == null ? '' : String(value));
   var normalized = raw.replace(/^\s+/, '');
   if (!normalized) return '';
-  if (/^[=+\-@]/.test(normalized)) return "'" + normalized;
+  // 不要加前導單引號。Sheets 的 setValues 會把它當成輸入跳脫吃掉，接著仍計算 =。
+  if (/^[=+\-@]/.test(normalized)) return normalized;
   return raw;
 }
 
@@ -56,7 +59,6 @@ function attributionText_(value) {
   if (typeof value !== 'string') return '';
   var text = stripInvisible_(value).trim();
   if (!text) return '';
-  if (/^[=+\-@]/.test(text)) text = "'" + text;
   if (text.length > 200) text = text.slice(0, 200);
   return text;
 }
@@ -298,20 +300,51 @@ function readColumn_(sheet, col) {
   return out;
 }
 
-function writeRow_(sheet, row) {
-  var safe = [];
-  for (var i = 0; i < row.length; i += 1) safe.push(formulaGuard_(row[i]));
-  var at = sheet.getLastRow() + 1;
-  sheet.getRange(at, 1, 1, safe.length).setNumberFormat('@');
-  sheet.getRange(at, 1, 1, safe.length).setValues([safe]);
+// setValues 會把字串開頭的 = 當公式。純文字格式與前導單引號都擋不住（2026-10-18 實測 utm活動變成 2）。
+// 有風險的格子先寫空白，再用 setRichTextValue。Rich text 不會被當成公式，getValue 留原文字，getFormula 為空。
+function writeLiteralMatrix_(sheet, startRow, matrix) {
+  if (!matrix || !matrix.length) return;
+  var width = matrix[0].length;
+  var plain = [];
+  var risky = [];
+  for (var r = 0; r < matrix.length; r += 1) {
+    var line = [];
+    for (var c = 0; c < width; c += 1) {
+      var text = String(formulaGuard_(matrix[r][c]));
+      if (/^[=+\-@]/.test(text)) {
+        line.push('');
+        risky.push({ r: r, c: c, text: text });
+      } else {
+        line.push(text);
+      }
+    }
+    plain.push(line);
+  }
+  var range = sheet.getRange(startRow, 1, matrix.length, width);
+  range.setNumberFormat('@');
+  range.setValues(plain);
+  for (var i = 0; i < risky.length; i += 1) {
+    var cell = sheet.getRange(startRow + risky[i].r, risky[i].c + 1);
+    cell.setNumberFormat('@');
+    cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(risky[i].text).build());
+  }
 }
 
-function unknownOutcome_(orderId) {
+function writeRow_(sheet, row) {
+  writeLiteralMatrix_(sheet, sheet.getLastRow() + 1, [row]);
+}
+
+function unknownOutcome_(orderId, detail) {
+  var message = '結果未知，先核對試算表、勿重送。讀回與寫入不一致就停下，請核對原列，不要重送';
+  if (detail && detail.header) {
+    message += '。欄位：' + detail.header + '。原值：' + detail.want + '。讀回值：' + detail.actual;
+    if (detail.formula) message += '。getFormula：' + detail.formula;
+  }
   return {
     response: {
       status: 'unknown',
       orderId: orderId,
-      message: '結果未知，先核對試算表、勿重送。讀回與寫入不一致就停下，請核對原列，不要重送',
+      message: message,
       mailed: false,
       wrote: true,
       duplicate: false
@@ -321,12 +354,13 @@ function unknownOutcome_(orderId) {
   };
 }
 
-// flush 之後把剛寫入的那一列讀回來。編號或任一欄對不上，含少了防護單引號，就停下。不寄信，請核對原列，不要重送。
+// flush 之後把剛寫入的那一列讀回來。讀回值要等於原值字串，而且 getFormula 為空。對不上就停下。不寄信，請核對原列，不要重送。
 function confirmOrderRow_(sheet, orderId, expectedRow) {
-  if (!sheet || !expectedRow || !orderId) return false;
+  var miss = { ok: false, header: '', want: '', actual: '', formula: '' };
+  if (!sheet || !expectedRow || !orderId) return miss;
   var width = expectedRow.length;
   var last = sheet.getLastRow();
-  if (last < 1 || width < 1) return false;
+  if (last < 1 || width < 1) return miss;
   var values = sheet.getRange(1, 1, last, width).getValues();
   var found = false;
   for (var r = 0; r < values.length; r += 1) {
@@ -336,10 +370,26 @@ function confirmOrderRow_(sheet, orderId, expectedRow) {
     for (var c = 0; c < width; c += 1) {
       var actual = values[r][c] == null ? '' : String(values[r][c]);
       var want = String(formulaGuard_(expectedRow[c]));
-      if (actual !== want) return false;
+      var formula = '';
+      try {
+        formula = sheet.getRange(r + 1, c + 1).getFormula();
+        formula = formula == null ? '' : String(formula);
+      } catch (err) {
+        formula = '讀取失敗';
+      }
+      if (actual !== want || formula !== '') {
+        return {
+          ok: false,
+          header: ORDER_HEADERS[c] || String(c),
+          want: want,
+          actual: actual,
+          formula: formula
+        };
+      }
     }
   }
-  return found;
+  if (!found) return miss;
+  return { ok: true, header: '', want: '', actual: '', formula: '' };
 }
 
 function mailPreviewRow_(result) {
@@ -459,9 +509,10 @@ function acceptBooking_(payload) {
       }
       if (pendingMail && outcome.response && outcome.response.status === 'success') {
         try {
-          if (!confirmOrderRow_(orderSheet, orderId, pendingRow)) {
+          var check = confirmOrderRow_(orderSheet, orderId, pendingRow);
+          if (!check.ok) {
             pendingMail = null;
-            outcome = unknownOutcome_(orderId);
+            outcome = unknownOutcome_(orderId, check);
           }
         } catch (readErr) {
           pendingMail = null;
@@ -613,15 +664,7 @@ function writeResultSheet_(ss, lines) {
   var sheet = ensureSheet_(ss, '驗收結果', RESULT_HEADERS);
   sheet.clear();
   if (!lines.length) return;
-  var width = lines[0].length;
-  var safe = [];
-  for (var r = 0; r < lines.length; r += 1) {
-    var line = [];
-    for (var c = 0; c < width; c += 1) line.push(formulaGuard_(lines[r][c]));
-    safe.push(line);
-  }
-  sheet.getRange(1, 1, safe.length, width).setNumberFormat('@');
-  sheet.getRange(1, 1, safe.length, width).setValues(safe);
+  writeLiteralMatrix_(sheet, 1, lines);
 }
 
 function inspectFormulaProbes_(sheet, orderId, probes) {
@@ -644,7 +687,7 @@ function inspectFormulaProbes_(sheet, orderId, probes) {
         var cell = sheet.getRange(rowIndex, col);
         read = cell.getValue() == null ? '' : String(cell.getValue());
         formula = cell.getFormula() == null ? '' : String(cell.getFormula());
-        ok = formula === '' && read === want && read.charAt(0) === "'";
+        ok = formula === '' && read === want;
       } catch (err) {
         ok = false;
       }
@@ -663,14 +706,13 @@ function writeProbeSheet_(ss, checks) {
     var item = checks[i];
     rows.push([
       item.header,
-      formulaGuard_(item.raw),
+      item.raw,
       item.read,
-      item.formula === '' ? '（空）' : formulaGuard_(item.formula),
+      item.formula === '' ? '（空）' : item.formula,
       item.ok ? '通過' : '失敗'
     ]);
   }
-  sheet.getRange(1, 1, rows.length, headers.length).setNumberFormat('@');
-  sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
+  writeLiteralMatrix_(sheet, 1, rows);
 }
 
 function runIsolatedEightCases() {
@@ -692,6 +734,7 @@ function runIsolatedEightCases() {
   var cases = isolatedEightPayloads_(shop);
   var lines = [RESULT_HEADERS];
   var stopped = false;
+  var failNote = '';
   for (var i = 0; i < cases.length; i += 1) {
     var outcome = acceptBooking_(cases[i].payload);
     lines.push([
@@ -711,13 +754,14 @@ function runIsolatedEightCases() {
       }
       if (!pass) {
         stopped = true;
+        if (outcome.response.status !== 'success') failNote = outcome.response.message || '';
         break;
       }
     }
   }
   writeResultSheet_(opened.ss, lines);
   var summary = stopped
-    ? '公式核對失敗。請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。'
+    ? '公式核對失敗。' + (failNote ? failNote + '。' : '') + '請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。'
     : '已送出 8 筆。四種前綴都通過，才可以部署。全成功應有 14 封測試信。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
   notify_(summary);
   return summary;

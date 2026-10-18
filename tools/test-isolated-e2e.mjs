@@ -50,15 +50,35 @@ function memoryStore() {
   };
 }
 
+function enterLikeSheets(input) {
+  let text = input == null ? '' : String(input);
+  if (text.charAt(0) === "'") text = text.slice(1);
+  if (text.charAt(0) === '=') {
+    const sum = text.match(/^=(\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)$/);
+    return sum ? String(Number(sum[1]) + Number(sum[2])) : '#ERROR!';
+  }
+  return text;
+}
+
 function memorySpreadsheet(box) {
   const sheets = {};
   function make(name) {
     const data = [];
+    const formulas = {};
+    function put(r, c, value, formula) {
+      const line = data[r] ? data[r].slice() : [];
+      line[c] = value;
+      data[r] = line;
+      formulas[r + ':' + c] = formula || '';
+    }
     return {
       name,
       getLastRow() { return data.length; },
       appendRow(row) { data.push(row.slice()); },
-      clear() { data.length = 0; },
+      clear() {
+        data.length = 0;
+        Object.keys(formulas).forEach((key) => { delete formulas[key]; });
+      },
       getRange(row, col, numRows, numCols) {
         const rowsN = numRows == null ? 1 : numRows;
         const colsN = numCols == null ? 1 : numCols;
@@ -68,10 +88,13 @@ function memorySpreadsheet(box) {
           setValues(values) {
             box.writes.push({ name, row, col, numRows: rowsN, numCols: colsN, lockHeld: box.lockHeld, afterFlush: box.flushed });
             for (let r = 0; r < rowsN; r += 1) {
-              const line = data[row - 1 + r] ? data[row - 1 + r].slice() : [];
-              for (let c = 0; c < colsN; c += 1) line[col - 1 + c] = values[r][c];
-              data[row - 1 + r] = line;
+              for (let c = 0; c < colsN; c += 1) put(row - 1 + r, col - 1 + c, enterLikeSheets(values[r][c]), '');
             }
+          },
+          setRichTextValue(rich) {
+            const text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
+            put(row - 1, col - 1, text, '');
+            return this;
           },
           getValues() {
             const out = [];
@@ -99,7 +122,7 @@ function memorySpreadsheet(box) {
             if (box.failReadAfterFlush === 'formula') {
               return out.map((line) => line.map((cell) => {
                 const text = cell == null ? '' : String(cell);
-                return /^'[=+\-@]/.test(text) ? '2' : cell;
+                return text.charAt(0) === '=' ? '2' : cell;
               }));
             }
             }
@@ -108,6 +131,9 @@ function memorySpreadsheet(box) {
           getValue() {
             const line = data[row - 1] || [];
             return line[col - 1] == null ? '' : line[col - 1];
+          },
+          getFormula() {
+            return formulas[(row - 1) + ':' + (col - 1)] || '';
           },
         };
       },
@@ -190,6 +216,14 @@ function loadIsolated(options = {}) {
       flush() {
         box.flushed = true;
         box.lockLog.push(box.lockHeld ? 'flush-held' : 'flush-free');
+      },
+      newRichTextValue() {
+        const rich = {
+          body: '',
+          setText(value) { this.body = String(value); return this; },
+          build() { return { getText: () => rich.body }; },
+        };
+        return rich;
       },
       getUi() {
         return { alert() {}, createMenu() { return { addItem() { return this; }, addToUi() {} }; } };
@@ -661,7 +695,7 @@ function privateEntryAndFormula() {
   assert(runbook.includes('不可以重新整理後重送'), '結果未知時不可以重新整理後重送');
   assert(!runbook.includes('ALLOWED_DEPLOYMENT_IDS'), 'Owner 文件不要再教加入 guard 白名單');
   const confirmSrc = gs.slice(gs.indexOf('function confirmOrderRow_'), gs.indexOf('function acceptBooking_'));
-  assert(confirmSrc.includes('actual !== want') && !confirmSrc.includes('replace('), '讀回比對要保留防護單引號，不可放寬');
+  assert(confirmSrc.includes('actual !== want') && confirmSrc.includes("formula !== ''") && !confirmSrc.includes('replace('), '讀回要比對原值字串，而且 getFormula 必須為空');
   const isolated = loadIsolated({ sheetId: 'private-sheet' });
   if (typeof isolated.sandbox.submitIsolatedFromPage !== 'function') {
     console.log('test 私人入口與公式往返: FAIL');
@@ -680,21 +714,20 @@ function privateEntryAndFormula() {
   assert(!sentTo.includes('attacker@example.com'), 'payload 裡的信箱不可拿來寄信');
   const row = rowById(isolated, attack.orderId);
   assert(row && row['信箱'] === 'attacker@example.com', '表格信箱欄仍是送出內容，不是收件人');
-  assert(row && row['備註'] === "'=1+1" && row['備註'] !== '2', '等號開頭寫入後讀回仍是文字，不是算式結果');
-  assert(row && row['utm活動'] === "'+1+1" && row['utm內容'] === "'-1+1" && row['utm關鍵字'] === "'@cmd", '+ - @ 開頭讀回要與寫入的防護文字一致');
+  assert(row && row['備註'] === '=1+1' && row['備註'] !== '2', '等號開頭寫入後讀回仍是文字，不是算式結果');
+  assert(row && row['utm活動'] === '+1+1' && row['utm內容'] === '-1+1' && row['utm關鍵字'] === '@cmd', '+ - @ 開頭讀回要等於原值字串');
   const direct = isolated.sandbox.confirmOrderRow_;
-  assert(direct({
-    getLastRow() { return 1; },
-    getRange() { return { getValues() { return [['SMC900776', "'=1+1"]]; } }; },
-  }, 'SMC900777', ['SMC900777', '=1+1']) === false, '訂單編號對不上不可算讀回成功');
-  assert(direct({
-    getLastRow() { return 1; },
-    getRange() { return { getValues() { return [['SMC900777', "'=1+1"]]; } }; },
-  }, 'SMC900777', ['SMC900777', '=1+1']) === true, '帶防護單引號的讀回要與寫入契約一致');
-  assert(direct({
-    getLastRow() { return 1; },
-    getRange() { return { getValues() { return [['SMC900777', '=1+1']]; } }; },
-  }, 'SMC900777', ['SMC900777', '=1+1']) === false, '讀回少了防護單引號不可放寬成一致');
+  function sheetOf(rows, formula) {
+    return {
+      getLastRow() { return rows.length; },
+      getRange() { return { getValues() { return rows; }, getFormula() { return formula; } }; },
+    };
+  }
+  assert(direct(sheetOf([['SMC900776', '=1+1']], ''), 'SMC900777', ['SMC900777', '=1+1']).ok === false, '訂單編號對不上不可算讀回成功');
+  assert(direct(sheetOf([['SMC900777', '=1+1']], ''), 'SMC900777', ['SMC900777', '=1+1']).ok === true, '讀回等於原值且 getFormula 為空才算一致');
+  assert(direct(sheetOf([['SMC900777', '2']], ''), 'SMC900777', ['SMC900777', '=1+1']).ok === false, '讀回變成算式結果不可算一致');
+  assert(direct(sheetOf([['SMC900777', "'=1+1"]], ''), 'SMC900777', ['SMC900777', '=1+1']).ok === false, '讀回多了前導單引號不可算成原值');
+  assert(direct(sheetOf([['SMC900777', '=1+1']], '=1+1'), 'SMC900777', ['SMC900777', '=1+1']).ok === false, 'getFormula 不是空不可算一致');
   const computed = loadIsolated({ sheetId: 'formula-computed', failReadAfterFlush: 'formula' });
   const computedRes = computed.sandbox.submitIsolatedFromPage({
     action: 'book', type: 'dining', name: '測試同學', phone: '0900000000', email: 'attacker@example.com',
@@ -702,9 +735,10 @@ function privateEntryAndFormula() {
   });
   assert(computedRes.status === 'unknown' && computedRes.mailed === false, '讀回變成公式結果就要停下，不可寄信');
   assert(String(computedRes.message).includes('原列') && String(computedRes.message).includes('不要重送'), '不一致的回應要寫核對原列、不要重送');
+  assert(String(computedRes.message).includes('欄位：備註') && String(computedRes.message).includes('原值：=1+1') && String(computedRes.message).includes('讀回值：2'), '讀回不符要寫明欄位、原值與讀回值');
   assert(computed.box.mails.length === 0, '公式讀回不一致不可寄信');
   const kept = rowById(computed, computedRes.orderId);
-  assert(kept && kept['備註'] === "'=1+1" && kept['備註'] !== '2', '停下後原列仍是寫入的文字，供人工核對');
+  assert(kept && kept['備註'] === '=1+1' && kept['備註'] !== '2', '停下後原列仍是寫入的文字，供人工核對');
   const opened = isolated.sandbox.doGet();
   assert(isolated.box.htmlFiles.includes('IsolatedCheck') && opened.getContent().includes('google.script.run'), 'doGet 要送出私人頁面');
   isolated.props.SMC_ATTRIBUTION_ISOLATED = 'no';

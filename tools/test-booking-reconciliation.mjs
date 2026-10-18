@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Local reconciliation only. Does not call script.google.com, send mail, or open a sheet.
-// The in-memory sheet stores setValues strings and does not execute formulas.
-// A leading apostrophe here is not evidence that Google Sheets will skip calculation.
+// setValues reproduces Sheets: a leading apostrophe is discarded, and a string starting with = is calculated.
+// setNumberFormat('@') does not stop that. setRichTextValue stores the literal text and an empty formula.
 // Usage: node tools/test-booking-reconciliation.mjs
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -78,14 +78,34 @@ function fieldsFor(search) {
   return attr.bookingFields(store, t0);
 }
 
+function enterLikeSheets(input) {
+  let text = input == null ? '' : String(input);
+  if (text.charAt(0) === "'") text = text.slice(1);
+  if (text.charAt(0) === '=') {
+    const sum = text.match(/^=(\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)$/);
+    return sum ? String(Number(sum[1]) + Number(sum[2])) : '#ERROR!';
+  }
+  return text;
+}
+
 function memorySpreadsheet(options = {}) {
   const sheets = {};
   function make() {
     const data = [];
+    const formulas = {};
+    function put(r, c, value, formula) {
+      const line = data[r] ? data[r].slice() : [];
+      line[c] = value;
+      data[r] = line;
+      formulas[r + ':' + c] = formula || '';
+    }
     return {
       getLastRow() { return data.length; },
       appendRow(row) { data.push(row.slice()); },
-      clear() { data.length = 0; },
+      clear() {
+        data.length = 0;
+        Object.keys(formulas).forEach((key) => { delete formulas[key]; });
+      },
       getRange(row, col, numRows, numCols) {
         const rowsN = numRows == null ? 1 : numRows;
         const colsN = numCols == null ? 1 : numCols;
@@ -93,10 +113,13 @@ function memorySpreadsheet(options = {}) {
           setNumberFormat() { return this; },
           setValues(values) {
             for (let r = 0; r < rowsN; r += 1) {
-              const line = data[row - 1 + r] ? data[row - 1 + r].slice() : [];
-              for (let c = 0; c < colsN; c += 1) line[col - 1 + c] = values[r][c];
-              data[row - 1 + r] = line;
+              for (let c = 0; c < colsN; c += 1) put(row - 1 + r, col - 1 + c, enterLikeSheets(values[r][c]), '');
             }
+          },
+          setRichTextValue(rich) {
+            const text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
+            put(row - 1, col - 1, text, '');
+            return this;
           },
           getValues() {
             const out = [];
@@ -116,12 +139,9 @@ function memorySpreadsheet(options = {}) {
             return line[col - 1] == null ? '' : line[col - 1];
           },
           getFormula() {
-            const line = data[row - 1] || [];
-            const text = line[col - 1] == null ? '' : String(line[col - 1]);
-            if (options.forceFormula && text === "'=1+1") return '=1+1';
-            if (text.charAt(0) === "'") return '';
-            if (/^[=+\-@]/.test(text)) return text;
-            return '';
+            const text = data[row - 1] && data[row - 1][col - 1] != null ? String(data[row - 1][col - 1]) : '';
+            if (options.forceFormula && text === '=1+1') return '=1+1';
+            return formulas[(row - 1) + ':' + (col - 1)] || '';
           },
         };
       },
@@ -192,6 +212,14 @@ function loadIsolated(options = {}) {
     },
     flush() {
       box.lockLog.push(box.lockHeld ? 'flush-held' : 'flush-free');
+    },
+    newRichTextValue() {
+      const rich = {
+        body: '',
+        setText(value) { this.body = String(value); return this; },
+        build() { return { getText: () => rich.body }; },
+      };
+      return rich;
     },
     getUi() {
       return {
@@ -549,10 +577,10 @@ const expectedAttr = {
     source: 'google',
     utmSource: 'google',
     utmMedium: 'cpc',
-    utmCampaign: "'=1+1",
-    utmContent: "'+1+1",
-    utmTerm: "'-1+1",
-    utmAdgroup: "'@cmd",
+    utmCampaign: '=1+1',
+    utmContent: '+1+1',
+    utmTerm: '-1+1',
+    utmAdgroup: '@cmd',
     adgroupBucket: '品牌',
     gclid: '',
   },
@@ -588,7 +616,7 @@ for (const id of Object.keys(expectedAttr)) {
 
 assert(!mailById(isolated, 'SMC900101')['店內正文'].includes('ag_geo_dining'), '品牌店內信不可混入非品牌代碼');
 assert(mailById(isolated, 'SMC900102')['店內正文'].includes('ag_geo_dining') && mailById(isolated, 'SMC900102')['店內正文'].includes('非品牌'), '非品牌店內信要有自己的代碼');
-assert(rowById(isolated, 'SMC900105')['utm活動'] === "'=1+1" && rowById(isolated, 'SMC900105')['utm活動'] !== '2', '公式開頭要變成純文字；這不是 Google 試算表已執行過的證明');
+assert(rowById(isolated, 'SMC900105')['utm活動'] === '=1+1' && rowById(isolated, 'SMC900105')['utm活動'] !== '2', '公式開頭要留下原值字串，不可變成算式結果');
 
 isolated.sandbox.MailApp.sendEmail = () => { throw new Error('mail down'); };
 const mailed = post(isolated, previewPayload(brandFields, 'SMC900107'));
@@ -609,10 +637,23 @@ const guardIso = loadIsolated();
 assert(guardIso.sandbox.formulaGuard_(' 靠窗') === ' 靠窗', '一般備註的開頭空白要保留');
 assert(guardIso.sandbox.attributionText_(' 靠窗') === '靠窗', '來源欄仍去掉兩端空白');
 for (const hidden of ['\u200B', '\u200C', '\u200D', '\uFEFF', '\u0000']) {
-  assert(guardIso.sandbox.formulaGuard_(hidden + '=1+1') === "'=1+1", '公式前的零寬或 NUL 要先拿掉');
-  assert(guardIso.sandbox.attributionText_(hidden + '=1+1') === "'=1+1", '來源欄的零寬或 NUL 要先拿掉');
+  assert(guardIso.sandbox.formulaGuard_(hidden + '=1+1') === '=1+1', '公式前的零寬或 NUL 要先拿掉');
+  assert(guardIso.sandbox.attributionText_(hidden + '=1+1') === '=1+1', '來源欄的零寬或 NUL 要先拿掉');
 }
-assert(guardIso.sandbox.formulaGuard_(' \u200B=1+1') === "'=1+1", '空白加零寬仍要擋下公式');
+assert(guardIso.sandbox.formulaGuard_(' \u200B=1+1') === '=1+1', '空白加零寬仍要擋下公式');
+const formulaDemo = guardIso.box.byId['isolated-test-sheet'].insertSheet('等號模擬');
+formulaDemo.getRange(1, 1).setNumberFormat('@');
+formulaDemo.getRange(1, 1).setValues([['=1+1']]);
+formulaDemo.getRange(1, 2).setNumberFormat('@');
+formulaDemo.getRange(1, 2).setValues([["'=1+1"]]);
+formulaDemo.getRange(1, 3).setValues([['+1+1']]);
+formulaDemo.getRange(1, 4).setValues([['-1+1']]);
+formulaDemo.getRange(1, 5).setValues([['@cmd']]);
+formulaDemo.getRange(1, 6).setRichTextValue(guardIso.sandbox.SpreadsheetApp.newRichTextValue().setText('=1+1').build());
+assert(formulaDemo.getRange(1, 1).getValue() === '2' && formulaDemo.getRange(1, 1).getFormula() === '', 'setValues 把 = 開頭算成結果，純文字格式擋不住');
+assert(formulaDemo.getRange(1, 2).getValue() === '2', '前導單引號在 setValues 會被吃掉，= 仍被計算');
+assert(formulaDemo.getRange(1, 3).getValue() === '+1+1' && formulaDemo.getRange(1, 4).getValue() === '-1+1' && formulaDemo.getRange(1, 5).getValue() === '@cmd', '+ - @ 不是公式開頭，setValues 會原樣留下');
+assert(formulaDemo.getRange(1, 6).getValue() === '=1+1' && formulaDemo.getRange(1, 6).getFormula() === '', 'setRichTextValue 留下 =1+1 且 getFormula 為空');
 const leads = [['空白', ' '], ['Tab', '\t'], ['換行', '\n']];
 const prefixes = ['=', '+', '-', '@'];
 let guardN = 0;
@@ -620,10 +661,10 @@ for (const [leadName, lead] of leads) {
   for (const prefix of prefixes) {
     guardN += 1;
     const raw = lead + prefix + '1+1';
-    const quoted = "'" + prefix + '1+1';
+    const literal = prefix + '1+1';
     const id = 'SMC91' + String(1000 + guardN);
-    assert(guardIso.sandbox.attributionText_(raw) === quoted, `${leadName}+${prefix} 來源要先去掉空白再加引號`);
-    assert(guardIso.sandbox.formulaGuard_(raw) === quoted, `${leadName}+${prefix} 訂位文字要先去掉空白再加引號`);
+    assert(guardIso.sandbox.attributionText_(raw) === literal, `${leadName}+${prefix} 來源要先去掉空白，留下原值字串`);
+    assert(guardIso.sandbox.formulaGuard_(raw) === literal, `${leadName}+${prefix} 訂位文字要先去掉空白，留下原值字串`);
     const payload = previewPayload(brandFields, id);
     payload.utmCampaign = raw;
     payload.note = raw;
@@ -634,12 +675,12 @@ for (const [leadName, lead] of leads) {
     assert(payload.note === raw && payload.utmCampaign === raw && payload.name === raw, `${id} 送出內容保持原字`);
     const row = rowById(guardIso, id);
     const mail = mailById(guardIso, id);
-    assert(row['utm活動'] === quoted && row['utm活動'] !== '2' && row['utm活動'] !== prefix + '1+1', `${id} utm活動不可是未跳脫的公式`);
-    assert(row['備註'] === quoted && row['姓名'] === quoted && row['品項'] === quoted, `${id} 原訂位文字在寫入前要跳脫`);
+    assert(row['utm活動'] === literal && row['utm活動'] !== '2', `${id} utm活動要留下原值字串，不可變成算式結果`);
+    assert(row['備註'] === literal && row['姓名'] === literal && row['品項'] === literal, `${id} 原訂位文字寫入後仍是去掉空白後的原值`);
     assert(row['日期'] === '2026-10-22' && row['時間'] === '12:00' && row['人數'] === '2' && row['桌數'] === '1', `${id} 其他訂位欄不可被公式案例改掉`);
-    assert(mail['客人正文'] === expectedGuest(id, quoted), `${id} 客人信備註要是跳脫後的文字`);
-    assert(mail['店內正文'].includes('備註：' + quoted) && mail['店內正文'].includes('utm活動：' + quoted) && mail['店內正文'].includes('品項：' + quoted), `${id} 店內信要是跳脫後的文字`);
-    assert(!mail['客人正文'].includes(raw) && !mail['店內正文'].includes(raw) && !row['備註'].includes(lead + prefix), `${id} 寫入與兩封信不可留下會變成公式的前綴`);
+    assert(mail['客人正文'] === expectedGuest(id, literal), `${id} 客人信備註要是原值字串`);
+    assert(mail['店內正文'].includes('備註：' + literal) && mail['店內正文'].includes('utm活動：' + literal) && mail['店內正文'].includes('品項：' + literal), `${id} 店內信要是原值字串`);
+    assert(!mail['客人正文'].includes(raw) && !mail['店內正文'].includes(raw) && !row['備註'].includes(lead + prefix), `${id} 寫入與兩封信不可留下公式前的空白`);
   }
 }
 
@@ -701,9 +742,10 @@ assert(runner.box.mails.filter((item) => item.subject.includes('SMC900101')).len
 assert(runner.box.mails.length === 14, '八案例全成功是 14 封：七筆新單各兩封，重複那筆不寄');
 const resultRows = sheetRows(runner, '驗收結果');
 assert(resultRows.length === 9, '驗收結果要有表頭加 8 列');
-assert(resultRows[8][1] === 'SMC900101' && resultRows[8][2] === 'success' && resultRows[8][3] === '否' && resultRows[8][4] === '否', '第 8 筆不可再寫入或再寄信');
+const eighth = resultRows[8] || [];
+assert(eighth[1] === 'SMC900101' && eighth[2] === 'success' && eighth[3] === '否' && eighth[4] === '否', '第 8 筆不可再寫入或再寄信');
 const runnerFormula = asMap(runnerOrders[0], runnerOrders.find((row) => row[0] === 'SMC900105'));
-assert(runnerFormula['utm活動'] === "'=1+1" && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列也要是純文字，訂位欄不變');
+assert(runnerFormula['utm活動'] === '=1+1' && runnerFormula['utm活動'] !== '2' && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列要留下原值字串，訂位欄不變');
 
 function withoutTestId(fields) {
   const payload = attr.payloadIfAttributionEnabled(baseOrder(), fields);
@@ -830,8 +872,8 @@ if (probeRows.length === 5) {
   for (const row of probeRows.slice(1)) probeMap[row[0]] = row;
   for (const [header, raw] of [['utm活動', '=1+1'], ['utm內容', '+1+1'], ['utm關鍵字', '-1+1'], ['utm廣告群組', '@cmd']]) {
     const row = probeMap[header];
-    assert(row && row[1] === "'" + raw, `${header} 要列出原值`);
-    assert(row && row[2] === "'" + raw, `${header} 讀回要是帶前導單引號的文字`);
+    assert(row && row[1] === raw, `${header} 要列出原值`);
+    assert(row && row[2] === raw, `${header} 讀回要等於原值字串`);
     assert(row && row[3] === '（空）', `${header} 的 getFormula 要為空`);
     assert(row && row[4] === '通過', `${header} 不符就不可算通過`);
   }
