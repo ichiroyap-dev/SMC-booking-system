@@ -60,7 +60,12 @@ Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`�
 
 決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列用 `values.append`、`RAW`、`INSERT_ROWS`，而且在 LockService 裡面，不看快取最後一列加一。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間、收到時間存試算表序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
 
-固定 commit、raw 連結和 SHA-256 由下一個 commit 寫上，指回含這支 `.gs` 的 commit。`IsolatedCheck.html` 這輪沒改。
+固定檔案停在 commit `cff5e86a1512734681ef47981c90d776e22497e5`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
+
+| 檔案 | raw 連結 | SHA-256 |
+| --- | --- | --- |
+| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/cff5e86a1512734681ef47981c90d776e22497e5/.github/pages-unpublished/booking-attribution-isolated.gs | `9875b31e3d9b150ae4151c12d32ed4fe0609bf02961ed5ca69056e2ee1b71c9e` |
+| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/cff5e86a1512734681ef47981c90d776e22497e5/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
 
 ## 第 8 輪原文
 
