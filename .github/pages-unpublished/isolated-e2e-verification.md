@@ -1,6 +1,6 @@
-# 隔離驗證（第 5 輪，加號開頭）
+# 隔離驗證（第 6 輪，延後的 clear）
 
-要貼進 Apps Script 的程式停在 commit `5f89c717b6763b767ac31bc98a88616ade8bbd76`。這份報告是下一個 commit，連結指回那個 SHA。不要再貼 `3e6c185`。
+要貼進 Apps Script 的程式停在 commit `d14798a3ce577420c3b00aa530c6a7c4775820a5`。這份報告是下一個 commit，連結指回那個 SHA。不要再貼 `5f89c71`。
 
 必須是新建的獨立試算表專案，不要貼進任何既有專案。隔離腳本沒有 `doPost`，只有 `doGet`。
 
@@ -10,17 +10,40 @@
 
 | 檔案 | raw 連結 | SHA-256 |
 | --- | --- | --- |
-| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/booking-attribution-isolated.gs | `6e2375b719be7f1d2c165e05c6b800eeffabe8aad9b7f3450b909180d631c054` |
-| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
+| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/d14798a3ce577420c3b00aa530c6a7c4775820a5/.github/pages-unpublished/booking-attribution-isolated.gs | `58123a5a1598ba2c942ca295e871f8c46af78252c62edb8f1bf88e199f809802` |
+| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/d14798a3ce577420c3b00aa530c6a7c4775820a5/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
 
 PowerShell：
 
 ```powershell
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/booking-attribution-isolated.gs' -OutFile booking-attribution-isolated.gs
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/d14798a3ce577420c3b00aa530c6a7c4775820a5/.github/pages-unpublished/booking-attribution-isolated.gs' -OutFile booking-attribution-isolated.gs
 Get-FileHash .\booking-attribution-isolated.gs -Algorithm SHA256
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5f89c717b6763b767ac31bc98a88616ade8bbd76/.github/pages-unpublished/IsolatedCheck.html' -OutFile IsolatedCheck.html
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/d14798a3ce577420c3b00aa530c6a7c4775820a5/.github/pages-unpublished/IsolatedCheck.html' -OutFile IsolatedCheck.html
 Get-FileHash .\IsolatedCheck.html -Algorithm SHA256
 ```
+
+## 第 6 輪紅燈與綠燈
+
+Owner 用 `5f89c71` 在 2026-10-18 14:59（台北）跑了 `runIsolatedEightCases`。`.gs` 的 SHA-256 是 `6e2375b719be7f1d2c165e05c6b800eeffabe8aad9b7f3450b909180d631c054`，Sheets API 已經加過。訂單分頁 7 個編號各一列，郵件預覽 7 列，信 14 封。案例 6 的 `=1+1`、`+1+1`、`-1+1`、`@cmd` 都是文字。案例 8 是重複編號，沒寫、沒寄。執行約 18.5 秒，沒有錯誤。但是「驗收結果」和「公式核對」整張是空的，匯出的 CSV 是 0 bytes。沒有部署。
+
+程式裡 `writeResultSheet_` 和 `writeProbeSheet_` 先呼叫 `sheet.clear()`。SpreadsheetApp 會把清除延後。接著 `values.update` 立刻把報告寫進伺服器。案例 7、8 的 `SpreadsheetApp.flush()`，以及腳本結束時的 flush，才把那個清除送出，報告被洗掉。訂單和郵件預覽沒有呼叫 clear，所以 7 列和 14 封信還在。RAW 這段是有效的。
+
+模擬把 SpreadsheetApp 的 appendRow、setValues、setRichTextValue、clear 留到 flush 才寫進儲存的列。API 的 update、clear、get 立刻作用在儲存的列。Node `v22.14.0`。
+
+紅燈：目前的測試配上 `5f89c71` 的腳本。
+
+```bash
+git show 5f89c71:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-booking-reconciliation.mjs
+node tools/test-isolated-e2e.mjs
+```
+
+`test-booking-reconciliation.mjs` 結束碼 1，12 項。紀錄 `.github/pages-unpublished/isolated-red-clear-r6.log`。
+`test-isolated-e2e.mjs` 結束碼 1，7 項。紀錄 `.github/pages-unpublished/isolated-red-clear-e2e-r6.log`。
+
+綠燈：腳本放回 `d14798a3ce577420c3b00aa530c6a7c4775820a5` 後，同樣兩個指令結束碼都是 0。紀錄 `isolated-green-recon-r6.log`、`isolated-green-e2e-r6.log`。`test-booking-backend-contract.mjs` 與 `test-isolated-dining-check.mjs` 結束碼也是 0。
+
+訂單分頁的 RAW 已在 14:59 真表通過。報告分頁那次是空白，要等這次重跑。讀回列數或內容不對會回結果未知，不再默默留下空白。重跑前四張分頁都要清除內容：訂單、郵件預覽、驗收結果、公式核對。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
 
 ## 第 5 輪紅燈與綠燈
 
@@ -41,7 +64,7 @@ node tools/test-isolated-e2e.mjs
 
 綠燈：腳本放回 `5f89c717b6763b767ac31bc98a88616ade8bbd76` 後，同樣兩個指令結束碼都是 0。紀錄 `isolated-green-recon-r5.log`、`isolated-green-e2e-r5.log`。
 
-模擬通過，真表待驗收。讀回不符仍停下、不寄信。重跑只留一種：同一張表，清「訂單」「郵件預覽」「驗收結果」「公式核對」表頭以下的列。
+第 5 輪模擬通過後，14:59 真表的訂單四格通過，報告分頁卻是空白。讀回不符仍停下、不寄信。
 
 ## 第 4 輪紅燈與綠燈
 
@@ -100,7 +123,7 @@ node tools/test-isolated-e2e.mjs
 必須是新建的獨立試算表專案，不要貼進任何既有專案。未核對雜湊前不要貼。不要打開 `www.sweetmeichicken.com`。不要覆寫正式部署。信箱用 Owner 自己的測試信箱。結果未知時，不可以重新整理後重送。
 
 1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。
-2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。從試算表開 Apps Script，貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。首次執行會再出現授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown 或讀回不符就停，不部署。重跑只留同一張表，清四個分頁表頭以下的列。
+2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。從試算表開 Apps Script，貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。首次執行可能再授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown、報告空白或讀回不符就停，不部署。重跑前同一張表要清除內容：訂單、郵件預覽、驗收結果、公式核對。表頭可以留著。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
 3. **全部核對通過才開私人頁。** 新增網路應用程式部署，執行身分「我」、存取「只有我」。不要覆寫正式部署。用同帳號開新網址，帶入品牌欄位送一次。網頁每一筆新單再 2 封。未知或沒有回應就停，不可以重新整理後重送。`127.0.0.1` 那頁只留給模擬測試，不要拿來送這個部署。
 
 做完後一次回傳：測試表 ID、測試信箱、八案例的驗收結果、公式核對四格、exec 網址、存取是不是「只有我」，以及確認沒有改正式環境。
