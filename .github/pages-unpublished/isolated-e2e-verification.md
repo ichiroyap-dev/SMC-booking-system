@@ -1,26 +1,43 @@
-# 隔離驗證（第 7 輪，讀回前 flush）
+# 隔離驗證（第 8 輪，錯誤訊息）
 
-要貼進 Apps Script 的程式停在 commit `355da772b841c1caccfc6250fca686793da8a258`。這份報告是下一個 commit，連結指回那個 SHA。不要再貼 `d14798a`。
+要貼進 Apps Script 的程式停在 commit `6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb`。這份報告是下一個 commit，連結指回那個 SHA。不要再貼 `d14798a`。2026-10-18 16:02（台北）Owner 用 `355da77` 重跑，8 個案例全部通過。16:07 已部署成私人網頁應用程式：版本 1，存取只有自己。已部署的是 355da77；新 commit 只是錯誤訊息和文件的小修，是否重新部署由 Owner 決定。
 
 必須是新建的獨立試算表專案，不要貼進任何既有專案。隔離腳本沒有 `doPost`，只有 `doGet`。
 
-沒有部署，沒有寫入 Google 試算表，沒有寄信，沒有合併。`SEND_ATTRIBUTION_TO_BACKEND` 仍是 `false`。正式訂位 POST 仍是 11 欄。正式部署編號仍是 `AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q`。
+這輪沒有重新部署，沒有寫入 Google 試算表，沒有寄信，沒有合併。`SEND_ATTRIBUTION_TO_BACKEND` 仍是 `false`。正式訂位 POST 仍是 11 欄。正式部署編號仍是 `AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q`。
 
 ## 固定檔案
 
 | 檔案 | raw 連結 | SHA-256 |
 | --- | --- | --- |
-| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/355da772b841c1caccfc6250fca686793da8a258/.github/pages-unpublished/booking-attribution-isolated.gs | `3c3883eddd080b86db8bbcc010945377bed0f78c5d4a47b5cdb095bc5e25704c` |
-| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/355da772b841c1caccfc6250fca686793da8a258/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
+| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/booking-attribution-isolated.gs | `a0f1bcf7a4cb3f1a9f392e5c064eb577399c19cb065e8901eeae4e9fbe24094a` |
+| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
 
 PowerShell：
 
 ```powershell
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/355da772b841c1caccfc6250fca686793da8a258/.github/pages-unpublished/booking-attribution-isolated.gs' -OutFile booking-attribution-isolated.gs
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/booking-attribution-isolated.gs' -OutFile booking-attribution-isolated.gs
 Get-FileHash .\booking-attribution-isolated.gs -Algorithm SHA256
-Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/355da772b841c1caccfc6250fca686793da8a258/.github/pages-unpublished/IsolatedCheck.html' -OutFile IsolatedCheck.html
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/IsolatedCheck.html' -OutFile IsolatedCheck.html
 Get-FileHash .\IsolatedCheck.html -Algorithm SHA256
 ```
+
+## 第 8 輪紅燈與綠燈
+
+錯誤訊息要寫明是哪張分頁、什麼錯誤。最終 flush 失敗要寫出階段、「驗收結果」、「公式核對」和錯誤文字，不可只寫讀不回來。公式核對讀回失敗、驗收結果寫入失敗也要帶上錯誤文字。只寄出部分信時，每一封已確認成功的 `MailApp.sendEmail` 各算一封；沒寄出的另外標示，不要補寄。案例 6 的第二封失敗時，實際成功 11 封，舊訊息寫成 10。alert 本身失敗時，`runIsolatedEightCases` 回結果未知，不回「四種前綴都通過」。`notify_` 仍不把 alert 錯誤丟出去，錯誤留在執行記錄。getLastRow()+1 這輪不改。文件把快取改成不可依賴即時一致，根因分成真表上觀察到和模擬重現，手冊補上按確定與等待對話框。Node `v22.14.0`。
+
+紅燈：目前的測試配上 `355da77` 的腳本。
+
+```bash
+git show 355da77:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-booking-reconciliation.mjs
+node tools/test-isolated-e2e.mjs
+```
+
+`test-booking-reconciliation.mjs` 結束碼 1，14 項。紀錄 `.github/pages-unpublished/isolated-red-messages-r8.log`。
+`test-isolated-e2e.mjs` 結束碼 1，11 項。紀錄 `.github/pages-unpublished/isolated-red-messages-e2e-r8.log`。
+
+綠燈：腳本放回 `6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb` 後，同樣兩個指令結束碼都是 0。紀錄 `isolated-green-recon-r8.log`、`isolated-green-e2e-r8.log`。`test-booking-backend-contract.mjs` 與 `test-isolated-dining-check.mjs` 結束碼也是 0。
 
 ## 第 7 輪紅燈與綠燈
 
