@@ -536,23 +536,34 @@ function columnIndex_(letters) {
   return n;
 }
 
+// $ 只從儲存格部分去掉。分頁名稱本身可以有 $，例如 'Cash$1'!A5:V5。
 function parseUpdatedRange_(range) {
-  var text = String(range || '').replace(/\$/g, '').trim();
+  var text = String(range || '').trim();
   var bang = text.lastIndexOf('!');
   if (bang < 0) return null;
   var name = text.slice(0, bang).trim();
-  var cells = text.slice(bang + 1).trim();
+  var cells = text.slice(bang + 1).trim().replace(/\$/g, '');
   if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") {
     name = name.slice(1, -1).replace(/''/g, "'");
   }
   var pair = /^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/.exec(cells);
-  if (!pair) return null;
+  if (pair) {
+    return {
+      name: name,
+      startCol: columnIndex_(pair[1]),
+      startRow: Number(pair[2]),
+      endCol: columnIndex_(pair[3]),
+      endRow: Number(pair[4])
+    };
+  }
+  var single = /^([A-Za-z]+)(\d+)$/.exec(cells);
+  if (!single) return null;
   return {
     name: name,
-    startCol: columnIndex_(pair[1]),
-    startRow: Number(pair[2]),
-    endCol: columnIndex_(pair[3]),
-    endRow: Number(pair[4])
+    startCol: columnIndex_(single[1]),
+    startRow: Number(single[2]),
+    endCol: columnIndex_(single[1]),
+    endRow: Number(single[2])
   };
 }
 
@@ -976,7 +987,7 @@ function isolatedEightPayloads_(email) {
       { header: 'utm廣告群組', raw: formula.utmAdgroup }
     ] },
     { label: '7 格式壞掉', payload: isolatedWithAttr_(email, 'SMC900106', malformed) },
-    { label: '8 同一編號再送', payload: isolatedWithAttr_(email, 'SMC900101', brand) }
+    { label: '8 同一編號再送', payload: isolatedWithAttr_(email, 'SMC900101', brand), expectDuplicate: true }
   ];
 }
 
@@ -1104,6 +1115,25 @@ function writeProbeSheet_(ss, checks) {
   return writeLiteralMatrix_(sheet, 1, rows);
 }
 
+// 新單要 success、有寫入、兩封都確認寄出。重複那一筆要 duplicate=true、wrote=false、mailed=false。
+// 回空字串代表這個案例可以繼續，否則回停下的原因。
+function caseStopReason_(item, outcome) {
+  var res = outcome && outcome.response ? outcome.response : {};
+  var status = res.status || '';
+  if (status === 'unknown') return '結果未知：' + (res.message || '');
+  if (status !== 'success') return '錯誤：' + (res.message || status || '沒有回應');
+  if (item.expectDuplicate) {
+    if (res.duplicate !== true || outcome.wrote !== false || outcome.mailed !== false) {
+      return '預期重複編號，要 duplicate=true、wrote=false、mailed=false。實際 duplicate=' + res.duplicate
+        + '、wrote=' + outcome.wrote + '、mailed=' + outcome.mailed;
+    }
+    return '';
+  }
+  if (res.duplicate === true || outcome.wrote !== true) return '新單沒有寫入。duplicate=' + res.duplicate + '、wrote=' + outcome.wrote;
+  if (outcome.mailed !== true) return '寄信未確認';
+  return '';
+}
+
 function runIsolatedEightCases() {
   if (!isIsolated_()) {
     notify_(BLOCKED_MESSAGE);
@@ -1133,7 +1163,13 @@ function runIsolatedEightCases() {
   var sentMails = 0;
   var failedMails = 0;
   for (var i = 0; i < cases.length; i += 1) {
-    var outcome = acceptBooking_(cases[i].payload);
+    var outcome;
+    try {
+      outcome = acceptBooking_(cases[i].payload);
+    } catch (caseErr) {
+      outcome = { response: { status: 'error', message: errorText_(caseErr) }, wrote: false, mailed: false };
+    }
+    if (!outcome || !outcome.response) outcome = { response: { status: 'error', message: '沒有回應' }, wrote: false, mailed: false };
     sentMails += outcome.sentCount || 0;
     failedMails += outcome.failedCount || 0;
     lines.push([
@@ -1143,6 +1179,19 @@ function runIsolatedEightCases() {
       outcome.wrote ? '是' : '否',
       outcome.mailed ? '是' : '否'
     ]);
+    var stopReason = caseStopReason_(cases[i], outcome);
+    if (stopReason) {
+      var caseFail = '結果未知。停在「' + cases[i].label + '」。原因：' + stopReason + '。後面的案例沒有執行。'
+        + mailNote_(sentMails, failedMails) + '。';
+      try {
+        writeResultSheet_(opened.ss, lines);
+      } catch (stopReportErr) {
+        caseFail += '「驗收結果」也沒有留住。錯誤：' + errorText_(stopReportErr) + '。';
+      }
+      caseFail += '不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+      notify_(caseFail);
+      return caseFail;
+    }
     if (cases[i].probes) {
       var orderSheet = opened.ss.getSheetByName('訂單');
       var checks = inspectFormulaProbes_(orderSheet, outcome.response.orderId || '', cases[i].probes);

@@ -86,6 +86,37 @@ node tools/test-pr47-r2.mjs --item nit
 
 紀錄是 `isolated-red-pr47-r2-range.log`、`isolated-red-pr47-r2-occupy.log`、`isolated-red-pr47-r2-checklist.log`、`isolated-red-pr47-r2-nit.log`。綠燈是 `isolated-green-pr47-r2-*.log`。
 
+## PR47 第 4 輪：Codex 第 3 輪退回
+
+八案例遇到第一個問題就停。新單要 `success`、有寫入、兩封都確認寄出；案例 8 要 `duplicate=true`、`wrote=false`、`mailed=false`。不符就停在那個案例，不跑後面的案例、不再寄信，摘要寫出案例和原因，不會出現「四種前綴都通過」或「才可以部署」。單一筆裡，客人信丟錯後仍寄店內信，這點沒改；但那個案例算寄信未確認，八案例會停下。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r3.mjs` 配上固定腳本 `5ad73c1a4efffbef942dbfe0cf7e74fa5018942e`。綠燈是同一指令、腳本放回這輪。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show 5ad73c1a4efffbef942dbfe0cf7e74fa5018942e:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r3.mjs --item stop
+node tools/test-pr47-r3.mjs --item checklist
+node tools/test-pr47-r3.mjs --item nit
+node tools/test-pr47-r3.mjs --item evidence
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 八案例遇錯就停（案例 1 位置錯、案例 2 讀回不符、案例 3 寄信未確認、案例 8 不是重複） | 結束碼 1，40 項 | 結束碼 0 |
+| 移植清單：跨寫入者與 FORMULA 實測 | 結束碼 1，6 項 | 結束碼 0 |
+| `$` 分頁名稱與單格範圍 | 結束碼 1，4 項 | 結束碼 0 |
+| Evidence 分開寫 PASS 與 BLOCKED | 結束碼 1，4 項 | 結束碼 0 |
+
+紅燈時，案例 1 位置錯誤仍跑完 2–7，寄出 12 封，摘要寫「四種前綴都通過」。紀錄是 `isolated-red-pr47-r3-*.log`，綠燈是 `isolated-green-pr47-r3-*.log`。
+
+`test-preflag-fixes.mjs` 的 nit3 改了預期：客人信全丟錯時，八案例停在案例 1，確認 1 封、未確認 1 封，不再寄後面七筆。
+
+本機 PASS 與 Pages BLOCKED 分開看：
+
+- 本機 PASS：`test-pr47-r3.mjs`、`test-pr47-r2.mjs`、`TZ=UTC node tools/test-pr47-r1.mjs`、`test-booking-reconciliation.mjs`、`test-isolated-e2e.mjs`、`test-booking-backend-contract.mjs`，結束碼都是 0。這些不連網。
+- Pages：這台 gh 已登入、能連網，`node tools/check-pages-unpublished.mjs` 結束碼 0，`node tools/test-preflag-fixes.mjs --item 5` 結束碼 0。
+- Pages BLOCKED：gh 未登入時，`node tools/check-pages-unpublished.mjs` 是 BLOCKED，結束碼 2。`node tools/test-preflag-fixes.mjs --item 5` 在同樣環境下結束碼 1。這是環境不足，不是通過，也不算 Pages 已公開。需要的環境：能連到 https://www.sweetmeichicken.com，gh 已登入並能讀 Pages 設定與 pages-build-deployment。
+
 ## 合併到 main 之後
 
 合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。

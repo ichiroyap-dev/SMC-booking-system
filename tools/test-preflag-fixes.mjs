@@ -542,10 +542,12 @@ function nit3() {
       isolated.box.mails.push({ to, subject, body });
     };
     const msg = String(isolated.sandbox.runIsolatedEightCases());
-    assert(msg.includes('確認寄出 7 封') && msg.includes('未確認寄出 7 封'), '客人信都丟錯時，摘要要寫 7 封確認、7 封未確認');
+    assert(msg.includes('停在「1 只有原來的 11 欄」') && msg.includes('寄信未確認'), '客人信丟錯時，八案例要停在案例 1');
+    assert(msg.includes('確認寄出 1 封') && msg.includes('未確認寄出 1 封'), '客人信丟錯時，摘要要寫 1 封確認、1 封未確認');
     assert(msg.includes('不要補寄'), '未確認的信不要補寄');
     assert(!msg.includes('沒有寄出'), '不可寫成沒有寄出');
-    assert(isolated.box.mails.length === 7, '七筆新單的店內信仍要各寄一次');
+    assert(!msg.includes('四種前綴都通過'), '停下後不可說四種前綴都通過');
+    assert(isolated.box.mails.length === 1, '案例 1 的店內信仍要寄，後面的案例不再寄');
   });
 }
 
