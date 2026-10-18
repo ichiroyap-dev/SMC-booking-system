@@ -7,6 +7,8 @@
  *
  * 來源 9 欄可有可無。缺欄、多欄、型別不對，都仍收單：備註原樣保留意思，壞掉的來源改空白。
  * 客人信不放活動代碼。店內信才放來源對帳。
+ * 寫入後先 flush，再讀回同一列。訂單編號或任一欄對不上、或讀不回來，回結果未知且不寄信。
+ * 確認成功並放開鎖之後才寄信。
  * 旗標 SEND_ATTRIBUTION_TO_BACKEND 仍由官網控制；這支腳本不會把它打開。
  *
  * 使用前在指令碼屬性設定（試算表 ID 不可省略，腳本也不會改寫「目前打開的那張表」）：
@@ -303,6 +305,40 @@ function writeRow_(sheet, row) {
   sheet.getRange(at, 1, 1, safe.length).setValues([safe]);
 }
 
+function unknownOutcome_(orderId) {
+  return {
+    response: {
+      status: 'unknown',
+      orderId: orderId,
+      message: '結果未知，先核對試算表、勿重送',
+      mailed: false
+    },
+    wrote: true,
+    mailed: false
+  };
+}
+
+// flush 之後把剛寫入的那一列讀回來。編號或任一欄對不上，就還沒確認提交。
+function confirmOrderRow_(sheet, orderId, expectedRow) {
+  if (!sheet || !expectedRow || !orderId) return false;
+  var width = expectedRow.length;
+  var last = sheet.getLastRow();
+  if (last < 1 || width < 1) return false;
+  var values = sheet.getRange(1, 1, last, width).getValues();
+  var found = false;
+  for (var r = 0; r < values.length; r += 1) {
+    var id = values[r][0] == null ? '' : String(values[r][0]);
+    if (id !== String(orderId)) continue;
+    found = true;
+    for (var c = 0; c < width; c += 1) {
+      var actual = values[r][c] == null ? '' : String(values[r][c]);
+      var want = String(formulaGuard_(expectedRow[c]));
+      if (actual !== want) return false;
+    }
+  }
+  return found;
+}
+
 function mailPreviewRow_(result) {
   return [
     result.response.orderId,
@@ -366,9 +402,12 @@ function acceptBooking_(payload) {
   var orderId = '';
   var attemptedWrite = false;
   var pendingMail = null;
+  var pendingRow = null;
+  var orderSheet = null;
   var outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
   try {
     var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
+    orderSheet = sheet;
     var ids = readColumn_(sheet, 1).slice(1);
     orderId = orderIdFor_(payload, ids);
     if (!orderId) {
@@ -395,22 +434,14 @@ function acceptBooking_(payload) {
         writeRow_(mailSheet, mailPreviewRow_(result));
         result.response.mailed = false;
         pendingMail = result;
+        pendingRow = result.row;
         outcome = { response: result.response, wrote: true, mailed: false };
       }
     }
   } catch (err) {
     pendingMail = null;
     if (attemptedWrite) {
-      outcome = {
-        response: {
-          status: 'unknown',
-          orderId: orderId,
-          message: '結果未知，先核對試算表、勿重送',
-          mailed: false
-        },
-        wrote: true,
-        mailed: false
-      };
+      outcome = unknownOutcome_(orderId);
     } else {
       outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
     }
@@ -420,16 +451,18 @@ function acceptBooking_(payload) {
         SpreadsheetApp.flush();
       } catch (flushErr) {
         pendingMail = null;
-        outcome = {
-          response: {
-            status: 'unknown',
-            orderId: orderId,
-            message: '結果未知，先核對試算表、勿重送',
-            mailed: false
-          },
-          wrote: true,
-          mailed: false
-        };
+        outcome = unknownOutcome_(orderId);
+      }
+      if (pendingMail && outcome.response && outcome.response.status === 'success') {
+        try {
+          if (!confirmOrderRow_(orderSheet, orderId, pendingRow)) {
+            pendingMail = null;
+            outcome = unknownOutcome_(orderId);
+          }
+        } catch (readErr) {
+          pendingMail = null;
+          outcome = unknownOutcome_(orderId);
+        }
       }
     }
     try { lock.releaseLock(); } catch (releaseErr) {}
