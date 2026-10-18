@@ -1,5 +1,7 @@
 /**
- * 隔離測試用。不要貼上正式預約專案，不要部署成正式 web app，不要寫正式試算表。
+ * 隔離測試用。必須貼在新建的獨立試算表專案，不要貼進任何既有專案。
+ * 這支沒有 doPost，只有 doGet。誤貼進正式專案會蓋掉同名入口，所以不要貼。
+ * 不要部署成正式 web app，不要寫正式試算表。
  *
  * 正式 Apps Script 的原始碼不在這個 repo。這支是依官網現有的 11 欄 POST
  * （action、type、name、phone、email、people、tables、date、time、note、orderItems）
@@ -208,10 +210,6 @@ function missingBooking_(payload) {
   return false;
 }
 
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
-
 function isIsolated_() {
   return PropertiesService.getScriptProperties().getProperty('SMC_ATTRIBUTION_ISOLATED') === 'yes';
 }
@@ -356,31 +354,35 @@ function mailPreviewRow_(result) {
   ];
 }
 
+function shopMailbox_() {
+  return guestAddress_(PropertiesService.getScriptProperties().getProperty('SMC_SHOP_EMAIL') || '');
+}
+
+function invalidMailboxOutcome_() {
+  return {
+    response: {
+      status: 'error',
+      message: 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。',
+      mailed: false,
+      wrote: false,
+      duplicate: false
+    },
+    wrote: false,
+    mailed: false
+  };
+}
+
 function sendEmails_(result) {
+  var sent = 0;
   if (result.guestEmail.to) {
     MailApp.sendEmail(result.guestEmail.to, result.guestEmail.subject, result.guestEmail.body);
+    sent += 1;
   }
   if (result.shopEmail.to) {
     MailApp.sendEmail(result.shopEmail.to, result.shopEmail.subject, result.shopEmail.body);
+    sent += 1;
   }
-}
-
-function parsePayload_(e) {
-  try {
-    var raw = e && e.postData && e.postData.contents;
-    var parsed = JSON.parse(raw || '{}');
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return parsed;
-  } catch (err) {
-    return {};
-  }
-}
-
-function handleCancel_(payload) {
-  var phone = payload && typeof payload.phone === 'string' ? payload.phone.trim() : '';
-  var orderId = payload && typeof payload.orderId === 'string' ? payload.orderId.trim() : '';
-  if (!phone || !orderId) return json_({ status: 'error', message: '缺少電話或訂單編號。' });
-  return json_({ status: 'success', message: '已收到取消申請（隔離測試，未改訂單列）。' });
+  return sent;
 }
 
 function acceptBooking_(payload) {
@@ -390,6 +392,8 @@ function acceptBooking_(payload) {
   if (missingBooking_(payload)) {
     return { response: { status: 'error', message: '缺少預約必要欄位。' }, wrote: false, mailed: false };
   }
+  var shopTo = shopMailbox_();
+  if (!shopTo) return invalidMailboxOutcome_();
   var opened = openIsolatedSpreadsheet_();
   if (!opened.ok) {
     return { response: { status: 'error', message: opened.message }, wrote: false, mailed: false };
@@ -418,14 +422,7 @@ function acceptBooking_(payload) {
     if (!orderId) {
       outcome = { response: { status: 'error', message: '測試編號已用完，沒有收單。' }, wrote: false, mailed: false };
     } else {
-      var props = PropertiesService.getScriptProperties();
-      var result = buildBookingResult_(
-        payload,
-        orderId,
-        nowIso_(),
-        guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || ''),
-        guestAddress_(props.getProperty('SMC_SHOP_EMAIL') || '')
-      );
+      var result = buildBookingResult_(payload, orderId, nowIso_(), shopTo, shopTo);
       if (ids.indexOf(orderId) !== -1) {
         result.response.mailed = false;
         result.response.duplicate = true;
@@ -477,8 +474,7 @@ function acceptBooking_(payload) {
   if (pendingMail && outcome.response && outcome.response.status === 'success') {
     var mailed = false;
     try {
-      sendEmails_(pendingMail);
-      mailed = true;
+      mailed = sendEmails_(pendingMail) === 2;
     } catch (mailErr) {
       mailed = false;
     }
@@ -505,17 +501,6 @@ function doGet() {
   return HtmlService.createHtmlOutputFromFile('IsolatedCheck')
     .setTitle('隔離驗收')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
-}
-
-function doPost(e) {
-  try {
-    if (!isIsolated_()) return json_({ status: 'error', message: BLOCKED_MESSAGE });
-    var payload = parsePayload_(e);
-    if (payload.action === 'cancel') return handleCancel_(payload);
-    return json_(acceptBooking_(payload).response);
-  } catch (err) {
-    return json_({ status: 'error', message: '隔離腳本無法完成寫入。' });
-  }
 }
 
 function copyFields_(extra) {
@@ -592,6 +577,9 @@ function isolatedEightPayloads_(email) {
   };
   var formula = copyFields_(brand);
   formula.utmCampaign = '=1+1';
+  formula.utmContent = '+1+1';
+  formula.utmTerm = '-1+1';
+  formula.utmAdgroup = '@cmd';
   var malformed = {
     source: { bad: true },
     utmContent: ['ag_brand'],
@@ -604,7 +592,12 @@ function isolatedEightPayloads_(email) {
     { label: '3 廣告非品牌', payload: isolatedWithAttr_(email, 'SMC900102', geo) },
     { label: '4 非廣告', payload: isolatedWithAttr_(email, 'SMC900103', direct) },
     { label: '5 來源不明', payload: isolatedWithAttr_(email, 'SMC900104', unknown) },
-    { label: '6 公式開頭', payload: isolatedWithAttr_(email, 'SMC900105', formula) },
+    { label: '6 公式開頭', payload: isolatedWithAttr_(email, 'SMC900105', formula), probes: [
+      { header: 'utm活動', raw: formula.utmCampaign },
+      { header: 'utm內容', raw: formula.utmContent },
+      { header: 'utm關鍵字', raw: formula.utmTerm },
+      { header: 'utm廣告群組', raw: formula.utmAdgroup }
+    ] },
     { label: '7 格式壞掉', payload: isolatedWithAttr_(email, 'SMC900106', malformed) },
     { label: '8 同一編號再送', payload: isolatedWithAttr_(email, 'SMC900101', brand) }
   ];
@@ -631,19 +624,74 @@ function writeResultSheet_(ss, lines) {
   sheet.getRange(1, 1, safe.length, width).setValues(safe);
 }
 
+function inspectFormulaProbes_(sheet, orderId, probes) {
+  var checks = [];
+  var rowIndex = 0;
+  var ids = sheet ? readColumn_(sheet, 1) : [];
+  for (var i = 0; i < ids.length; i += 1) {
+    if (ids[i] === String(orderId)) rowIndex = i + 1;
+  }
+  for (var p = 0; p < probes.length; p += 1) {
+    var probe = probes[p];
+    var col = ORDER_HEADERS.indexOf(probe.header) + 1;
+    var raw = probe.raw == null ? '' : String(probe.raw);
+    var want = String(formulaGuard_(raw));
+    var read = '';
+    var formula = '讀取失敗';
+    var ok = false;
+    if (rowIndex > 0 && col > 0) {
+      try {
+        var cell = sheet.getRange(rowIndex, col);
+        read = cell.getValue() == null ? '' : String(cell.getValue());
+        formula = cell.getFormula() == null ? '' : String(cell.getFormula());
+        ok = formula === '' && read === want && read.charAt(0) === "'";
+      } catch (err) {
+        ok = false;
+      }
+    }
+    checks.push({ header: probe.header, raw: raw, read: read, formula: formula, ok: ok });
+  }
+  return checks;
+}
+
+function writeProbeSheet_(ss, checks) {
+  var headers = ['欄位', '原值', '讀回值', 'getFormula', '判定'];
+  var sheet = ensureSheet_(ss, '公式核對', headers);
+  sheet.clear();
+  var rows = [headers];
+  for (var i = 0; i < checks.length; i += 1) {
+    var item = checks[i];
+    rows.push([
+      item.header,
+      formulaGuard_(item.raw),
+      item.read,
+      item.formula === '' ? '（空）' : formulaGuard_(item.formula),
+      item.ok ? '通過' : '失敗'
+    ]);
+  }
+  sheet.getRange(1, 1, rows.length, headers.length).setNumberFormat('@');
+  sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
+}
+
 function runIsolatedEightCases() {
   if (!isIsolated_()) {
     notify_(BLOCKED_MESSAGE);
     return BLOCKED_MESSAGE;
+  }
+  var shop = shopMailbox_();
+  if (!shop) {
+    var badMail = 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。';
+    notify_(badMail);
+    return badMail;
   }
   var opened = openIsolatedSpreadsheet_();
   if (!opened.ok) {
     notify_(opened.message);
     return opened.message;
   }
-  var shop = guestAddress_(PropertiesService.getScriptProperties().getProperty('SMC_SHOP_EMAIL') || '');
   var cases = isolatedEightPayloads_(shop);
   var lines = [RESULT_HEADERS];
+  var stopped = false;
   for (var i = 0; i < cases.length; i += 1) {
     var outcome = acceptBooking_(cases[i].payload);
     lines.push([
@@ -653,9 +701,24 @@ function runIsolatedEightCases() {
       outcome.wrote ? '是' : '否',
       outcome.mailed ? '是' : '否'
     ]);
+    if (cases[i].probes) {
+      var orderSheet = opened.ss.getSheetByName('訂單');
+      var checks = inspectFormulaProbes_(orderSheet, outcome.response.orderId || '', cases[i].probes);
+      writeProbeSheet_(opened.ss, checks);
+      var pass = outcome.response.status === 'success';
+      for (var c = 0; c < checks.length; c += 1) {
+        if (!checks[c].ok) pass = false;
+      }
+      if (!pass) {
+        stopped = true;
+        break;
+      }
+    }
   }
   writeResultSheet_(opened.ss, lines);
-  var summary = '已送出 8 筆。請到「訂單」「郵件預覽」「驗收結果」分頁核對，並查看信箱。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
+  var summary = stopped
+    ? '公式核對失敗。請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。'
+    : '已送出 8 筆。四種前綴都通過，才可以部署。全成功應有 14 封測試信。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
   notify_(summary);
   return summary;
 }

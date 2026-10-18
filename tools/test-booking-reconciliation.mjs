@@ -78,7 +78,7 @@ function fieldsFor(search) {
   return attr.bookingFields(store, t0);
 }
 
-function memorySpreadsheet() {
+function memorySpreadsheet(options = {}) {
   const sheets = {};
   function make() {
     const data = [];
@@ -114,6 +114,14 @@ function memorySpreadsheet() {
           getValue() {
             const line = data[row - 1] || [];
             return line[col - 1] == null ? '' : line[col - 1];
+          },
+          getFormula() {
+            const line = data[row - 1] || [];
+            const text = line[col - 1] == null ? '' : String(line[col - 1]);
+            if (options.forceFormula && text === "'=1+1") return '=1+1';
+            if (text.charAt(0) === "'") return '';
+            if (/^[=+\-@]/.test(text)) return text;
+            return '';
           },
         };
       },
@@ -158,7 +166,7 @@ function loadIsolated(options = {}) {
     lockAcquires: 0,
     lockLog: [],
   };
-  const marked = memorySpreadsheet();
+  const marked = memorySpreadsheet(options);
   if (options.marker !== 'missing') {
     const marker = marked.insertSheet('隔離標記');
     marker.appendRow([options.marker === 'wrong' ? 'OTHER-SHEET' : 'SMC-ISOLATED-TEST']);
@@ -234,8 +242,7 @@ function loadIsolated(options = {}) {
 }
 
 function post(isolated, payload) {
-  const response = isolated.sandbox.doPost({ postData: { contents: JSON.stringify(payload) } });
-  return JSON.parse(response.getContent());
+  return isolated.sandbox.acceptBooking_(payload).response;
 }
 
 function assertMailAfterRelease(box, label) {
@@ -436,7 +443,7 @@ assert(runbook.includes('upload-pages-artifact'), '手冊要提醒 action 換版
 assert(!runbook.includes('tools/isolated-dining-check.html'), '手冊不可再叫人開公開路徑上的驗收頁');
 assert(!runbook.includes('apps-script/booking-attribution-isolated.gs'), '手冊不可再指向公開路徑上的隔離腳本');
 assert(!runbook.includes('tools/isolated-check-guard.js'), '手冊不可再指向公開路徑上的 guard');
-for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', 'ALLOWED_DEPLOYMENT_IDS', '未全部寄出', 'duplicate']) {
+for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', '未全部寄出', 'duplicate']) {
   assert(runbook.includes(phrase), `驗收步驟缺少 ${phrase}`);
 }
 assert(!runbook.includes('備註四邊'), '手冊不可再要求回應裡的備註');
@@ -507,6 +514,9 @@ for (const item of cases) {
 
 const formula = previewPayload(brandFields, 'SMC900105');
 formula.utmCampaign = '=1+1';
+formula.utmContent = '+1+1';
+formula.utmTerm = '-1+1';
+formula.utmAdgroup = '@cmd';
 assert(formula.note === NOTE && formula.date === '2026-10-22' && formula.people === '2', '公式案例的訂位欄仍是固定預期值');
 assertBookingResponse(post(isolated, formula), 'SMC900105');
 
@@ -540,9 +550,9 @@ const expectedAttr = {
     utmSource: 'google',
     utmMedium: 'cpc',
     utmCampaign: "'=1+1",
-    utmContent: 'ag_brand',
-    utmTerm: '',
-    utmAdgroup: '',
+    utmContent: "'+1+1",
+    utmTerm: "'-1+1",
+    utmAdgroup: "'@cmd",
     adgroupBucket: '品牌',
     gclid: '',
   },
@@ -688,6 +698,7 @@ for (const id of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104
   assert(runnerOrders.slice(1).filter((row) => row[0] === id).length === 1, `按鈕結果應有一列 ${id}`);
 }
 assert(runner.box.mails.filter((item) => item.subject.includes('SMC900101')).length === 2, '同一編號只寄一輪客人信與店內信');
+assert(runner.box.mails.length === 14, '八案例全成功是 14 封：七筆新單各兩封，重複那筆不寄');
 const resultRows = sheetRows(runner, '驗收結果');
 assert(resultRows.length === 9, '驗收結果要有表頭加 8 列');
 assert(resultRows[8][1] === 'SMC900101' && resultRows[8][2] === 'success' && resultRows[8][3] === '否' && resultRows[8][4] === '否', '第 8 筆不可再寫入或再寄信');
@@ -804,6 +815,46 @@ for (const item of cases) {
   ].join(' | '));
 }
 console.log(lines.join('\n'));
+
+const formulaPayload = eight[5].payload;
+assert(formulaPayload.note === NOTE, '公式案例的備註仍是原句');
+assert(formulaPayload.utmCampaign === '=1+1', '公式案例要用活動欄放 =1+1');
+assert(formulaPayload.utmContent === '+1+1', '公式案例要用內容欄放 +1+1');
+assert(formulaPayload.utmTerm === '-1+1', '公式案例要用關鍵字放 -1+1');
+assert(formulaPayload.utmAdgroup === '@cmd', '公式案例要用廣告群組放 @cmd');
+assert(runner.box.alerts.some((item) => item.includes('四種前綴都通過')), '四種前綴通過才可以部署');
+const probeRows = sheetRows(runner, '公式核對');
+assert(probeRows.length === 5, '公式核對要有表頭與四格');
+if (probeRows.length === 5) {
+  const probeMap = {};
+  for (const row of probeRows.slice(1)) probeMap[row[0]] = row;
+  for (const [header, raw] of [['utm活動', '=1+1'], ['utm內容', '+1+1'], ['utm關鍵字', '-1+1'], ['utm廣告群組', '@cmd']]) {
+    const row = probeMap[header];
+    assert(row && row[1] === "'" + raw, `${header} 要列出原值`);
+    assert(row && row[2] === "'" + raw, `${header} 讀回要是帶前導單引號的文字`);
+    assert(row && row[3] === '（空）', `${header} 的 getFormula 要為空`);
+    assert(row && row[4] === '通過', `${header} 不符就不可算通過`);
+  }
+}
+const forced = loadIsolated({ forceFormula: true });
+const forcedMsg = String(forced.sandbox.runIsolatedEightCases());
+assert(forcedMsg.includes('不要部署') && forcedMsg.includes('不要開網頁驗收'), '任一格不符就要失敗，不准進入部署和網頁驗收');
+assert(!sheetRows(forced, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對失敗後不可繼續後面的案例');
+assert(runbook.includes('getFormula') && runbook.includes('+1+1') && runbook.includes('-1+1') && runbook.includes('@cmd'), '手冊要列出四種原值與 getFormula');
+
+const blankMail = loadIsolated();
+blankMail.props.SMC_SHOP_EMAIL = '';
+const blankBooking = blankMail.sandbox.acceptBooking_(previewPayload(brandFields, 'SMC900701'));
+assert(blankBooking.response.status === 'error' && blankBooking.wrote === false && blankBooking.mailed === false && blankBooking.response.mailed !== true, '信箱空白要直接回錯誤，不寫表、不寄信，也不可標成已寄出');
+assert(blankMail.box.mails.length === 0 && sheetRows(blankMail, '訂單').length === 0, '信箱空白不可寫表或寄信');
+const blankRun = String(blankMail.sandbox.runIsolatedEightCases());
+assert(blankRun.includes('沒有寫入') && blankRun.includes('沒有寄信'), '信箱空白時八案例要停住');
+assert(blankMail.box.mails.length === 0 && sheetRows(blankMail, '訂單').length === 0, '八案例在信箱空白時仍不可寫表或寄信');
+const badMail = loadIsolated();
+badMail.props.SMC_SHOP_EMAIL = 'not-an-email';
+const badBooking = badMail.sandbox.acceptBooking_(previewPayload(brandFields, 'SMC900702'));
+assert(badBooking.response.status === 'error' && badBooking.wrote === false && badBooking.mailed === false, '信箱格式錯誤要直接回錯誤，不寫表、不寄信');
+assert(badMail.box.mails.length === 0 && sheetRows(badMail, '訂單').length === 0, '信箱格式錯誤不可寫表或寄信');
 
 if (failures.length) {
   console.error('reconciliation failed:');

@@ -325,7 +325,8 @@ function bootPage(isolated, options = {}) {
       fetches.push(request);
       if (options.hang) return new Promise(() => {});
       isolated.box.doPosts += 1;
-      const response = isolated.sandbox.doPost({ postData: { contents: request.body } });
+      const outcome = isolated.sandbox.acceptBooking_(JSON.parse(request.body || '{}'));
+      const response = { getContent() { return JSON.stringify(outcome.response); } };
       request.responseText = response.getContent();
       return Promise.resolve({
         status: 200,
@@ -654,6 +655,11 @@ function privateEntryAndFormula() {
   assert(runbook.includes('127.0.0.1') && runbook.includes('不能拿來送私人部署'), '本機頁面要標明不能拿來送私人部署');
   assert(runbook.includes('mailed') && runbook.includes('duplicate') && runbook.includes('wrote'), '手冊要列出 mailed、duplicate、wrote');
   assert(gs.includes('原列') && runbook.includes('原列') && runbook.includes('不要重送'), '讀回不一致要寫明停下、核對原列、不要重送');
+  assert(!/^function doPost\s*\(/m.test(gs), '隔離版不可定義 doPost');
+  assert(/^function doGet\s*\(/m.test(gs), '隔離版要保留 doGet');
+  assert(runbook.startsWith('# 隔離 Apps Script 驗收') && runbook.includes('必須是新建的獨立試算表專案，不要貼進任何既有專案'), '手冊最前面要寫必須是新建的獨立試算表專案');
+  assert(runbook.includes('不可以重新整理後重送'), '結果未知時不可以重新整理後重送');
+  assert(!runbook.includes('ALLOWED_DEPLOYMENT_IDS'), 'Owner 文件不要再教加入 guard 白名單');
   const confirmSrc = gs.slice(gs.indexOf('function confirmOrderRow_'), gs.indexOf('function acceptBooking_'));
   assert(confirmSrc.includes('actual !== want') && !confirmSrc.includes('replace('), '讀回比對要保留防護單引號，不可放寬');
   const isolated = loadIsolated({ sheetId: 'private-sheet' });

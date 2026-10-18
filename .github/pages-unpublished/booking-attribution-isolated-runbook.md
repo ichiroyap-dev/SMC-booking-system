@@ -1,6 +1,8 @@
 # 隔離 Apps Script 驗收（內用）
 
-這份給 Owner 或 hub 在**自己的 Google 帳號**做。不必自己組 JSON，也不必會寫程式。本機測試沒有連 Google，也沒有寄出真信。假試算表**不會執行公式**，所以不能代替你打開 Google 試算表看那一格是不是數字。
+必須是新建的獨立試算表專案，不要貼進任何既有專案。這支腳本沒有 `doPost`，只有 `doGet`。貼進既有專案會蓋掉同名的訂位入口。
+
+這份給 Owner 或 hub 在**自己的 Google 帳號**做。不必自己組 JSON，也不必會寫程式。本機測試沒有連 Google，也沒有寄出真信。假試算表**不會執行公式**，所以不能代替你打開 Google 試算表看那一格是不是數字。結果未知時，不可以重新整理後重送。
 
 不要把 `.github/pages-unpublished/booking-attribution-isolated.gs` 貼上正式預約專案，不要改正式 web app 網址，不要寫正式試算表，也不要打開正式官網 `www.sweetmeichicken.com` 來送這次測試。官網 `SEND_ATTRIBUTION_TO_BACKEND` 維持 `false`。正式腳本原始碼不在這個 repo，這支隔離腳本**不是**正式腳本的補丁；這裡通過之後，還要把同樣的「缺來源仍收單」移植到正式腳本，才能另案開旗標。
 
@@ -120,14 +122,22 @@
 
 ## 案例 6｜公式開頭
 
-編號 `SMC900105`。`utmCampaign` 是 `=1+1`，不要自己先加引號。備註仍是原來那句。
+編號 `SMC900105`。同一個案例用四個欄位各放一種開頭，不要自己先加引號。備註仍是原來那句。
+
+| 欄位 | 原值 | 讀回值 | 不是公式 |
+| --- | --- | --- | --- |
+| utm活動 | `=1+1` | `'=1+1` | `getFormula` 為空 |
+| utm內容 | `+1+1` | `'+1+1` | `getFormula` 為空 |
+| utm關鍵字 | `-1+1` | `'-1+1` | `getFormula` 為空 |
+| utm廣告群組 | `@cmd` | `'@cmd` | `getFormula` 為空 |
 
 ```json
-{"action":"book","type":"dining","name":"測試同學","phone":"0900000000","email":"你的測試信箱@example.com","people":"2","tables":"1","date":"2026-10-22","time":"12:00","note":"散客 大人2位；靠窗","orderItems":"","_testOrderId":"SMC900105","source":"google","utmSource":"google","utmMedium":"cpc","utmCampaign":"=1+1","utmContent":"ag_brand","utmTerm":"","utmAdgroup":"","adgroupBucket":"品牌","gclid":""}
+{"action":"book","type":"dining","name":"測試同學","phone":"0900000000","email":"你的測試信箱@example.com","people":"2","tables":"1","date":"2026-10-22","time":"12:00","note":"散客 大人2位；靠窗","orderItems":"","_testOrderId":"SMC900105","source":"google","utmSource":"google","utmMedium":"cpc","utmCampaign":"=1+1","utmContent":"+1+1","utmTerm":"-1+1","utmAdgroup":"@cmd","adgroupBucket":"品牌","gclid":""}
 ```
 
 - 訂單編號四處相同。備註四處相同（不含回應），仍是 `散客 大人2位；靠窗`。
-- 點開 utm活動那一格。它**不是數字 2**。應是純文字 `=1+1`（儲存格裡可能看得到前面的單引號）。店內信正文含 `'=1+1`。客人信不得出現 `=1+1`。
+- 打開「公式核對」分頁。四列的判定都要是「通過」。讀回值是帶前導單引號的文字，`getFormula` 欄是「（空）」。任一格不符，腳本會停住，後面的案例不會再送。不要部署，不要開網頁驗收，不要重跑。
+- 這四格都不是數字 2。店內信要有這四個帶引號的讀回值。客人信不得出現 `=1+1`。
 - 開頭若先有空格、Tab 或換行，也一樣先去掉再當文字，不可算出來。本機測試不會執行公式，這一步一定要在 Google 試算表用眼睛看。
 
 ## 案例 7｜格式壞掉仍收單
@@ -161,33 +171,18 @@
 1. 點「帶入品牌欄位」。預覽要有來源 `google`、utm內容 `ag_brand`、群組分類 `品牌`。
 2. 姓名維持 `測試同學`、電話 `0900000000`、備註維持 `散客 大人2位；靠窗`。表格信箱可以留 `test@example.com`。它不會變成收件人。
 3. 點「送到隔離後端」。成功時畫面列出 `status`、`orderId`、`message`、`mailed`、`duplicate`、`wrote`。用那個編號到「訂單」、客人信、店內信對同一個編號。兩封信都在 `SMC_SHOP_EMAIL`。店內信要有 `ag_brand` 與 `品牌`。客人信不要有這些代碼。
-4. 若 `status` 是 `unknown`，或訊息要你核對原列，就停下，不要重送。先看試算表那一列。以 `=`、`+`、`-`、`@` 開頭的格子要仍是文字（前面可能有單引號），不可變成數字。讀回少了防護單引號也不算一致。
+4. 若 `status` 是 `unknown`，或訊息要你核對原列，就停下。結果未知時，不可以重新整理後重送。先看試算表那一列。以 `=`、`+`、`-`、`@` 開頭的格子要仍是文字（前面可能有單引號），不可變成數字。讀回少了防護單引號也不算一致。網頁每一筆新單是 2 封信。
 
 ## 本機頁面不能拿來送私人部署
 
 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 只測瀏覽器鎖。私人部署是「只有我」時，這頁用跨來源方式呼叫部署網址會被導到登入頁，然後 CORS 失敗。不能拿來送私人部署。
 
 1. 在專案資料夾執行 `python3 -m http.server 8765`，用瀏覽器開 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html`。這個檔放在 `.github/pages-unpublished/`，目前的建置方式會排除 `.github`，所以正式官網打不開；本機這個位址仍可開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄裡的驗收頁、隔離腳本、手冊和 guard 是否又被公開。鎖只在同一個來源之間共用。請固定用這個 `127.0.0.1`，不要改開 `file://`，也不要改用別的連接埠或主機。不同來源看不到彼此的鎖。這一段不能拿來送私人部署。
-2. 點「帶入品牌最終網址」。網址列應出現 `mode=dining`、`utm_content=ag_brand` 和 `#booking-section`，頁面停在「內用訂位」。
-3. 畫面上要看到：來源 `google`、utm內容 `ag_brand`、群組分類 `品牌`、內用。
-4. 先打開 `.github/pages-unpublished/isolated-check-guard.js`，把你的隔離部署編號加進 `ALLOWED_DEPLOYMENT_IDS`。不要把正式編號加進去；正式編號即使寫進白名單也不會放行。白名單以外的部署（含正式專案的其他部署）按鈕會停住。本機測試用的 `ISOLATEDTEST` 可以留著。然後把隔離網址貼進「隔離 web app 網址」。網址要剛好是 `https://script.google.com/macros/s/部署編號/exec`。不要加問號、井號、帳號、連接埠，也不要貼別的網站。若貼到正式那支 `AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q`，按鈕會停住，不會送出。
-5. 這顆「送到隔離後端」只留給本機鎖測試。Owner 不要按它去送私人部署。姓名若要看畫面，維持 `測試同學`、電話 `0900000000`、備註維持 `散客 大人2位；靠窗`。信箱欄位先放 `test@example.com`，只是讓按鈕可以按，不是收件人。
-6. 畫面只有在回應是成功、而且有訂單編號、而且不是重複編號時，才會顯示綠色的編號，並寫寄信是「已寄出」或「未全部寄出，請核對信箱」。綠色成功之後按鈕仍停住。用那個編號到隔離試算表「訂單」、客人信、店內信對同一個編號。備註對送出內容、試算表、兩封信。店內信要有 `ag_brand` 與 `品牌`。客人信不要有這些代碼。寄信未全部寄出時，仍以試算表那一列為準，並到信箱核對是不是只寄出其中一封。核對完按「我已核對試算表」，才可以再送。
-7. 這頁不會指定 `SMC900001`。8 筆案例做完後再送，應出現**新的**訂單編號、新的一列，以及新的客人信和店內信。案例 1 那一列的來源仍是空白。
-8. 若畫面寫「結果未知，先核對試算表、勿重送」，或約 30 秒都沒有回應，按鈕會停住，並帶出訂單編號（如果有）。隔離腳本若在寫入後無法確認資料已提交，也會回結果未知並帶訂單編號，不是成功，而且不會寄信。確認的方式是 flush 之後、放鎖之前，把剛寫入的那一列讀回來，訂單編號和每一欄都要相同。讀不回或對不上，就回結果未知而且不寄信。確認成功並放開鎖之後才寄信。這不是成功，也不可以重送。先看試算表有沒有這個編號。改姓名、改網址、重新整理、另開分頁，都不會把按鈕解開。已經開著的分頁會把「重讀鎖、寫鎖、讀回確認」放在跨分頁互斥裡，不會在讀到沒鎖之後又蓋掉別人的結果未知。瀏覽器沒有這項互斥，或拿不到互斥，按鈕會停住並寫出原因，不會送出。若瀏覽器存不了鎖，也一樣停住。核對完再按「我已核對試算表」，才可以再送。不要在核對前連按。
-
-可再點「帶入非品牌最終網址」送第二筆。它也要是另一個新編號。店內信應是 `ag_geo_dining`／`非品牌`，上一筆品牌列不要被改掉。
+這頁的「已寄出」或「未全部寄出，請核對信箱」只存在模擬測試裡。模擬用的 guard 在 `.github/pages-unpublished/isolated-check-guard.js`。Owner 不要改它，也不要用這頁送單。結果未知時，不可以重新整理後重送。
 
 ## 固定版本
 
-要貼進 Apps Script 的兩個檔案停在 commit `ad9a8bad34495c8103156b212ae10d029d463ed3`。這段說明是後來補上的，所以不會去引用自己的 commit。
-
-- 腳本：https://github.com/ichiroyap-dev/SMC-booking-system/blob/ad9a8bad34495c8103156b212ae10d029d463ed3/.github/pages-unpublished/booking-attribution-isolated.gs
-  - SHA-256 `208dea922865b1da80ec3946f336d8a2efa2b2cd5c2e1ead3b64dcd89162b469`
-- 私人頁面：https://github.com/ichiroyap-dev/SMC-booking-system/blob/ad9a8bad34495c8103156b212ae10d029d463ed3/.github/pages-unpublished/IsolatedCheck.html
-  - SHA-256 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
-
-下載後在本機算 SHA-256，對不上就不要貼。部署存取維持「只有我」，不可改成「任何人」。
+Raw 連結、`Get-FileHash -Algorithm SHA256` 與預期雜湊寫在下一個 commit 的驗證報告。這兩個程式檔與那份報告分開，避免說明引用尚未產生的 SHA。下載後先核對，對不上就不要貼。部署存取維持「只有我」，不可改成「任何人」。
 
 ## 對過才算過
 
