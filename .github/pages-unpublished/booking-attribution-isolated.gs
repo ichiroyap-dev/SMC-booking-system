@@ -35,7 +35,8 @@
  *
  * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
  * 表尾三筆只用編輯器入口 runIsolatedOneBooking201／202／203，每次只送一筆固定編號。
- * 帶編號的 helper 是私有函式，不可從編輯器選單或 google.script.run 跑。沒有新的 doGet／doPost，也不要為了這三筆重新部署。
+ * 帶編號的 helper 是私有函式，網頁呼叫不到（google.script.run 不能呼叫尾綴 _ 的函式）。
+ * 編輯器只選 runIsolatedOneBooking201／202／203。沒有新的 doGet／doPost，也不要為了這三筆重新部署。
  * 這個檔在 .github/pages-unpublished/booking-attribution-isolated.gs。
  * 目前的建置方式不會公開 .github，請從 repo 複製，不要從官網網址下載。
  * 換建置流程或 upload-pages-artifact 換版本後，要再確認這個目錄沒有被公開。
@@ -926,8 +927,7 @@ function runIsolatedFixedBooking_(orderId) {
     }
     var dup = '這個編號已經收過，這次沒有新增。duplicate=true、wrote=false、mailed=false。'
       + mailNote_(sent, failed) + '。';
-    notify_(dup);
-    return dup;
+    return afterNotify_(dup, notify_(dup));
   }
   if (outcome.wrote !== true || outcome.mailed !== true) {
     var unconf = '結果未知。停在單筆「' + id + '」。原因：寄信未確認。'
@@ -936,8 +936,7 @@ function runIsolatedFixedBooking_(orderId) {
     return unconf;
   }
   var ok = '單筆 ' + id + ' 已收單。' + mailNote_(sent, failed) + '。';
-  notify_(ok);
-  return ok;
+  return afterNotify_(ok, notify_(ok));
 }
 
 function runIsolatedOneBooking201() {
@@ -1071,16 +1070,36 @@ function isolatedEightPayloads_(email) {
   ];
 }
 
+function isEditorUiUnavailable_(err) {
+  var text = errorText_(err);
+  return text.indexOf('getUi') !== -1 && text.indexOf('from this context') !== -1;
+}
+
 function notify_(message) {
-  console.log(message);
   try {
     SpreadsheetApp.getUi().alert(message);
-    return { ok: true, error: '' };
   } catch (err) {
     var text = errorText_(err);
+    if (isEditorUiUnavailable_(err)) {
+      console.log('編輯器執行，無彈窗，以執行紀錄為準');
+      console.log(message);
+      return { ok: true, error: text };
+    }
+    console.log(message);
     console.log(text);
     return { ok: false, error: text };
   }
+  console.log(message);
+  return { ok: true, error: '' };
+}
+
+function afterNotify_(summary, notice) {
+  if (notice && notice.ok === false && String(summary).indexOf('結果未知') === -1) {
+    var alertUnknown = '結果未知。試算表分頁的 alert 沒有彈出。錯誤：' + (notice.error || '沒有錯誤內容') + '。不要把成功摘要當成通過。不要重跑，不要部署。';
+    console.log(alertUnknown);
+    return alertUnknown;
+  }
+  return summary;
 }
 
 function showLiteral_(value) {
@@ -1375,9 +1394,7 @@ function runIsolatedEightCases() {
     : '已送出 8 筆。四種前綴都通過，才可以部署。' + mailNote_(sentMails, failedMails) + '。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
   var notice = notify_(summary);
   if (notice && notice.ok === false && summary.indexOf('四種前綴都通過') !== -1) {
-    var alertUnknown = '結果未知。試算表分頁的 alert 沒有彈出。錯誤：' + (notice.error || '沒有錯誤內容') + '。不要把成功摘要當成通過。不要重跑，不要部署。';
-    console.log(alertUnknown);
-    return alertUnknown;
+    return afterNotify_(summary, notice);
   }
   return summary;
 }

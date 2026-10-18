@@ -188,6 +188,32 @@ node tools/test-pr47-r6.mjs --item docs
 | --- | --- | --- |
 | 1000 列／AAA、逐筆佈置、docs 紅燈也換舊手冊 | 結束碼 1，4 項。`isolated-red-pr47-r6-docs-nits.log` | 結束碼 0。`isolated-green-pr47-r6-docs-nits.log` |
 
+## PR47 第 7 輪：編輯器無彈窗不可降成結果未知
+
+Owner 已核准隔離重跑，並用編輯器跑了 `fa16c43` 的 `runIsolatedEightCases`。資料核對通過：確認 14 封、未確認 0 封，列數 8／8／9／5，案例 8 `duplicate=true`、`wrote=false`、`mailed=false`，公式核對通過。最後因 `Cannot call SpreadsheetApp.getUi() from this context.`，舊程式把成功摘要改成結果未知。那張測試表當證據保留，核准後要換新固定版、清空後從頭重跑。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。
+
+編輯器或沒有 UI 的 `getUi` 失敗要記「編輯器執行，無彈窗，以執行紀錄為準」，回傳與執行紀錄的成功摘要同一句，不降成結果未知。其他 alert 錯誤、摘要不全、寄信未確認或中途停下，仍是結果未知。八案例與 `runIsolatedOneBooking201`／`202`／`203` 都要這樣。註解只寫網頁呼叫不到（`google.script.run` 不能呼叫尾綴 `_` 的函式），不再說編輯器選單看不到。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r7.mjs` 配上固定腳本 `fa16c4356f8064ae6514d211b9931c0aff9eae61`。綠燈是同一指令、腳本放回這輪。
+
+```bash
+git show fa16c4356f8064ae6514d211b9931c0aff9eae61:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r7.mjs --item eight
+node tools/test-pr47-r7.mjs --item single
+node tools/test-pr47-r7.mjs --item other
+git show fa16c4356f8064ae6514d211b9931c0aff9eae61:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-pr47-r7.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 八案例編輯器 getUi | 結束碼 1，4 項。成功被改成結果未知。`isolated-red-pr47-r7-eight.log` | 結束碼 0。`isolated-green-pr47-r7-eight.log` |
+| 單筆 201／202／203 編輯器 getUi | 結束碼 1，3 項。缺「無彈窗，以執行紀錄為準」。`isolated-red-pr47-r7-single.log` | 結束碼 0。`isolated-green-pr47-r7-single.log` |
+| 其他 alert／真失敗仍未知 | 結束碼 1，2 項。單筆其他 alert 仍報已收單。`isolated-red-pr47-r7-other.log` | 結束碼 0。`isolated-green-pr47-r7-other.log` |
+| 註解與手冊 | 結束碼 1，4 項。`isolated-red-pr47-r7-docs.log` | 結束碼 0。`isolated-green-pr47-r7-docs.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
 ## 合併到 main 之後
 
 合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
