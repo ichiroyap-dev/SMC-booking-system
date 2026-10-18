@@ -141,12 +141,12 @@ Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`�
 
 決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列在鎖內先 `values.get` 整張分頁的公式（`FORMULA`，不設 `A:ZZ` 上限），再用 `values.update` RAW 寫到最後一筆有值的下一列。`updatedRange` 要對上分頁、正好那一列、欄從 A 到最後一欄。記錄裡的 `tableRange` 是推算。不看快取最後一列加一，也不用範圍 A1 的 `values.append`。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間存試算表序號。收到時間用試算表時區的牆鐘序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
 
-固定檔案停在 commit `5ad73c1a4efffbef942dbfe0cf7e74fa5018942e`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
+固定檔案停在 commit `b7a67f5dad9218775ec373b73dddc5c5d95c1ae1`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
 
 | 檔案 | raw 連結 | SHA-256 |
 | --- | --- | --- |
-| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5ad73c1a4efffbef942dbfe0cf7e74fa5018942e/.github/pages-unpublished/booking-attribution-isolated.gs | `0e2ec8b7fca07d36aa93099d063e886223bae362e928885c49facf7be53f71ba` |
-| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/5ad73c1a4efffbef942dbfe0cf7e74fa5018942e/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
+| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/b7a67f5dad9218775ec373b73dddc5c5d95c1ae1/.github/pages-unpublished/booking-attribution-isolated.gs | `4babee313fb54dbe50458630cbbf42e35fa3bb937bda48fa6f8d754986d6eabe` |
+| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/b7a67f5dad9218775ec373b73dddc5c5d95c1ae1/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
 
 ## 第 8 輪原文
 
