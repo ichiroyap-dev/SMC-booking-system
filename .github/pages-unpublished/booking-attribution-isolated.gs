@@ -11,8 +11,9 @@
  * 客人信不放活動代碼。店內信才放來源對帳。
  * 寫入後先 flush，再讀回同一列。讀回值要等於原值字串，而且 getFormula 為空。
  * 對不上或讀不回來就停下：回結果未知（寫明欄位、原值、讀回值）、不寄信、請核對原列，不要重送。
- * 前導單引號不會被 Sheets 存進格子。setValues 仍會把 = 開頭當公式，setNumberFormat('@') 擋不住。
- * 以 = + - @ 開頭的格子改用 setRichTextValue 寫成文字。
+ * 前導單引號不會被 Sheets 存進格子。setValues 會把 = 算掉。setRichTextValue 會把 + 開頭改成文字 =+。
+ * 寫入改走 Sheets API values.update，valueInputOption 必須是 RAW。RAW 不解析，原樣儲存。
+ * 使用前要在編輯器左側「服務」加入 Google Sheets API。不必另外手改 appsscript.json。
  * 確認成功並放開鎖之後才寄信。兩封信的收件人都固定為 SMC_SHOP_EMAIL，不採用 payload 的 email。
  * 網頁驗收用 doGet 的 HtmlService 頁 IsolatedCheck，由 google.script.run 呼叫 submitIsolatedFromPage。
  * 部署存取維持「只有我」。不要改成「任何人」。
@@ -300,34 +301,70 @@ function readColumn_(sheet, col) {
   return out;
 }
 
-// setValues 會把字串開頭的 = 當公式。純文字格式與前導單引號都擋不住（2026-10-18 實測 utm活動變成 2）。
-// 有風險的格子先寫空白，再用 setRichTextValue。Rich text 不會被當成公式，getValue 留原文字，getFormula 為空。
+function sheetsApiReady_() {
+  try {
+    return typeof Sheets !== 'undefined' && !!Sheets && !!Sheets.Spreadsheets && !!Sheets.Spreadsheets.Values && typeof Sheets.Spreadsheets.Values.update === 'function';
+  } catch (err) {
+    return false;
+  }
+}
+
+function sheetsMissingMessage_() {
+  return '尚未啟用 Google Sheets API 進階服務。請在編輯器左側「服務」加 Google Sheets API。沒有寫入，也沒有寄信。';
+}
+
+function sheetsMissingOutcome_() {
+  return {
+    response: {
+      status: 'error',
+      message: sheetsMissingMessage_(),
+      mailed: false,
+      wrote: false,
+      duplicate: false
+    },
+    wrote: false,
+    mailed: false
+  };
+}
+
+function columnLetter_(col) {
+  var n = col;
+  var out = '';
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+function literalRange_(sheet, startRow, numRows, numCols) {
+  var endRow = startRow + numRows - 1;
+  var name = "'" + String(sheet.getName()).replace(/'/g, "''") + "'";
+  return name + '!' + columnLetter_(1) + startRow + ':' + columnLetter_(numCols) + endRow;
+}
+
+// 2026-10-18 14:31 真表：setRichTextValue 對 = - @ 有效，但 +1+1 被存成文字 =+1+1，getFormula 仍是空的。
+// 官方 values.update 的 RAW 不解析輸入，=1+2 會以字串原樣留下。訂單、郵件、驗收、公式核對都走這條。
 function writeLiteralMatrix_(sheet, startRow, matrix) {
   if (!matrix || !matrix.length) return;
+  if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
   var width = matrix[0].length;
-  var plain = [];
-  var risky = [];
+  var values = [];
   for (var r = 0; r < matrix.length; r += 1) {
     var line = [];
-    for (var c = 0; c < width; c += 1) {
-      var text = String(formulaGuard_(matrix[r][c]));
-      if (/^[=+\-@]/.test(text)) {
-        line.push('');
-        risky.push({ r: r, c: c, text: text });
-      } else {
-        line.push(text);
-      }
-    }
-    plain.push(line);
+    for (var c = 0; c < width; c += 1) line.push(String(formulaGuard_(matrix[r][c])));
+    values.push(line);
   }
-  var range = sheet.getRange(startRow, 1, matrix.length, width);
-  range.setNumberFormat('@');
-  range.setValues(plain);
-  for (var i = 0; i < risky.length; i += 1) {
-    var cell = sheet.getRange(startRow + risky[i].r, risky[i].c + 1);
-    cell.setNumberFormat('@');
-    cell.setRichTextValue(SpreadsheetApp.newRichTextValue().setText(risky[i].text).build());
-  }
+  var parent = sheet.getParent();
+  var id = parent && parent.getId ? parent.getId() : '';
+  if (!id) throw new Error('找不到試算表 ID');
+  Sheets.Spreadsheets.Values.update(
+    { values: values },
+    id,
+    literalRange_(sheet, startRow, values.length, width),
+    { valueInputOption: 'RAW' }
+  );
 }
 
 function writeRow_(sheet, row) {
@@ -338,7 +375,7 @@ function unknownOutcome_(orderId, detail) {
   var message = '結果未知，先核對試算表、勿重送。讀回與寫入不一致就停下，請核對原列，不要重送';
   if (detail && detail.header) {
     message += '。欄位：' + detail.header + '。原值：' + detail.want + '。讀回值：' + detail.actual;
-    if (detail.formula) message += '。getFormula：' + detail.formula;
+    message += '。getFormula：' + (detail.formula ? detail.formula : '（空）');
   }
   return {
     response: {
@@ -444,6 +481,7 @@ function acceptBooking_(payload) {
   }
   var shopTo = shopMailbox_();
   if (!shopTo) return invalidMailboxOutcome_();
+  if (!sheetsApiReady_()) return sheetsMissingOutcome_();
   var opened = openIsolatedSpreadsheet_();
   if (!opened.ok) {
     return { response: { status: 'error', message: opened.message }, wrote: false, mailed: false };
@@ -660,11 +698,27 @@ function notify_(message) {
   } catch (err) {}
 }
 
+function showLiteral_(value) {
+  return JSON.stringify(value == null ? '' : String(value));
+}
+
+function protectReportLine_(line) {
+  var out = [];
+  for (var c = 0; c < line.length; c += 1) {
+    var text = String(formulaGuard_(line[c]));
+    if (/^[=+\-@]/.test(text)) text = showLiteral_(text);
+    out.push(text);
+  }
+  return out;
+}
+
 function writeResultSheet_(ss, lines) {
   var sheet = ensureSheet_(ss, '驗收結果', RESULT_HEADERS);
   sheet.clear();
   if (!lines.length) return;
-  writeLiteralMatrix_(sheet, 1, lines);
+  var safe = [];
+  for (var r = 0; r < lines.length; r += 1) safe.push(protectReportLine_(lines[r]));
+  writeLiteralMatrix_(sheet, 1, safe);
 }
 
 function inspectFormulaProbes_(sheet, orderId, probes) {
@@ -706,9 +760,9 @@ function writeProbeSheet_(ss, checks) {
     var item = checks[i];
     rows.push([
       item.header,
-      item.raw,
-      item.read,
-      item.formula === '' ? '（空）' : item.formula,
+      showLiteral_(item.raw),
+      showLiteral_(item.read),
+      item.formula === '' ? '（空）' : showLiteral_(item.formula),
       item.ok ? '通過' : '失敗'
     ]);
   }
@@ -725,6 +779,11 @@ function runIsolatedEightCases() {
     var badMail = 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。';
     notify_(badMail);
     return badMail;
+  }
+  if (!sheetsApiReady_()) {
+    var missingSheets = sheetsMissingMessage_();
+    notify_(missingSheets);
+    return missingSheets;
   }
   var opened = openIsolatedSpreadsheet_();
   if (!opened.ok) {

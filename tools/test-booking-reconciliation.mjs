@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Local reconciliation only. Does not call script.google.com, send mail, or open a sheet.
 // setValues reproduces Sheets: a leading apostrophe is discarded, and a string starting with = is calculated.
-// setNumberFormat('@') does not stop that. setRichTextValue stores the literal text and an empty formula.
+// setNumberFormat('@') does not stop that. setRichTextValue of a leading + stores the text =+ with an empty formula.
+// Sheets.Spreadsheets.Values.update with valueInputOption RAW stores the string unchanged.
 // Usage: node tools/test-booking-reconciliation.mjs
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -88,9 +89,35 @@ function enterLikeSheets(input) {
   return text;
 }
 
+function columnIndex(letters) {
+  let n = 0;
+  for (let i = 0; i < letters.length; i += 1) n = n * 26 + (letters.charCodeAt(i) - 64);
+  return n;
+}
+
+function parseA1(range) {
+  const text = String(range);
+  const bang = text.lastIndexOf('!');
+  let name = text.slice(0, bang);
+  const cells = text.slice(bang + 1);
+  if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");
+  const match = cells.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+  if (!match) throw new Error('bad range ' + range);
+  return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+}
+
 function memorySpreadsheet(options = {}) {
   const sheets = {};
-  function make() {
+  const ss = {
+    id: '',
+    getId() { return ss.id; },
+    getSheetByName(name) { return sheets[name] || null; },
+    insertSheet(name) {
+      sheets[name] = make(name);
+      return sheets[name];
+    },
+  };
+  function make(name) {
     const data = [];
     const formulas = {};
     function put(r, c, value, formula) {
@@ -117,9 +144,18 @@ function memorySpreadsheet(options = {}) {
             }
           },
           setRichTextValue(rich) {
-            const text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
+            let text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
+            if (text.charAt(0) === '+') text = '=' + text;
             put(row - 1, col - 1, text, '');
             return this;
+          },
+          setRawValues(values) {
+            for (let r = 0; r < rowsN; r += 1) {
+              for (let c = 0; c < colsN; c += 1) {
+                const cell = values[r] ? values[r][c] : '';
+                put(row - 1 + r, col - 1 + c, cell == null ? '' : String(cell), '');
+              }
+            }
           },
           getValues() {
             const out = [];
@@ -146,15 +182,11 @@ function memorySpreadsheet(options = {}) {
         };
       },
       rows() { return data.map((row) => row.slice()); },
+      getName() { return name; },
+      getParent() { return ss; },
     };
   }
-  return {
-    getSheetByName(name) { return sheets[name] || null; },
-    insertSheet(name) {
-      sheets[name] = make();
-      return sheets[name];
-    },
-  };
+  return ss;
 }
 
 function loadIsolated(options = {}) {
@@ -185,6 +217,7 @@ function loadIsolated(options = {}) {
     lockDenied: 0,
     lockAcquires: 0,
     lockLog: [],
+    rawWrites: [],
   };
   const marked = memorySpreadsheet(options);
   if (options.marker !== 'missing') {
@@ -208,6 +241,7 @@ function loadIsolated(options = {}) {
     openById(id) {
       box.opened.push(id);
       if (!box.byId[id]) box.byId[id] = memorySpreadsheet();
+      box.byId[id].id = id;
       return box.byId[id];
     },
     flush() {
@@ -241,6 +275,25 @@ function loadIsolated(options = {}) {
     sendEmail(to, subject, body) {
       box.mails.push({ to, subject, body });
       box.lockLog.push(box.lockHeld ? 'mail-held' : 'mail-free');
+    },
+  };
+  sandbox.Sheets = {
+    Spreadsheets: {
+      Values: {
+        update(resource, spreadsheetId, range, options) {
+          const mode = options && options.valueInputOption;
+          box.rawWrites.push({ spreadsheetId, range, mode });
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          const values = resource && resource.values ? resource.values : [];
+          const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
+          if (mode === 'RAW') target.setRawValues(values);
+          else target.setValues(values);
+        },
+      },
     },
   };
   sandbox.LockService = {
@@ -654,6 +707,13 @@ assert(formulaDemo.getRange(1, 1).getValue() === '2' && formulaDemo.getRange(1, 
 assert(formulaDemo.getRange(1, 2).getValue() === '2', '前導單引號在 setValues 會被吃掉，= 仍被計算');
 assert(formulaDemo.getRange(1, 3).getValue() === '+1+1' && formulaDemo.getRange(1, 4).getValue() === '-1+1' && formulaDemo.getRange(1, 5).getValue() === '@cmd', '+ - @ 不是公式開頭，setValues 會原樣留下');
 assert(formulaDemo.getRange(1, 6).getValue() === '=1+1' && formulaDemo.getRange(1, 6).getFormula() === '', 'setRichTextValue 留下 =1+1 且 getFormula 為空');
+formulaDemo.getRange(2, 1).setNumberFormat('@');
+formulaDemo.getRange(2, 1).setRichTextValue(guardIso.sandbox.SpreadsheetApp.newRichTextValue().setText('+1+1').build());
+assert(formulaDemo.getRange(2, 1).getValue() === '=+1+1' && formulaDemo.getRange(2, 1).getFormula() === '', 'setRichTextValue 會把 + 開頭改成文字 =+，getFormula 仍是空的');
+formulaDemo.getParent().id = 'isolated-test-sheet';
+guardIso.sandbox.Sheets.Spreadsheets.Values.update({ values: [['+1+1', '=1+1', '-1+1', '@cmd']] }, 'isolated-test-sheet', "'等號模擬'!A3:D3", { valueInputOption: 'RAW' });
+assert(formulaDemo.getRange(3, 1).getValue() === '+1+1' && formulaDemo.getRange(3, 2).getValue() === '=1+1' && formulaDemo.getRange(3, 3).getValue() === '-1+1' && formulaDemo.getRange(3, 4).getValue() === '@cmd', 'RAW 要原樣留下四種開頭');
+assert(formulaDemo.getRange(3, 1).getFormula() === '' && formulaDemo.getRange(3, 2).getFormula() === '', 'RAW 寫入的格子 getFormula 要為空');
 const leads = [['空白', ' '], ['Tab', '\t'], ['換行', '\n']];
 const prefixes = ['=', '+', '-', '@'];
 let guardN = 0;
@@ -745,7 +805,9 @@ assert(resultRows.length === 9, '驗收結果要有表頭加 8 列');
 const eighth = resultRows[8] || [];
 assert(eighth[1] === 'SMC900101' && eighth[2] === 'success' && eighth[3] === '否' && eighth[4] === '否', '第 8 筆不可再寫入或再寄信');
 const runnerFormula = asMap(runnerOrders[0], runnerOrders.find((row) => row[0] === 'SMC900105'));
-assert(runnerFormula['utm活動'] === '=1+1' && runnerFormula['utm活動'] !== '2' && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列要留下原值字串，訂位欄不變');
+assert(runnerFormula['utm活動'] === '=1+1' && runnerFormula['utm活動'] !== '2' && runnerFormula['utm內容'] === '+1+1' && runnerFormula['utm內容'] !== '=+1+1' && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列要留下原值字串，加號不可變成 =+，訂位欄不變');
+assert(runner.box.rawWrites.length > 0 && runner.box.rawWrites.every((item) => item.mode === 'RAW'), '寫入必須走 Sheets API 的 RAW');
+assert(gs.includes("valueInputOption: 'RAW'") && gs.includes('Sheets.Spreadsheets.Values.update'), '隔離腳本要用 Sheets API，而且 valueInputOption 是 RAW');
 
 function withoutTestId(fields) {
   const payload = attr.payloadIfAttributionEnabled(baseOrder(), fields);
@@ -872,8 +934,9 @@ if (probeRows.length === 5) {
   for (const row of probeRows.slice(1)) probeMap[row[0]] = row;
   for (const [header, raw] of [['utm活動', '=1+1'], ['utm內容', '+1+1'], ['utm關鍵字', '-1+1'], ['utm廣告群組', '@cmd']]) {
     const row = probeMap[header];
-    assert(row && row[1] === raw, `${header} 要列出原值`);
-    assert(row && row[2] === raw, `${header} 讀回要等於原值字串`);
+    assert(row && row[1] === JSON.stringify(raw), `${header} 原值要用 JSON 字串原樣呈現`);
+    assert(row && row[2] === JSON.stringify(raw), `${header} 讀回值要用 JSON 字串原樣呈現`);
+    assert(row && row[1] !== '=+' + raw.slice(1) && row[2] !== '=+1+1', `${header} 報告分頁不可把 + 補成 =+`);
     assert(row && row[3] === '（空）', `${header} 的 getFormula 要為空`);
     assert(row && row[4] === '通過', `${header} 不符就不可算通過`);
   }
@@ -883,6 +946,24 @@ const forcedMsg = String(forced.sandbox.runIsolatedEightCases());
 assert(forcedMsg.includes('不要部署') && forcedMsg.includes('不要開網頁驗收'), '任一格不符就要失敗，不准進入部署和網頁驗收');
 assert(!sheetRows(forced, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對失敗後不可繼續後面的案例');
 assert(runbook.includes('getFormula') && runbook.includes('+1+1') && runbook.includes('-1+1') && runbook.includes('@cmd'), '手冊要列出四種原值與 getFormula');
+assert(runbook.includes('Google Sheets API') && runbook.includes('RAW') && runbook.includes('同一張表') && runbook.includes('表頭以下'), '手冊要寫進階服務、RAW，以及同一張表清表頭以下的列');
+assert(!runbook.includes('或新建一張試算表'), '重跑說明只留同一張表清列，不要再教換新試算表');
+
+const reportSheet = loadIsolated();
+reportSheet.box.byId['isolated-test-sheet'].id = 'isolated-test-sheet';
+reportSheet.sandbox.writeResultSheet_(reportSheet.box.byId['isolated-test-sheet'], [
+  ['案例', '訂單編號', '結果', '寫入', '寄信'],
+  ['加號', '+1+1', 'success', '是', '是'],
+]);
+const reportRows = sheetRows(reportSheet, '驗收結果');
+assert(reportRows[1] && reportRows[1][1] === JSON.stringify('+1+1') && reportRows[1][1] !== '=+1+1', '驗收結果裡以 + 開頭的內容要原樣呈現');
+
+const noSheets = loadIsolated();
+delete noSheets.sandbox.Sheets;
+const noSheetsRes = post(noSheets, previewPayload(brandFields, 'SMC900801'));
+assert(noSheetsRes.status === 'error' && noSheetsRes.wrote === false && noSheetsRes.mailed !== true, '沒啟用進階服務要在寫入前回錯誤，不可標成已寄出');
+assert(noSheets.box.mails.length === 0 && sheetRows(noSheets, '訂單').length === 0, '沒啟用進階服務不可寫表或寄信');
+assert(String(noSheets.sandbox.runIsolatedEightCases()).includes('沒有寫入'), '沒啟用進階服務時八案例要停住');
 
 const blankMail = loadIsolated();
 blankMail.props.SMC_SHOP_EMAIL = '';

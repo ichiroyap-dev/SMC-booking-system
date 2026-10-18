@@ -60,8 +60,34 @@ function enterLikeSheets(input) {
   return text;
 }
 
+function columnIndex(letters) {
+  let n = 0;
+  for (let i = 0; i < letters.length; i += 1) n = n * 26 + (letters.charCodeAt(i) - 64);
+  return n;
+}
+
+function parseA1(range) {
+  const text = String(range);
+  const bang = text.lastIndexOf('!');
+  let name = text.slice(0, bang);
+  const cells = text.slice(bang + 1);
+  if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");
+  const match = cells.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+  if (!match) throw new Error('bad range ' + range);
+  return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+}
+
 function memorySpreadsheet(box) {
   const sheets = {};
+  const ss = {
+    id: '',
+    getId() { return ss.id; },
+    getSheetByName(name) { return sheets[name] || null; },
+    insertSheet(name) {
+      sheets[name] = make(name);
+      return sheets[name];
+    },
+  };
   function make(name) {
     const data = [];
     const formulas = {};
@@ -92,9 +118,18 @@ function memorySpreadsheet(box) {
             }
           },
           setRichTextValue(rich) {
-            const text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
+            let text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
+            if (text.charAt(0) === '+') text = '=' + text;
             put(row - 1, col - 1, text, '');
             return this;
+          },
+          setRawValues(values) {
+            for (let r = 0; r < rowsN; r += 1) {
+              for (let c = 0; c < colsN; c += 1) {
+                const cell = values[r] ? values[r][c] : '';
+                put(row - 1 + r, col - 1 + c, cell == null ? '' : String(cell), '');
+              }
+            }
           },
           getValues() {
             const out = [];
@@ -138,15 +173,11 @@ function memorySpreadsheet(box) {
         };
       },
       rows() { return data.map((row) => row.slice()); },
+      getName() { return name; },
+      getParent() { return ss; },
     };
   }
-  return {
-    getSheetByName(name) { return sheets[name] || null; },
-    insertSheet(name) {
-      sheets[name] = make(name);
-      return sheets[name];
-    },
-  };
+  return ss;
 }
 
 function loadIsolated(options = {}) {
@@ -158,6 +189,7 @@ function loadIsolated(options = {}) {
     lockLog: [],
     writes: [],
     readbacks: [],
+    rawWrites: [],
     htmlFiles: [],
     flushed: false,
     failReadAfterFlush: options.failReadAfterFlush || '',
@@ -211,6 +243,7 @@ function loadIsolated(options = {}) {
       openById(id) {
         box.opened.push(id);
         if (!box.byId[id]) box.byId[id] = memorySpreadsheet(box);
+        box.byId[id].id = id;
         return box.byId[id];
       },
       flush() {
@@ -236,6 +269,25 @@ function loadIsolated(options = {}) {
         }
         box.mails.push({ to, subject, body });
         box.lockLog.push(box.lockHeld ? 'mail-held' : 'mail-free');
+      },
+    },
+    Sheets: {
+      Spreadsheets: {
+        Values: {
+          update(resource, spreadsheetId, range, options) {
+            const mode = options && options.valueInputOption;
+            box.rawWrites.push({ spreadsheetId, range, mode });
+            const ss = box.byId[spreadsheetId];
+            if (!ss) throw new Error('spreadsheet not open');
+            const parsed = parseA1(range);
+            const sheet = ss.getSheetByName(parsed.name);
+            if (!sheet) throw new Error('sheet missing');
+            const values = resource && resource.values ? resource.values : [];
+            const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
+            if (mode === 'RAW') target.setRawValues(values);
+            else target.setValues(values);
+          },
+        },
       },
     },
     LockService: {
@@ -696,6 +748,7 @@ function privateEntryAndFormula() {
   assert(!runbook.includes('ALLOWED_DEPLOYMENT_IDS'), 'Owner 文件不要再教加入 guard 白名單');
   const confirmSrc = gs.slice(gs.indexOf('function confirmOrderRow_'), gs.indexOf('function acceptBooking_'));
   assert(confirmSrc.includes('actual !== want') && confirmSrc.includes("formula !== ''") && !confirmSrc.includes('replace('), '讀回要比對原值字串，而且 getFormula 必須為空');
+  assert(gs.includes("valueInputOption: 'RAW'") && gs.includes('Sheets.Spreadsheets.Values.update'), '寫入要用 Sheets API 的 RAW，不可再靠 setRichTextValue');
   const isolated = loadIsolated({ sheetId: 'private-sheet' });
   if (typeof isolated.sandbox.submitIsolatedFromPage !== 'function') {
     console.log('test 私人入口與公式往返: FAIL');
@@ -715,7 +768,7 @@ function privateEntryAndFormula() {
   const row = rowById(isolated, attack.orderId);
   assert(row && row['信箱'] === 'attacker@example.com', '表格信箱欄仍是送出內容，不是收件人');
   assert(row && row['備註'] === '=1+1' && row['備註'] !== '2', '等號開頭寫入後讀回仍是文字，不是算式結果');
-  assert(row && row['utm活動'] === '+1+1' && row['utm內容'] === '-1+1' && row['utm關鍵字'] === '@cmd', '+ - @ 開頭讀回要等於原值字串');
+  assert(row && row['utm活動'] === '+1+1' && row['utm活動'] !== '=+1+1' && row['utm內容'] === '-1+1' && row['utm關鍵字'] === '@cmd', '+ - @ 開頭讀回要等於原值字串，加號不可變成 =+');
   const direct = isolated.sandbox.confirmOrderRow_;
   function sheetOf(rows, formula) {
     return {
