@@ -1076,18 +1076,28 @@ function isEditorUiUnavailable_(err) {
 }
 
 function notify_(message) {
+  var ui;
   try {
-    SpreadsheetApp.getUi().alert(message);
+    ui = SpreadsheetApp.getUi();
   } catch (err) {
     var text = errorText_(err);
     if (isEditorUiUnavailable_(err)) {
       console.log('編輯器執行，無彈窗，以執行紀錄為準');
+      console.log(text);
       console.log(message);
       return { ok: true, error: text };
     }
     console.log(message);
     console.log(text);
     return { ok: false, error: text };
+  }
+  try {
+    ui.alert(message);
+  } catch (alertErr) {
+    var alertText = errorText_(alertErr);
+    console.log(message);
+    console.log(alertText);
+    return { ok: false, error: alertText };
   }
   console.log(message);
   return { ok: true, error: '' };

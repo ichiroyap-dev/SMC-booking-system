@@ -214,6 +214,26 @@ node tools/test-pr47-r7.mjs --item docs
 
 本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
 
+## PR47 第 8 輪：alert 失敗不可當成無 UI
+
+Codex 退回 `cd1aeba`：`getUi` 與 `alert` 共用一個 catch，`alert` 丟出 `Cannot call SpreadsheetApp.getUi() from this context.` 時，八案例與 201／202／203 成功及重複仍報通過。這輪把 `notify_` 拆成兩段 try。只有 `getUi` 自己丟錯且符合現有編輯器辨識才記無 UI：執行紀錄寫原始錯誤與「編輯器執行，無彈窗，以執行紀錄為準」，不降成結果未知。`alert` 自己失敗一律結果未知，即使文字完全相同。手冊改成依當下有沒有 UI 描述，不再說編輯器執行一定沒有彈窗。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。`fa16c43` 測試表仍當證據保留，核准後從頭重跑。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r8.mjs` 配上固定腳本 `cd1aebaaa67a30fb92be331f71facf23d83155af`。綠燈是同一指令、腳本放回這輪。`docs` 紅燈連舊手冊一起換回。
+
+```bash
+git show cd1aebaaa67a30fb92be331f71facf23d83155af:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r8.mjs --item alert
+git show cd1aebaaa67a30fb92be331f71facf23d83155af:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-pr47-r8.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| alert 丟出相同文字 | 結束碼 1，11 項。八案例、201／202／203 成功及重複仍通過；getUi 自己丟錯沒留原始錯誤。`isolated-red-pr47-r8-alert.log` | 結束碼 0。`isolated-green-pr47-r8-alert.log` |
+| 手冊依 UI 能力描述 | 結束碼 1，5 項。`isolated-red-pr47-r8-docs.log` | 結束碼 0。`isolated-green-pr47-r8-docs.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
 ## 合併到 main 之後
 
 合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
