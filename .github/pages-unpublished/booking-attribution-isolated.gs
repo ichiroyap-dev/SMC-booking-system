@@ -703,9 +703,12 @@ function isolatedEightPayloads_(email) {
 }
 
 function notify_(message) {
+  console.log(message);
   try {
     SpreadsheetApp.getUi().alert(message);
-  } catch (err) {}
+  } catch (err) {
+    console.log(err && err.message ? String(err.message) : String(err));
+  }
 }
 
 function showLiteral_(value) {
@@ -749,11 +752,15 @@ function reportProblem_(name, actual, expected) {
   for (var r = 0; r < want; r += 1) {
     var row = actual[r] || [];
     var exp = expected[r] || [];
-    if (row.length < exp.length) return name + '第 ' + (r + 1) + ' 列內容與寫入不一致';
+    if (row.length > exp.length) {
+      return name + '第 ' + (r + 1) + ' 列多了欄。實際：' + row.join(' | ') + '。預期：' + exp.join(' | ');
+    }
     for (var c = 0; c < exp.length; c += 1) {
-      var left = row[c] == null ? '' : String(row[c]);
+      var left = c < row.length && row[c] != null ? String(row[c]) : '';
       var right = exp[c] == null ? '' : String(exp[c]);
-      if (left !== right) return name + '第 ' + (r + 1) + ' 列內容與寫入不一致';
+      if (left !== right) {
+        return name + '第 ' + (r + 1) + ' 列第 ' + (c + 1) + ' 欄不一致。實際：' + left + '。預期：' + right;
+      }
     }
   }
   return '';
@@ -842,8 +849,10 @@ function runIsolatedEightCases() {
   var stopped = false;
   var failNote = '';
   var writtenProbe = null;
+  var sentMails = 0;
   for (var i = 0; i < cases.length; i += 1) {
     var outcome = acceptBooking_(cases[i].payload);
+    if (outcome.mailed) sentMails += 2;
     lines.push([
       cases[i].label,
       outcome.response.orderId || '',
@@ -857,7 +866,7 @@ function runIsolatedEightCases() {
       try {
         writtenProbe = writeProbeSheet_(opened.ss, checks);
       } catch (probeErr) {
-        var probeFail = '結果未知。公式核對沒有留住。不要重跑，不要部署。';
+        var probeFail = '結果未知。停在「' + cases[i].label + '」的公式核對寫入。已經寄出 ' + sentMails + ' 封信。不要重跑，不要部署。';
         notify_(probeFail);
         return probeFail;
       }
@@ -882,6 +891,7 @@ function runIsolatedEightCases() {
   }
   var readError = '';
   try {
+    SpreadsheetApp.flush();
     var resultSheet = opened.ss.getSheetByName('驗收結果');
     var probeSheet = opened.ss.getSheetByName('公式核對');
     var resultActual = resultSheet ? readSheetValues_(resultSheet) : [];

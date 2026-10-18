@@ -99,6 +99,14 @@ function columnIndex(letters) {
   return n;
 }
 
+function omitTrailingEmptyCells(rows) {
+  return rows.map((row) => {
+    const copy = row.slice();
+    while (copy.length && (copy[copy.length - 1] == null || copy[copy.length - 1] === '')) copy.pop();
+    return copy;
+  });
+}
+
 function parseA1(range) {
   const text = String(range);
   const bang = text.lastIndexOf('!');
@@ -372,7 +380,12 @@ function loadIsolated(options = {}) {
           const parsed = parseA1(range);
           const sheet = ss.getSheetByName(parsed.name);
           if (!sheet) throw new Error('sheet missing');
-          return { values: sheet.rows() };
+          let values = omitTrailingEmptyCells(sheet.rows());
+          if (box.mutateReportCell && parsed.name === '驗收結果' && values[1]) {
+            values = values.map((row) => row.slice());
+            values[1][2] = 'tampered';
+          }
+          return { values };
         },
       },
     },
@@ -1099,6 +1112,72 @@ badMail.props.SMC_SHOP_EMAIL = 'not-an-email';
 const badBooking = badMail.sandbox.acceptBooking_(previewPayload(brandFields, 'SMC900702'));
 assert(badBooking.response.status === 'error' && badBooking.wrote === false && badBooking.mailed === false, '信箱格式錯誤要直接回錯誤，不寫表、不寄信');
 assert(badMail.box.mails.length === 0 && sheetRows(badMail, '訂單').length === 0, '信箱格式錯誤不可寫表或寄信');
+
+const readbackSrc = gs.slice(gs.indexOf('var readError'));
+assert(readbackSrc.includes('SpreadsheetApp.flush()'), '最後讀回報告的開頭要先 flush');
+const lateClear = loadIsolated();
+const realWriteResult = lateClear.sandbox.writeResultSheet_;
+lateClear.sandbox.writeResultSheet_ = function (ss, lines) {
+  const written = realWriteResult(ss, lines);
+  ss.getSheetByName('驗收結果').clear();
+  return written;
+};
+const lateMsg = String(lateClear.sandbox.runIsolatedEightCases());
+lateClear.sandbox.SpreadsheetApp.flush();
+assert(lateMsg.includes('結果未知') && lateMsg.includes('驗收結果') && lateMsg.includes('讀回 0') && lateMsg.includes('預期 9'), '讀回前先 flush，延後的 clear 要報結果未知，並列出 0 列和預期 9 列');
+assert(!lateMsg.includes('四種前綴都通過'), '延後的 clear 把報告洗掉時不可說四種前綴都通過');
+assert(sheetRows(lateClear, '驗收結果').length === 0, '這個突變在腳本結束後驗收結果是空的');
+
+const noteLogs = [];
+const note = loadIsolated();
+note.sandbox.console = {
+  log(...args) { noteLogs.push(args.map((item) => String(item)).join(' ')); },
+};
+note.sandbox.SpreadsheetApp.getUi = function () {
+  return { alert() { throw new Error('沒有試算表介面'); } };
+};
+let noteThrew = false;
+try {
+  note.sandbox.notify_('已送出 8 筆。四種前綴都通過');
+} catch (err) {
+  noteThrew = true;
+}
+assert(!noteThrew, 'alert 失敗時 notify_ 仍要返回');
+assert(noteLogs.some((line) => line.includes('四種前綴都通過')), 'notify_ 要把訊息寫進 console.log');
+assert(noteLogs.some((line) => line.includes('沒有試算表介面')), 'alert 的錯誤要寫進 console.log，不可吞掉');
+
+const mismatch = loadIsolated();
+mismatch.box.mutateReportCell = true;
+const mismatchMsg = String(mismatch.sandbox.runIsolatedEightCases());
+assert(mismatchMsg.includes('結果未知') && mismatchMsg.includes('實際：tampered') && mismatchMsg.includes('預期：success'), '內容不符要寫出實際值和預期值');
+
+const probeBoom = loadIsolated();
+probeBoom.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
+const probeMsg = String(probeBoom.sandbox.runIsolatedEightCases());
+assert(probeMsg.includes('結果未知') && probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('已經寄出 12 封信'), '公式核對寫入失敗要寫明停在哪一步，以及已經寄出幾封信');
+assert(probeBoom.box.mails.length === 12, '停在案例 6 時已經寄出 12 封');
+assert(!sheetRows(probeBoom, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對寫入失敗後不可繼續案例 7');
+
+const trail = loadIsolated();
+const trailBook = trail.box.byId['isolated-test-sheet'];
+trailBook.id = 'isolated-test-sheet';
+const trailWritten = trail.sandbox.writeResultSheet_(trailBook, [
+  ['案例', '訂單編號', '結果', '寫入', '寄信'],
+  ['尾端空白', 'SMC900199', 'success', '是', ''],
+]);
+const trailActual = trail.sandbox.readSheetValues_(trailBook.getSheetByName('驗收結果'));
+assert(trailActual[1] && trailActual[1].length === 4, 'API 讀回要省略列尾的空欄');
+assert(trail.sandbox.reportProblem_('驗收結果', trailActual, trailWritten) === '', '列尾空欄被 API 省略時要補齊再比對');
+
+const verification = readFileSync(join(root, unpublishedDir, 'isolated-e2e-verification.md'), 'utf8');
+const spec = readFileSync(join(root, 'docs/booking-attribution.md'), 'utf8');
+assert(!verification.includes('不再默默留下空白'), '文件要刪掉不再默默留下空白');
+assert(!verification.includes('案例 7、8 的'), '案例 8 是重複編號，不會 flush');
+assert(verification.includes('移植到正式腳本要另外驗證'), '文件要寫移植到正式腳本要另外驗證');
+assert(verification.includes('PR37') && verification.includes('getLastRow()+1') && verification.includes('RAW 全文字'), '開旗標前的三項要在文件裡寫清楚');
+assert(spec.includes('--experimental-websocket') && spec.includes('Node 20') && spec.includes('Node 22'), '說明要寫 Node 20 的瀏覽器測試要加 --experimental-websocket，Node 22 不用');
+assert(spec.includes('test-booking-attribution.mjs') && spec.includes('test-isolated-dining-check.mjs'), '要點名兩個瀏覽器測試');
+assert(runbook.includes('執行記錄'), '手冊要寫執行記錄也有同一段結果');
 
 if (failures.length) {
   console.error('reconciliation failed:');

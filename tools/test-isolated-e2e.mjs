@@ -66,6 +66,14 @@ function columnIndex(letters) {
   return n;
 }
 
+function omitTrailingEmptyCells(rows) {
+  return rows.map((row) => {
+    const copy = row.slice();
+    while (copy.length && (copy[copy.length - 1] == null || copy[copy.length - 1] === '')) copy.pop();
+    return copy;
+  });
+}
+
 function parseA1(range) {
   const text = String(range);
   const bang = text.lastIndexOf('!');
@@ -361,7 +369,12 @@ function loadIsolated(options = {}) {
             const parsed = parseA1(range);
             const sheet = ss.getSheetByName(parsed.name);
             if (!sheet) throw new Error('sheet missing');
-            return { values: sheet.rows() };
+            let values = omitTrailingEmptyCells(sheet.rows());
+            if (box.mutateReportCell && parsed.name === '驗收結果' && values[1]) {
+              values = values.map((row) => row.slice());
+              values[1][2] = 'tampered';
+            }
+            return { values };
           },
         },
       },
@@ -911,6 +924,50 @@ function deferredReportSurvivesFlush() {
   console.log('test 延後清除與報告讀回: ' + (failures.length === before ? 'pass' : 'FAIL'));
 }
 
+function roundSevenReadback() {
+  const before = failures.length;
+  const readbackSrc = gs.slice(gs.indexOf('var readError'));
+  assert(readbackSrc.includes('SpreadsheetApp.flush()'), '最後讀回報告的開頭要先 flush');
+  const lateClear = loadIsolated({ sheetId: 'late-clear-sheet' });
+  const realWriteResult = lateClear.sandbox.writeResultSheet_;
+  lateClear.sandbox.writeResultSheet_ = function (ss, lines) {
+    const written = realWriteResult(ss, lines);
+    ss.getSheetByName('驗收結果').clear();
+    return written;
+  };
+  const lateMsg = String(lateClear.sandbox.runIsolatedEightCases());
+  lateClear.sandbox.SpreadsheetApp.flush();
+  assert(lateMsg.includes('結果未知') && lateMsg.includes('讀回 0') && lateMsg.includes('預期 9'), '讀回前先 flush，延後的 clear 要報結果未知');
+  assert(!lateMsg.includes('四種前綴都通過'), '延後的 clear 把報告洗掉時不可說四種前綴都通過');
+  const logs = [];
+  const note = loadIsolated({ sheetId: 'notify-sheet' });
+  note.sandbox.console = { log(...args) { logs.push(args.map((item) => String(item)).join(' ')); } };
+  note.sandbox.SpreadsheetApp.getUi = function () {
+    return { alert() { throw new Error('沒有試算表介面'); }, createMenu() { return { addItem() { return this; }, addToUi() {} }; } };
+  };
+  let noteThrew = false;
+  try { note.sandbox.notify_('已送出 8 筆。四種前綴都通過'); } catch (err) { noteThrew = true; }
+  assert(!noteThrew && logs.some((line) => line.includes('四種前綴都通過')) && logs.some((line) => line.includes('沒有試算表介面')), 'notify_ 要寫 console.log，alert 的錯誤也不可吞掉');
+  const mismatch = loadIsolated({ sheetId: 'mismatch-sheet' });
+  mismatch.box.mutateReportCell = true;
+  const mismatchMsg = String(mismatch.sandbox.runIsolatedEightCases());
+  assert(mismatchMsg.includes('實際：tampered') && mismatchMsg.includes('預期：success'), '內容不符要寫出實際值和預期值');
+  const probeBoom = loadIsolated({ sheetId: 'probe-boom-sheet' });
+  probeBoom.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
+  const probeMsg = String(probeBoom.sandbox.runIsolatedEightCases());
+  assert(probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('已經寄出 12 封信'), '公式核對寫入失敗要寫明停在哪一步，以及已經寄出幾封信');
+  const trail = loadIsolated({ sheetId: 'trail-sheet' });
+  const trailBook = trail.box.byId['trail-sheet'];
+  trailBook.id = 'trail-sheet';
+  const trailWritten = trail.sandbox.writeResultSheet_(trailBook, [
+    ['案例', '訂單編號', '結果', '寫入', '寄信'],
+    ['尾端空白', 'SMC900199', 'success', '是', ''],
+  ]);
+  const trailActual = trail.sandbox.readSheetValues_(trailBook.getSheetByName('驗收結果'));
+  assert(trailActual[1] && trailActual[1].length === 4 && trail.sandbox.reportProblem_('驗收結果', trailActual, trailWritten) === '', '列尾空欄被 API 省略時要補齊再比對');
+  console.log('test 讀回前 flush 與錯誤訊息: ' + (failures.length === before ? 'pass' : 'FAIL'));
+}
+
 async function main() {
   productionChecks();
   await liveEndpointBlocked();
@@ -921,6 +978,7 @@ async function main() {
   await partialMailFlow();
   privateEntryAndFormula();
   deferredReportSurvivesFlush();
+  roundSevenReadback();
   if (failures.length) {
     console.error('isolated e2e failed: ' + failures.length);
     for (const line of failures) console.error(' - ' + line);
