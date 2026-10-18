@@ -321,7 +321,8 @@ function orderIdsOf(isolated) {
   return sheet ? sheet.rows().map((row) => row[0]) : [];
 }
 
-const PROJECT_LINE = '只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。';
+const PROJECT_LINE = '僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。';
+const GS_STALE = '只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。';
 const SAFE = '錯誤內容無法讀取';
 
 function watchUi(isolated) {
@@ -475,11 +476,19 @@ function itemKeep() {
 }
 
 function itemDocs() {
-  assert(gs.includes(PROJECT_LINE), '檔頭要寫專用隔離專案只建一次、之後更新、禁止貼進其他專案');
-  assert(runbook.includes(PROJECT_LINE), '手冊要寫專用隔離專案只建一次、之後更新、禁止貼進其他專案');
+  assert(runbook.includes(PROJECT_LINE), '手冊要寫已核對 Script ID、可沿用獨立或綁定專案');
+  assert(verification.includes(PROJECT_LINE), 'verification 要寫已核對 Script ID、可沿用獨立或綁定專案');
+  assert(gs.includes(GS_STALE), '固定 .gs 第 2 行仍是舊綁定句，不可改 .gs');
+  assert(!gs.includes('僅使用已核對 Script ID'), '不可改 .gs 檔頭');
+  assert(runbook.includes('已過時') && runbook.includes('以本手冊為準'), '手冊要寫 .gs 第 2 行已過時、以本手冊為準');
   assert(runbook.includes('只記執行紀錄') && runbook.includes('沒有彈窗'), '手冊要寫編輯器入口只記執行紀錄、設計上沒有彈窗');
   assert(gs.includes('只記執行紀錄') && gs.includes('沒有彈窗'), '檔頭要寫編輯器入口只記執行紀錄、設計上沒有彈窗');
   assert(runbook.includes('以執行紀錄') || runbook.includes('以執行記錄'), '手冊要以執行紀錄讀結果');
+  assert(runbook.includes('沒有完整摘要') && runbook.includes('不算通過'), '手冊要寫執行紀錄沒有完整摘要就停、不算通過');
+  const step2 = runbook.slice(runbook.indexOf('**實測第一步：**'), runbook.indexOf('全成功的執行記錄'));
+  assert(!step2.includes('舊版會彈 alert'), '實測第一步不可再寫舊版會彈 alert');
+  assert(!step2.includes('讀完按確定'), '實測第一步不可再寫讀完按確定');
+  assert(runbook.includes('不適用本輪'), '歷史段落要標不適用本輪');
   assert(!/function isEditorUiUnavailable_/.test(gs), '已不用錯誤文字辨識時，要刪掉 isEditorUiUnavailable_');
   assert(!/^function doPost\s*\(/m.test(gs), '不可新增 doPost');
 }

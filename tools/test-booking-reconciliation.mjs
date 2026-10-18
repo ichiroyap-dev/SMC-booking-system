@@ -1315,7 +1315,7 @@ assert(!verification.includes('API 寫入不會更新這份快取'), '快取那�
 assert(verification.includes('不可依賴') && verification.includes('即時一致'), '快取要改成不可依賴跨服務即時一致');
 assert(verification.includes('真表上觀察到') && verification.includes('模擬重現'), '根因要分開真表觀察和模擬重現');
 assert(verification.includes('確認 Pages 建置仍把 .github/pages-unpublished 排除在公開網站之外'), '開旗標前要確認 Pages 仍排除未公開目錄');
-assert(runbook.includes('按確定') && runbook.includes('對話框'), '手冊要寫讀完 alert 按確定，等待對話框不是故障');
+assert(runbook.includes('沒有完整摘要') && runbook.includes('不算通過'), '手冊要寫執行紀錄沒有完整摘要就停、不算通過');
 
 if (failures.length) {
   console.error('reconciliation failed:');

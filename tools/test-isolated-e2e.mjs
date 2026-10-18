@@ -905,7 +905,7 @@ function privateEntryAndFormula() {
   assert(gs.includes('原列') && runbook.includes('原列') && runbook.includes('不要重送'), '讀回不一致要寫明停下、核對原列、不要重送');
   assert(!/^function doPost\s*\(/m.test(gs), '隔離版不可定義 doPost');
   assert(/^function doGet\s*\(/m.test(gs), '隔離版要保留 doGet');
-  assert(runbook.startsWith('# 隔離 Apps Script 驗收') && runbook.includes('只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案'), '手冊最前面要寫專用隔離專案只建一次、之後更新、禁止貼進其他專案');
+  assert(runbook.startsWith('# 隔離 Apps Script 驗收') && runbook.includes('僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。'), '手冊最前面要寫已核對 Script ID、可沿用獨立或綁定專案');
   assert(runbook.includes('不可以重新整理後重送'), '結果未知時不可以重新整理後重送');
   assert(!runbook.includes('ALLOWED_DEPLOYMENT_IDS'), 'Owner 文件不要再教加入 guard 白名單');
   const confirmSrc = gs.slice(gs.indexOf('function confirmOrderRow_'), gs.indexOf('function acceptBooking_'));
@@ -1096,7 +1096,7 @@ function roundEightMessages() {
   assert(alertMsg.includes('四種前綴都通過') && !alertMsg.includes('結果未知'), '八案例只記執行紀錄，alert 丟錯仍回成功摘要');
   const runbook = readFileSync(join(root, unpublished, 'booking-attribution-isolated-runbook.md'), 'utf8');
   const verification = readFileSync(join(root, unpublished, 'isolated-e2e-verification.md'), 'utf8');
-  assert(runbook.includes('按確定') && runbook.includes('對話框'), '手冊要寫讀完 alert 按確定，等待對話框不是故障');
+  assert(runbook.includes('沒有完整摘要') && runbook.includes('不算通過'), '手冊要寫執行紀錄沒有完整摘要就停、不算通過');
   assert(!verification.includes('API 寫入不會更新這份快取') && verification.includes('不可依賴') && verification.includes('即時一致'), '快取描述要改成不可依賴即時一致');
   assert(verification.includes('真表上觀察到') && verification.includes('模擬重現'), '根因要分開真表觀察和模擬重現');
   assert(verification.includes('確認 Pages 建置仍把 .github/pages-unpublished 排除在公開網站之外'), '開旗標前要確認 Pages 仍排除未公開目錄');

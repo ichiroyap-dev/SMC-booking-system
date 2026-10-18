@@ -236,7 +236,7 @@ node tools/test-pr47-r8.mjs --item docs
 
 ## PR47 第 9 輪：入口明確只記執行紀錄
 
-Owner 決定不再用錯誤文字判斷有沒有 UI。`runIsolatedEightCases`（含 onOpen 選單）與 `runIsolatedOneBooking201`／`202`／`203` 一律 LOG-ONLY：不呼叫 `SpreadsheetApp.getUi()`，也不呼叫 `alert()`。完整摘要寫進 `console.log`，回傳同一句。刪掉 `isEditorUiUnavailable_`。`errorText_` 遇無原型、`message` getter 丟錯或 `toString` 丟錯時回「錯誤內容無法讀取」，不外拋。先前資料失敗再加上通知失敗時，原失敗摘要與「結果未知」都要留下。檔頭與手冊改成：只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。編輯器入口只記執行紀錄，設計上沒有彈窗，結果以執行紀錄為準。`fa16c43` 測試表仍當證據保留，核准後從頭重跑。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。
+Owner 決定不再用錯誤文字判斷有沒有 UI。`runIsolatedEightCases`（含 onOpen 選單）與 `runIsolatedOneBooking201`／`202`／`203` 一律 LOG-ONLY：不呼叫 `SpreadsheetApp.getUi()`，也不呼叫 `alert()`。完整摘要寫進 `console.log`，回傳同一句。刪掉 `isEditorUiUnavailable_`。`errorText_` 遇無原型、`message` getter 丟錯或 `toString` 丟錯時回「錯誤內容無法讀取」，不外拋。先前資料失敗再加上通知失敗時，原失敗摘要與「結果未知」都要留下。檔頭與手冊改成：僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。`.gs` 第 2 行「只用綁定專案」已過時，以文件為準，這輪不改 `.gs`。編輯器入口只記執行紀錄，設計上沒有彈窗，結果以執行紀錄為準。執行紀錄沒有完整摘要就停，不算通過。`fa16c43` 測試表仍當證據保留，核准後從頭重跑。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。
 
 Node `v22.14.0`。紅燈是 `tools/test-pr47-r9.mjs` 配上固定腳本 `404b6c41b75733ab91ae22065e4f4eca629eca62`。綠燈是同一指令、腳本放回這輪。
 
@@ -257,6 +257,8 @@ node tools/test-pr47-r9.mjs --item docs
 | 專案措辭與只記執行紀錄 | 結束碼 1，5 項。`isolated-red-pr47-r9-docs.log` | 結束碼 0。`isolated-green-pr47-r9-docs.log` |
 
 本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
+Codex r9 判定 APPROVE_WITH_NITS 後只改文件：專案措辭改為可沿用已核對 Script ID 的獨立專案或綁定專案。`.gs` 維持 `57da622`，第 2 行舊綁定句以文件為準。執行紀錄沒有完整摘要就停，不算通過。舊版 alert 句移到歷史段落，標明不適用本輪。
 
 ## 合併到 main 之後
 
@@ -289,7 +291,7 @@ Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`�
 | `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/booking-attribution-isolated.gs | `3aac1336d0f21b6e7ca62637bf1e23e94abc2aaa5d8ff7ae5b365365641be14c` |
 | `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
 
-## 第 8 輪原文
+## 第 8 輪原文（不適用本輪）
 
 # 隔離驗證（第 8 輪，錯誤訊息）
 
@@ -460,10 +462,10 @@ node tools/test-isolated-e2e.mjs
 
 ## 請 Owner 做的三步
 
-只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。未核對雜湊前不要貼。不要打開 `www.sweetmeichicken.com`。不要覆寫正式部署。信箱用 Owner 自己的測試信箱。結果未知時，不可以重新整理後重送。
+僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。未核對雜湊前不要貼。不要打開 `www.sweetmeichicken.com`。不要覆寫正式部署。信箱用 Owner 自己的測試信箱。結果未知時，不可以重新整理後重送。`.gs` 第 2 行「只用綁定專案」已過時，以文件為準。執行紀錄沒有完整摘要就停，不算通過。
 
 1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。
-2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。從試算表開 Apps Script，貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。編輯器入口只記執行紀錄，設計上沒有彈窗。結果以執行紀錄為準。沒有看到這段結果、還在執行，或出現錯誤，就停止回報。首次執行可能再授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown、報告空白或讀回不符就停，不部署。重跑前先留下 14:59 的 CSV 和郵件紀錄。同一張表要清除內容：訂單、郵件預覽、驗收結果、公式核對。表頭可以留著。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
+2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。沿用已核對 Script ID 的現有獨立專案，或使用隔離試算表的綁定專案，更新同一專案。不要從「這張新試算表」另開未核對的專案。貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。獨立專案從編輯器執行；onOpen 選單僅適用綁定專案。編輯器入口只記執行紀錄，設計上沒有彈窗。結果以執行紀錄為準。執行紀錄沒有完整摘要就停，不算通過。沒有看到這段結果、還在執行，或出現錯誤，就停止回報。首次執行可能再授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown、報告空白或讀回不符就停，不部署。重跑前先留下 14:59 的 CSV 和郵件紀錄。同一張表要清除內容：訂單、郵件預覽、驗收結果、公式核對。表頭可以留著。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
 3. **全部核對通過才開私人頁。** 新增網路應用程式部署，執行身分「我」、存取「只有我」。不要覆寫正式部署。用同帳號開新網址，帶入品牌欄位送一次。網頁每一筆新單再 2 封。未知或沒有回應就停，不可以重新整理後重送。`127.0.0.1` 那頁只留給模擬測試，不要拿來送這個部署。
 
 做完後一次回傳：測試表 ID、測試信箱、八案例的驗收結果、公式核對四格、exec 網址、存取是不是「只有我」，以及確認沒有改正式環境。
