@@ -12,7 +12,10 @@
  * 寫入後先 flush，再讀回同一列。讀回值要等於原值字串，而且 getFormula 為空。
  * 對不上或讀不回來就停下：回結果未知（寫明欄位、原值、讀回值）、不寄信、請核對原列，不要重送。
  * 舊寫法：前導單引號不會被 Sheets 存進格子。setValues 會把 = 算掉。setRichTextValue 會把 + 開頭改成文字 =+。
- * 資料列在鎖內讀整張表的值，再用 values.update 的 RAW 寫到最後一筆有值的下一列。
+ * 資料列在鎖內用 values.get 讀整張分頁的公式（valueRenderOption=FORMULA），不設 A:ZZ 上限。
+ * 再用 values.update 的 RAW 寫到最後一筆有值的下一列。="" 這類公式也算有資料。
+ * updatedRange 要對上分頁、正好那一列、欄從 A 到這列最後一欄。只對到列號不夠。
+ * 記錄裡的 tableRange 是推算，不是 API 回傳的 tableRange。
  * 不看試算表快取的最後一列，也不用 A1 的 append。中段空白下方的資料仍算在表尾。
  * 自由文字、電話、來源是 RAW 文字。人數、桌數是數字。日期、時間、收到時間是試算表序號。
  * 電話保留開頭的 0。姓名、備註開頭的單引號不刪，客人可能真的打了。
@@ -522,23 +525,56 @@ function lastValueRow_(grid) {
   return { row: last, col: maxCol };
 }
 
-function rangeHasRow_(range, row) {
-  var matches = String(range || '').match(/[A-Z]+(\d+)/g);
-  if (!matches) return false;
-  for (var i = 0; i < matches.length; i += 1) {
-    if (Number(matches[i].replace(/[A-Z]+/, '')) === row) return true;
+function columnIndex_(letters) {
+  var n = 0;
+  var text = String(letters || '').toUpperCase();
+  for (var i = 0; i < text.length; i += 1) {
+    var code = text.charCodeAt(i);
+    if (code < 65 || code > 90) return 0;
+    n = n * 26 + (code - 64);
   }
-  return false;
+  return n;
+}
+
+function parseUpdatedRange_(range) {
+  var text = String(range || '').replace(/\$/g, '').trim();
+  var bang = text.lastIndexOf('!');
+  if (bang < 0) return null;
+  var name = text.slice(0, bang).trim();
+  var cells = text.slice(bang + 1).trim();
+  if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") {
+    name = name.slice(1, -1).replace(/''/g, "'");
+  }
+  var pair = /^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/.exec(cells);
+  if (!pair) return null;
+  return {
+    name: name,
+    startCol: columnIndex_(pair[1]),
+    startRow: Number(pair[2]),
+    endCol: columnIndex_(pair[3]),
+    endRow: Number(pair[4])
+  };
+}
+
+function updatedRangeMatches_(updated, sheetName, targetRow, numCols) {
+  var parsed = parseUpdatedRange_(updated);
+  if (!parsed || !parsed.startCol || !parsed.endCol) return false;
+  return parsed.name === String(sheetName)
+    && parsed.startRow === targetRow
+    && parsed.endRow === targetRow
+    && parsed.startCol === 1
+    && parsed.endCol === numCols;
 }
 
 // A1 的 values.append 只接在包含 A1 的表格後面，中段空白下方的資料不會算進去。
-// 這裡在鎖內讀整張表的值，寫到最後一筆有值的下一列。格式不算值。updatedRange 對不上就不寄信。
+// 這裡在鎖內讀整張分頁的公式，寫到最後一筆有值的下一列。="" 也算有資料。格式不算值。
+// updatedRange 必須是這張分頁、正好目標列、欄從 A 到這列最後一欄。對不上就不寄信。
 function writeRow_(sheet, row) {
   if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
   var parent = sheet.getParent();
   var id = parent && parent.getId ? parent.getId() : '';
   if (!id) throw new Error('找不到試算表 ID');
-  var read = Sheets.Spreadsheets.Values.get(id, quotedSheet_(sheet) + '!A:ZZ');
+  var read = Sheets.Spreadsheets.Values.get(id, quotedSheet_(sheet), { valueRenderOption: 'FORMULA' });
   var grid = read && read.values ? read.values : [];
   var used = lastValueRow_(grid);
   var targetRow = used.row + 1;
@@ -554,8 +590,8 @@ function writeRow_(sheet, row) {
   var updated = response && response.updatedRange ? String(response.updatedRange) : '';
   var tableEndCol = used.col > 0 ? used.col : line.length;
   var tableRange = used.row > 0 ? quotedSheet_(sheet) + '!A1:' + columnLetter_(tableEndCol) + used.row : '';
-  console.log('tableRange=' + tableRange + ' updatedRange=' + updated);
-  if (!rangeHasRow_(updated, targetRow)) throw new Error('寫入位置不符');
+  console.log('tableRange=' + tableRange + '（推算，不是 API 回傳的 tableRange） updatedRange=' + updated);
+  if (!updatedRangeMatches_(updated, sheet.getName(), targetRow, line.length)) throw new Error('寫入位置不符');
 }
 
 function unknownOutcome_(orderId, detail) {
@@ -743,7 +779,9 @@ function acceptBooking_(payload) {
       outcome = { response: { status: 'error', message: '測試編號已用完，沒有收單。' }, wrote: false, mailed: false };
     } else {
       var zone = spreadsheetZone_(opened.ss);
-      if (!zone) throw new Error('找不到試算表時區');
+      if (!zone) {
+        throw new Error('找不到試算表時區。這筆訂單沒有寫入，也沒有寄信。訂單分頁若是這次新建，表頭可能已寫上，整欄格式也可能已設過。');
+      }
       var result = buildBookingResult_(payload, orderId, nowIso_(), shopTo, shopTo, zone);
       if (ids.indexOf(orderId) !== -1) {
         result.response.mailed = false;
@@ -766,8 +804,15 @@ function acceptBooking_(payload) {
     }
   } catch (err) {
     pendingMail = null;
+    var caught = errorText_(err);
     if (attemptedWrite) {
       outcome = unknownOutcome_(orderId);
+    } else if (caught.indexOf('找不到試算表時區') !== -1) {
+      outcome = {
+        response: { status: 'error', message: caught, mailed: false, wrote: false, duplicate: false },
+        wrote: false,
+        mailed: false
+      };
     } else {
       outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
     }

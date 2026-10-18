@@ -1,0 +1,9 @@
+pr47 r2 item range failed: 8
+ - 另一張分頁 的 updatedRange 要回未知，實際 success '其他'!A2:V2
+ - 另一張分頁 不可寄信，實際 2 封
+ - 起欄不是 A 的 updatedRange 要回未知，實際 success '訂單'!B2:W2
+ - 起欄不是 A 不可寄信，實際 2 封
+ - 跨了兩列 的 updatedRange 要回未知，實際 success '訂單'!A1:V2
+ - 跨了兩列 不可寄信，實際 2 封
+ - 終欄少一欄 的 updatedRange 要回未知，實際 success '訂單'!A2:U2
+ - 終欄少一欄 不可寄信，實際 2 封

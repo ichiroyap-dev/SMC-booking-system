@@ -65,6 +65,27 @@ TZ=UTC node tools/test-pr47-r1.mjs --item nit-pages
 
 紀錄在 `isolated-red-pr47-r1-f1.log` 到 `isolated-red-pr47-r1-nit-pages.log`，綠燈是 `isolated-green-pr47-r1-*.log`。跑完要把腳本放回這支分支。
 
+## PR47 第 3 輪：Codex 第 2 輪退回
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r2.mjs` 配上固定腳本 `46a7254b15884868dff6f5593abfb65ed3fba288`。綠燈是同一指令、腳本放回這輪，結束碼 0。跑完要把腳本放回這支分支。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show 46a7254b15884868dff6f5593abfb65ed3fba288:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r2.mjs --item range
+node tools/test-pr47-r2.mjs --item occupy
+node tools/test-pr47-r2.mjs --item checklist
+node tools/test-pr47-r2.mjs --item nit
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| updatedRange 分頁、單列、欄位 | 結束碼 1，8 項 | 結束碼 0 |
+| 公式空結果與 ZZ 之後 | 結束碼 1，8 項 | 結束碼 0 |
+| 移植清單的擴列與跨寫入者 | 結束碼 1，6 項 | 結束碼 0 |
+| tableRange 推算與缺時區用詞 | 結束碼 1，4 項 | 結束碼 0 |
+
+紀錄是 `isolated-red-pr47-r2-range.log`、`isolated-red-pr47-r2-occupy.log`、`isolated-red-pr47-r2-checklist.log`、`isolated-red-pr47-r2-nit.log`。綠燈是 `isolated-green-pr47-r2-*.log`。
+
 ## 合併到 main 之後
 
 合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
@@ -87,7 +108,7 @@ Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`�
 
 全套綠燈：`node tools/test-booking-reconciliation.mjs` 結束碼 0，`isolated-green-recon-preflag.log`。`node tools/test-isolated-e2e.mjs` 結束碼 0，`isolated-green-e2e-preflag.log`。`node tools/test-booking-backend-contract.mjs` 結束碼 0。
 
-決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列在鎖內先 `values.get` 整張表，再用 `values.update` RAW 寫到最後一筆有值的下一列，並核對 `updatedRange`。不看快取最後一列加一，也不用範圍 A1 的 `values.append`。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間存試算表序號。收到時間用試算表時區的牆鐘序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
+決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列在鎖內先 `values.get` 整張分頁的公式（`FORMULA`，不設 `A:ZZ` 上限），再用 `values.update` RAW 寫到最後一筆有值的下一列。`updatedRange` 要對上分頁、正好那一列、欄從 A 到最後一欄。記錄裡的 `tableRange` 是推算。不看快取最後一列加一，也不用範圍 A1 的 `values.append`。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間存試算表序號。收到時間用試算表時區的牆鐘序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
 
 固定檔案停在 commit `46a7254b15884868dff6f5593abfb65ed3fba288`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
 

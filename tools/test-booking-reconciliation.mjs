@@ -110,6 +110,11 @@ function omitTrailingEmptyCells(rows) {
 function parseA1(range) {
   const text = String(range);
   const bang = text.lastIndexOf('!');
+  if (bang < 0) {
+    let only = text;
+    if (only.charAt(0) === "'" && only.charAt(only.length - 1) === "'") only = only.slice(1, -1).replace(/''/g, "'");
+    return { name: only, entire: true };
+  }
   let name = text.slice(0, bang);
   const cells = text.slice(bang + 1);
   if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");

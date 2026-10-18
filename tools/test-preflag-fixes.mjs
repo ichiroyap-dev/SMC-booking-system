@@ -40,8 +40,13 @@ function columnIndex(letters) {
 function parseA1(range) {
   const text = String(range);
   const bang = text.lastIndexOf('!');
-  let name = bang >= 0 ? text.slice(0, bang) : '';
-  const cells = bang >= 0 ? text.slice(bang + 1) : text;
+  if (bang < 0) {
+    let only = text;
+    if (only.charAt(0) === "'" && only.charAt(only.length - 1) === "'") only = only.slice(1, -1).replace(/''/g, "'");
+    return { name: only, entire: true };
+  }
+  let name = text.slice(0, bang);
+  const cells = text.slice(bang + 1);
   if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");
   const columns = cells.match(/^([A-Z]+):([A-Z]+)$/);
   if (columns) return { name, entire: true };

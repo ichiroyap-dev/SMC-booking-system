@@ -2,7 +2,7 @@
 
 這份給店務和之後移植正式腳本用。沒有掛在官網選單。`SEND_ATTRIBUTION_TO_BACKEND` 維持 `false`。這輪不寫正式試算表，也不部署。
 
-同一列在鎖內先 `values.get` 整張表，再用 `values.update` 寫到最後一筆有值的下一列。`valueInputOption` 固定是 `RAW`。Google 只保證 RAW 不解析輸入，不是說 `+`、`-`、`@` 一定會被當成公式。字串會維持文字；數字要傳數字，日期要傳試算表序號，RAW 才不會把它們也存成文字。
+同一列在鎖內先 `values.get` 整張分頁的公式（`valueRenderOption=FORMULA`，不設 `A:ZZ` 上限），再用 `values.update` 寫到最後一筆有值的下一列。`=""` 也算有資料。回應的 `updatedRange` 要是這張分頁、正好那一列、欄從 A 到這列最後一欄。記錄裡的 `tableRange` 是推算。`valueInputOption` 固定是 `RAW`。Google 只保證 RAW 不解析輸入，不是說 `+`、`-`、`@` 一定會被當成公式。字串會維持文字；數字要傳數字，日期要傳試算表序號，RAW 才不會把它們也存成文字。
 
 序號是從 1899-12-30 起算的天數，表示試算表時區的牆鐘，不是 UTC 瞬時。`2026-10-18T07:00:00Z` 在台北是 15:00。日期是整數。時間是一天的分數，`12:00` 是 `0.5`。收到時間是日期加時間。讀回若拿到 Date，用 `Utilities.formatDate` 和 `getSpreadsheetTimeZone()` 換回同一個序號，不用專案時區，也不拿 UTC 瞬時去對。
 

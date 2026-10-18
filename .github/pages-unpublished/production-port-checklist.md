@@ -10,7 +10,7 @@
 
 - `formulaGuard_`：不在前面加單引號，也不刪姓名、備註開頭的 `'`。
 - `textStore_`、`phoneStore_`、`numberStore_`、`dateStore_`、`timeStore_`、`datetimeStore_`：逐欄見 `docs/booking-sheet-columns.md`。
-- `writeRow_`：在鎖內用 `values.get` 看整張表的值，再用 `values.update`、`valueInputOption=RAW` 寫到最後一筆有值的下一列。核對回應的 `updatedRange`。不要用 `A1` 的 `values.append`，那個只接在包含 A1 的表格後面。
+- `writeRow_`：在鎖內用 `values.get` 讀整張分頁，不設 `A:ZZ` 上限，`valueRenderOption=FORMULA`。公式 `=""` 也算有資料。再用 `values.update`、`valueInputOption=RAW` 寫到最後一筆有值的下一列。`updatedRange` 要核對分頁名稱、正好一列、欄從 A 到這列最後一欄。只看到列號相同不夠。記錄裡的 `tableRange` 是推算，不是 API 回傳的 tableRange。不要用 `A1` 的 `values.append`，那個只接在包含 A1 的表格後面。
 - `applyColumnFormats_`：電話 `@`，人數與桌數 `0`，日期 `yyyy-mm-dd`，時間 `hh:mm`，收到時間 `yyyy-mm-dd hh:mm:ss`。
 - `sameStored_`、`confirmOrderRow_`：文字原樣比對；數字和日期比序號；`getFormula` 必須是空的。對不上就停下，不寄信。
 - `attributionFromPayload_`：9 欄可有可無。缺欄、多欄、型別不對仍收單，壞掉的來源改空白。
@@ -79,3 +79,11 @@
 日期、時間、收到時間讀回來必須是 Date，不能是裸序號。`new Date(46317)` 會被當成 1970 年的毫秒，日期會錯。
 
 另外核對正式背景通知。隔離的兩封信不能直接套上去。若背景工作已經會寄店內信，再依隔離行為加一封就會多寄。這件事和「客人信失敗後要不要寄店內信」一起等 Owner 決定。
+
+## 列數快滿時要先擴列
+
+`values.update` 寫到現有內容的下一列時，不要假設試算表會自動加列。列數接近列數上限時，先用 `insertRowsAfter` 或 `appendDimension` 擴列，再寫。官方 `values.update` 沒有保證會自己長高。隔離驗收先用列數足夠的表。這輪不在隔離腳本裡擴列，也不碰正式表。
+
+## 鎖擋不住別人同時改同一列
+
+`LockService` 只擋這支腳本。讀完到寫入之間，人或另一支腳本可能改掉目標列。移植時要有對策：寫入後再讀回目標列，和剛寫的值比對。對不上就回未知，不寄信。隔離表可以維持單一寫入者。這輪不改正式腳本。

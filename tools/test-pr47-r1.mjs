@@ -72,11 +72,30 @@ function columnIndex(letters) {
   return n;
 }
 
+function trimApiGrid(grid) {
+  const copy = grid.map((row) => (row || []).slice());
+  while (copy.length) {
+    const last = copy[copy.length - 1];
+    if (last.some((cell) => cell != null && cell !== '')) break;
+    copy.pop();
+  }
+  return copy.map((row) => {
+    const line = row.slice();
+    while (line.length && (line[line.length - 1] == null || line[line.length - 1] === '')) line.pop();
+    return line;
+  });
+}
+
 function parseA1(range) {
   const text = String(range);
   const bang = text.lastIndexOf('!');
-  let name = bang >= 0 ? text.slice(0, bang) : '';
-  const cells = bang >= 0 ? text.slice(bang + 1) : text;
+  if (bang < 0) {
+    let only = text;
+    if (only.charAt(0) === "'" && only.charAt(only.length - 1) === "'") only = only.slice(1, -1).replace(/''/g, "'");
+    return { name: only, entire: true };
+  }
+  let name = text.slice(0, bang);
+  const cells = text.slice(bang + 1);
   if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");
   if (!cells) return { name, entire: true };
   const columns = cells.match(/^([A-Z]+):([A-Z]+)$/);
@@ -323,7 +342,7 @@ function loadIsolated() {
           clear() {},
           get(spreadsheetId, range) {
             const parsed = parseA1(range);
-            return { values: box.byId[spreadsheetId].getSheetByName(parsed.name).rows() };
+            return { values: trimApiGrid(box.byId[spreadsheetId].getSheetByName(parsed.name).rows()) };
           },
         },
       },
