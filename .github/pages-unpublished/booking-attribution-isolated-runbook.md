@@ -180,7 +180,14 @@
 
 ## 固定版本
 
-`.gs` 與 `IsolatedCheck.html` 的完整 commit SHA、GitHub 固定連結和 SHA-256 寫在 `.github/pages-unpublished/isolated-e2e-verification.md`。那份報告用下一個 commit 補上，不跟這兩個檔案放在同一個 commit。
+要貼進 Apps Script 的兩個檔案停在 commit `ad9a8bad34495c8103156b212ae10d029d463ed3`。這段說明是後來補上的，所以不會去引用自己的 commit。
+
+- 腳本：https://github.com/ichiroyap-dev/SMC-booking-system/blob/ad9a8bad34495c8103156b212ae10d029d463ed3/.github/pages-unpublished/booking-attribution-isolated.gs
+  - SHA-256 `208dea922865b1da80ec3946f336d8a2efa2b2cd5c2e1ead3b64dcd89162b469`
+- 私人頁面：https://github.com/ichiroyap-dev/SMC-booking-system/blob/ad9a8bad34495c8103156b212ae10d029d463ed3/.github/pages-unpublished/IsolatedCheck.html
+  - SHA-256 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
+
+下載後在本機算 SHA-256，對不上就不要貼。部署存取維持「只有我」，不可改成「任何人」。
 
 ## 對過才算過
 
