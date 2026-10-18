@@ -21,7 +21,7 @@
  * 閒置超過 30 分鐘，讀取時清除。
  *
  * 九個來源欄位一律是字串。群組分類只允許「品牌」「非品牌」或空白。
- * 送出的來源字串會做試算表公式防護（= + - @ 開頭加單引號）。cleanToken 只去掉控制字元。
+ * 來源送原文。試算表用 RAW 原樣保存 = + - @，這裡不再加單引號。cleanToken 只去掉控制字元。
  * SEND_ATTRIBUTION_TO_BACKEND 預設 false：來源只留在這次分頁，正式 POST 不加新欄位。
  * 送出當下的 9 欄快照綁到回傳的訂單編號；同一編號不覆寫、不重複計。快照不進正式 POST。
  * 正式 Apps Script 不在本 repo。本機契約測試不能證明後端相容。見 docs/booking-attribution.md。
@@ -74,10 +74,8 @@
     }
 
     function plainSheetText(value) {
-        var text = value == null ? '' : String(value);
-        if (!text) return '';
-        if (/^[=+\-@]/.test(text)) return "'" + text;
-        return text;
+        // 防護只放在 RAW 寫入。這裡再加單引號，格子會多一個字。
+        return value == null ? '' : String(value);
     }
 
     function emptyVisit() {

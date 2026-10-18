@@ -1,3 +1,69 @@
+# 隔離驗證（開旗標前的必修）
+
+私人網頁維持 `355da77` 版本 1，這輪不重新部署，不開旗標，不寫正式試算表，不寄信。這輪的 `.gs` 不要貼上已部署的專案。
+
+第 8 輪寫過「只是錯誤訊息和文件的小修」。那句少了行為改變：客人的信寄失敗後，仍然會寄店內的信。`355da77` 沒有這個行為。這輪的摘要改寫實際封數：確認寄出、未確認寄出。寄信呼叫回傳錯誤時寫「未確認寄出」，不要寫成已經確定沒有寄出，也不要補寄。
+
+## PR46 第 8 輪紅燈的兩種重現
+
+這組數字用的是第 8 輪的測試和文件，commit `beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c`。差異在於文件有沒有一起換回 `355da77`。只換腳本、文件留在新版（第 8 輪），得到 9 項和 7 項。腳本和文件都換回舊版，得到 14 項和 11 項。Node `v22.14.0`。2026-10-18 在這支分支上照下面兩組指令重跑，數字相同。跑完要把檔案放回目前這支分支。
+
+只換腳本（第 8 輪的新文件＋舊 `.gs`）。測試也要放回第 8 輪，否則會混進這輪新增的寄信斷言：
+
+```bash
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-booking-reconciliation.mjs > tools/test-booking-reconciliation.mjs
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-isolated-e2e.mjs > tools/test-isolated-e2e.mjs
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:.github/pages-unpublished/isolated-e2e-verification.md > .github/pages-unpublished/isolated-e2e-verification.md
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+git show 355da77:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-booking-reconciliation.mjs
+node tools/test-isolated-e2e.mjs
+```
+
+`test-booking-reconciliation.mjs` 結束碼 1，9 項。紀錄 `.github/pages-unpublished/isolated-red-r8-recon-gs-only.log`。
+`test-isolated-e2e.mjs` 結束碼 1，7 項。紀錄 `.github/pages-unpublished/isolated-red-r8-e2e-gs-only.log`。
+
+腳本和文件一起換回 `355da77`（測試仍是第 8 輪）：
+
+```bash
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-booking-reconciliation.mjs > tools/test-booking-reconciliation.mjs
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-isolated-e2e.mjs > tools/test-isolated-e2e.mjs
+git show 355da77:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+git show 355da77:.github/pages-unpublished/isolated-e2e-verification.md > .github/pages-unpublished/isolated-e2e-verification.md
+git show 355da77:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-booking-reconciliation.mjs
+node tools/test-isolated-e2e.mjs
+```
+
+`test-booking-reconciliation.mjs` 結束碼 1，14 項。紀錄 `.github/pages-unpublished/isolated-red-r8-recon-docs.log`。
+`test-isolated-e2e.mjs` 結束碼 1，11 項。紀錄 `.github/pages-unpublished/isolated-red-r8-e2e-docs.log`。
+
+若改用這輪的測試、只換 `355da77` 的腳本，對帳仍是 9 項，端到端變成 9 項。測試、腳本、兩份文件都換回 `355da77` 時，對帳仍是 14 項，端到端變成 13 項。多出來的是這輪新增的「確認寄出／未確認寄出」斷言，不是第 8 輪那組 9／7 和 14／11。紀錄 `isolated-red-preflag-recon-gs-only.log`、`isolated-red-preflag-e2e-gs-only.log`、`isolated-red-preflag-recon-docs.log`、`isolated-red-preflag-e2e-docs.log`。
+
+## 開旗標前必修的紅燈與綠燈
+
+Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`。紅燈是改程式前；綠燈是改完後同一指令，結束碼都是 0。
+
+| 項目 | 紅燈 | 綠燈紀錄 |
+| --- | --- | --- |
+| 1 前端送原文 | 結束碼 1，7 項。`isolated-red-preflag-item1.log` | `isolated-green-preflag-item1.log` |
+| 2 append 與表尾 | 結束碼 1，8 項。`isolated-red-preflag-item2.log` | `isolated-green-preflag-item2.log` |
+| 3 欄位契約 | 結束碼 1，16 項。`isolated-red-preflag-item3.log` | `isolated-green-preflag-item3.log` |
+| 4 移植清單 | 結束碼 1，10 項。`isolated-red-preflag-item4.log` | `isolated-green-preflag-item4.log` |
+| 5 Pages 排除 | 結束碼 1，1 項。`isolated-red-preflag-item5.log` | `isolated-green-preflag-item5.log` |
+| 客人信失敗仍寄店內信 | 第 8 輪腳本只有手冊缺句：結束碼 1，1 項。`isolated-red-preflag-nit1.log`。只換 `355da77` 的腳本、手冊留這輪：結束碼 1，2 項。`isolated-red-preflag-nit1-gs-only.log`。手冊也還沒那句時是 3 項，`isolated-red-preflag-nit1-355da77.log` | `isolated-green-preflag-nit1.log` |
+| 手冊最後一行為準 | 結束碼 1，1 項。`isolated-red-preflag-nit2.log` | `isolated-green-preflag-nit2.log` |
+| 摘要封數 | 結束碼 1，5 項。`isolated-red-preflag-nit3.log` | `isolated-green-preflag-nit3.log` |
+| 第 8 輪兩種紅燈寫進文件 | 結束碼 1，2 項。`isolated-red-preflag-nit4.log` | `isolated-green-preflag-nit4.log` |
+
+全套綠燈：`node tools/test-booking-reconciliation.mjs` 結束碼 0，`isolated-green-recon-preflag.log`。`node tools/test-isolated-e2e.mjs` 結束碼 0，`isolated-green-e2e-preflag.log`。`node tools/test-booking-backend-contract.mjs` 結束碼 0。
+
+決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列用 `values.append`、`RAW`、`INSERT_ROWS`，而且在 LockService 裡面，不看快取最後一列加一。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間、收到時間存試算表序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
+
+固定 commit、raw 連結和 SHA-256 由下一個 commit 寫上，指回含這支 `.gs` 的 commit。`IsolatedCheck.html` 這輪沒改。
+
+## 第 8 輪原文
+
 # 隔離驗證（第 8 輪，錯誤訊息）
 
 要貼進 Apps Script 的程式停在 commit `6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb`。這份報告是下一個 commit，連結指回那個 SHA。不要再貼 `d14798a`。2026-10-18 16:02（台北）Owner 用 `355da77` 重跑，8 個案例全部通過。16:07 已部署成私人網頁應用程式：版本 1，存取只有自己。已部署的是 355da77；新 commit 只是錯誤訊息和文件的小修，是否重新部署由 Owner 決定。

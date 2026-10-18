@@ -83,8 +83,14 @@ function parseA1(range) {
   const columns = cells.match(/^([A-Z]+):([A-Z]+)$/);
   if (columns) return { name, entire: true };
   const match = cells.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-  if (!match) throw new Error('bad range ' + range);
-  return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+  if (match) return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+  const single = cells.match(/^([A-Z]+)(\d+)$/);
+  if (single) {
+    const row = Number(single[2]);
+    const col = columnIndex(single[1]);
+    return { name, row, col, endRow: row, endCol: col };
+  }
+  throw new Error('bad range ' + range);
 }
 
 function memorySpreadsheet(box) {
@@ -129,6 +135,28 @@ function memorySpreadsheet(box) {
     return {
       name,
       getLastRow() { return cache.length; },
+      appendRaw(matrix, insertRows, mode) {
+        let last = -1;
+        for (let i = 0; i < server.length; i += 1) {
+          const line = server[i] || [];
+          if (line.some((cell) => cell != null && cell !== '')) last = i;
+        }
+        const at = last + 1;
+        for (let r = 0; r < matrix.length; r += 1) {
+          const stored = (matrix[r] || []).map((cell) => {
+            if (mode === 'RAW' && typeof cell === 'number' && Number.isFinite(cell)) return cell;
+            if (mode === 'RAW') return cell == null ? '' : String(cell);
+            return enterLikeSheets(cell);
+          });
+          if (insertRows) {
+            server.splice(at + r, 0, stored.slice());
+            cache.splice(at + r, 0, stored.slice());
+          } else {
+            server[at + r] = stored.slice();
+            cache[at + r] = stored.slice();
+          }
+        }
+      },
       appendRow(row) {
         const copy = row.slice();
         const index = cache.length;
@@ -270,6 +298,7 @@ function loadIsolated(options = {}) {
   box.byId[props.SMC_TEST_SHEET_ID] = marked;
   const sandbox = {
     console,
+    Date,
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(text) {
@@ -353,6 +382,17 @@ function loadIsolated(options = {}) {
             const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
             if (mode === 'RAW') target.setRawValues(values);
             else target.setValues(values);
+          },
+          append(resource, spreadsheetId, range, options) {
+            const mode = options && options.valueInputOption;
+            const insert = options && options.insertDataOption;
+            box.rawWrites.push({ spreadsheetId, range, mode, insert, op: 'append', lockHeld: box.lockHeld });
+            const ss = box.byId[spreadsheetId];
+            if (!ss) throw new Error('spreadsheet not open');
+            const parsed = parseA1(range);
+            const sheet = ss.getSheetByName(parsed.name);
+            if (!sheet) throw new Error('sheet missing');
+            sheet.appendRaw(resource && resource.values ? resource.values : [], insert === 'INSERT_ROWS', mode);
           },
           clear(resource, spreadsheetId, range) {
             const ss = box.byId[spreadsheetId];
@@ -549,13 +589,27 @@ function sheetRows(isolated, name) {
   return sheet ? sheet.rows() : [];
 }
 
+function displayStored(header, value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const epoch = Date.UTC(1899, 11, 30);
+    if (header === '日期') return new Date(Math.round(epoch + value * 86400000)).toISOString().slice(0, 10);
+    if (header === '收到時間') return new Date(Math.round(epoch + value * 86400000)).toISOString();
+    if (header === '時間') {
+      const minutes = Math.round(value * 1440);
+      return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+    }
+  }
+  return String(value);
+}
+
 function rowById(isolated, id) {
   const rows = sheetRows(isolated, '訂單');
   if (!rows.length) return null;
   const found = rows.slice(1).find((row) => row[0] === id);
   if (!found) return null;
   const out = {};
-  rows[0].forEach((key, index) => { out[key] = found[index] == null ? '' : String(found[index]); });
+  rows[0].forEach((key, index) => { out[key] = displayStored(key, found[index]); });
   return out;
 }
 
@@ -836,7 +890,7 @@ function privateEntryAndFormula() {
   assert(runbook.includes('不可以重新整理後重送'), '結果未知時不可以重新整理後重送');
   assert(!runbook.includes('ALLOWED_DEPLOYMENT_IDS'), 'Owner 文件不要再教加入 guard 白名單');
   const confirmSrc = gs.slice(gs.indexOf('function confirmOrderRow_'), gs.indexOf('function acceptBooking_'));
-  assert(confirmSrc.includes('actual !== want') && confirmSrc.includes("formula !== ''") && !confirmSrc.includes('replace('), '讀回要比對原值字串，而且 getFormula 必須為空');
+  assert(confirmSrc.includes('sameStored_') && confirmSrc.includes("formula !== ''") && !confirmSrc.includes('replace('), '讀回要比對原值，數字和日期用序號，而且 getFormula 必須為空');
   assert(gs.includes("valueInputOption: 'RAW'") && gs.includes('Sheets.Spreadsheets.Values.update'), '寫入要用 Sheets API 的 RAW，不可再靠 setRichTextValue');
   assert(gs.includes('舊寫法'), '檔頭要註明前導單引號那句是舊寫法');
   assert(gs.includes('Sheets.Spreadsheets.Values.clear') && gs.includes('Sheets.Spreadsheets.Values.get'), '報告分頁要用 API 清除，最後再用 API 讀回');
@@ -955,7 +1009,7 @@ function roundSevenReadback() {
   const probeBoom = loadIsolated({ sheetId: 'probe-boom-sheet' });
   probeBoom.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
   const probeMsg = String(probeBoom.sandbox.runIsolatedEightCases());
-  assert(probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('已經寄出 12 封信'), '公式核對寫入失敗要寫明停在哪一步，以及已經寄出幾封信');
+  assert(probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('確認寄出 12 封'), '公式核對寫入失敗要寫明停在哪一步，以及確認寄出幾封');
   const trail = loadIsolated({ sheetId: 'trail-sheet' });
   const trailBook = trail.box.byId['trail-sheet'];
   trailBook.id = 'trail-sheet';
@@ -1011,8 +1065,8 @@ function roundEightMessages() {
   partialCount.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
   const partialCountMsg = String(partialCount.sandbox.runIsolatedEightCases());
   assert(partialCount.box.mails.length === 11, '案例 1–5 各兩封，加上案例 6 的客人信，實際成功 11 封');
-  assert(partialCountMsg.includes('已經寄出 11 封信') && !partialCountMsg.includes('已經寄出 10 封信'), '部分寄信要算已確認成功的 11 封');
-  assert(partialCountMsg.includes('另有 1 封沒有寄出') && partialCountMsg.includes('不要補寄'), '沒寄出的那封要另外標示，而且不要補寄');
+  assert(partialCountMsg.includes('確認寄出 11 封') && !partialCountMsg.includes('確認寄出 10 封'), '部分寄信要算已確認成功的 11 封');
+  assert(partialCountMsg.includes('未確認寄出 1 封') && partialCountMsg.includes('不要補寄') && !partialCountMsg.includes('沒有寄出'), '丟錯的那封要標成未確認寄出，而且不要補寄');
   const alertLogs = [];
   const alertRun = loadIsolated({ sheetId: 'alert-run-sheet' });
   alertRun.sandbox.console = { log(...args) { alertLogs.push(args.map((item) => String(item)).join(' ')); } };

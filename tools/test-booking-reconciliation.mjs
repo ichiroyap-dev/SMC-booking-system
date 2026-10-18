@@ -116,8 +116,14 @@ function parseA1(range) {
   const columns = cells.match(/^([A-Z]+):([A-Z]+)$/);
   if (columns) return { name, entire: true };
   const match = cells.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-  if (!match) throw new Error('bad range ' + range);
-  return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+  if (match) return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+  const single = cells.match(/^([A-Z]+)(\d+)$/);
+  if (single) {
+    const row = Number(single[2]);
+    const col = columnIndex(single[1]);
+    return { name, row, col, endRow: row, endCol: col };
+  }
+  throw new Error('bad range ' + range);
 }
 
 function memorySpreadsheet(options = {}) {
@@ -161,6 +167,28 @@ function memorySpreadsheet(options = {}) {
     }
     return {
       getLastRow() { return cache.length; },
+      appendRaw(matrix, insertRows, mode) {
+        let last = -1;
+        for (let i = 0; i < server.length; i += 1) {
+          const line = server[i] || [];
+          if (line.some((cell) => cell != null && cell !== '')) last = i;
+        }
+        const at = last + 1;
+        for (let r = 0; r < matrix.length; r += 1) {
+          const stored = (matrix[r] || []).map((cell) => {
+            if (mode === 'RAW' && typeof cell === 'number' && Number.isFinite(cell)) return cell;
+            if (mode === 'RAW') return cell == null ? '' : String(cell);
+            return enterLikeSheets(cell);
+          });
+          if (insertRows) {
+            server.splice(at + r, 0, stored.slice());
+            cache.splice(at + r, 0, stored.slice());
+          } else {
+            server[at + r] = stored.slice();
+            cache[at + r] = stored.slice();
+          }
+        }
+      },
       appendRow(row) {
         const copy = row.slice();
         const index = cache.length;
@@ -260,6 +288,7 @@ function memorySpreadsheet(options = {}) {
 function loadIsolated(options = {}) {
   const sandbox = {
     console,
+    Date,
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(text) {
@@ -365,6 +394,17 @@ function loadIsolated(options = {}) {
           if (mode === 'RAW') target.setRawValues(values);
           else target.setValues(values);
         },
+        append(resource, spreadsheetId, range, options) {
+          const mode = options && options.valueInputOption;
+          const insert = options && options.insertDataOption;
+          box.rawWrites.push({ spreadsheetId, range, mode, insert, op: 'append', lockHeld: box.lockHeld });
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          sheet.appendRaw(resource && resource.values ? resource.values : [], insert === 'INSERT_ROWS', mode);
+        },
         clear(resource, spreadsheetId, range) {
           const ss = box.byId[spreadsheetId];
           if (!ss) throw new Error('spreadsheet not open');
@@ -460,9 +500,23 @@ function sheetRows(isolated, name) {
   return sheet.rows();
 }
 
+function displayStored(header, value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const epoch = Date.UTC(1899, 11, 30);
+    if (header === '日期') return new Date(Math.round(epoch + value * 86400000)).toISOString().slice(0, 10);
+    if (header === '收到時間') return new Date(Math.round(epoch + value * 86400000)).toISOString();
+    if (header === '時間') {
+      const minutes = Math.round(value * 1440);
+      return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+    }
+  }
+  return String(value);
+}
+
 function asMap(headers, row) {
   const out = {};
-  headers.forEach((key, index) => { out[key] = row[index] == null ? '' : String(row[index]); });
+  headers.forEach((key, index) => { out[key] = displayStored(key, row[index]); });
   return out;
 }
 
@@ -1154,7 +1208,7 @@ assert(mismatchMsg.includes('結果未知') && mismatchMsg.includes('實際：ta
 const probeBoom = loadIsolated();
 probeBoom.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
 const probeMsg = String(probeBoom.sandbox.runIsolatedEightCases());
-assert(probeMsg.includes('結果未知') && probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('已經寄出 12 封信'), '公式核對寫入失敗要寫明停在哪一步，以及已經寄出幾封信');
+assert(probeMsg.includes('結果未知') && probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('確認寄出 12 封'), '公式核對寫入失敗要寫明停在哪一步，以及確認寄出幾封');
 assert(probeBoom.box.mails.length === 12, '停在案例 6 時已經寄出 12 封');
 assert(!sheetRows(probeBoom, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對寫入失敗後不可繼續案例 7');
 
@@ -1223,9 +1277,9 @@ partialCount.sandbox.MailApp.sendEmail = function (to, subject, body) {
 partialCount.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
 const partialCountMsg = String(partialCount.sandbox.runIsolatedEightCases());
 assert(partialCount.box.mails.length === 11, '案例 1–5 各兩封，加上案例 6 的客人信，實際成功 11 封');
-assert(partialCountMsg.includes('已經寄出 11 封信'), '部分寄信要算已確認成功的 11 封，不可寫成 10');
-assert(partialCountMsg.includes('另有 1 封沒有寄出') && partialCountMsg.includes('不要補寄'), '沒寄出的那封要另外標示，而且不要補寄');
-assert(!partialCountMsg.includes('已經寄出 10 封信'), '部分成功不可寫成已經寄出 10 封信');
+assert(partialCountMsg.includes('確認寄出 11 封'), '部分寄信要算已確認成功的 11 封，不可寫成 10');
+assert(partialCountMsg.includes('未確認寄出 1 封') && partialCountMsg.includes('不要補寄'), '丟錯的那封要標成未確認寄出，而且不要補寄');
+assert(!partialCountMsg.includes('確認寄出 10 封') && !partialCountMsg.includes('沒有寄出'), '不可寫成 10 封，也不可保證沒有寄出');
 
 const alertLogs = [];
 const alertRun = loadIsolated();
