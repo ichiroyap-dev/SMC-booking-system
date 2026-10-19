@@ -113,6 +113,47 @@ function gitHead() {
   }
 }
 
+function assertSupportedRuntime() {
+  if (process.platform !== 'linux') {
+    throw new Error('This harness is Linux/cloud-agent only. Refusing to start.');
+  }
+  const major = Number(String(process.versions.node || '0').split('.')[0]);
+  if (major < 22 || typeof WebSocket !== 'function') {
+    throw new Error('Node 22+ with a global WebSocket is required. Refusing to start Chrome. This harness is Linux/cloud-agent only.');
+  }
+}
+
+function chromeBinary() {
+  return process.env.CHROME_PATH || '/usr/local/bin/google-chrome';
+}
+
+function assertChromePresent() {
+  const bin = chromeBinary();
+  if (!existsSync(bin)) throw new Error(`Chrome is required but was not found at ${bin}`);
+  return bin;
+}
+
+function killTree(pid) {
+  if (!pid) return;
+  try { process.kill(-pid, 'SIGKILL'); } catch { /* already gone, or not a process group */ }
+  try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+}
+
+function readPidFile(id = runId()) {
+  const file = join(dirs(id).stateDir, 'pids.json');
+  if (!existsSync(file)) return {};
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function killRecordedChrome() {
+  const pids = readPidFile();
+  if (pids.chromePid) killTree(pids.chromePid);
+}
+
 function sleep(ms) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
 }
@@ -228,7 +269,9 @@ class Cdp {
         return;
       }
       if (msg.method) {
-        for (const handler of this.listeners.get(msg.method) || []) handler(msg.params || {});
+        const params = msg.params || {};
+        if (msg.sessionId && params.sessionId == null) params.sessionId = msg.sessionId;
+        for (const handler of this.listeners.get(msg.method) || []) handler(params);
       }
     });
   }
@@ -239,13 +282,14 @@ class Cdp {
     this.listeners.set(method, list);
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, sessionId) {
     return new Promise((resolvePromise, reject) => {
       const id = this.nextId;
       this.nextId += 1;
       this.pending.set(id, { resolve: resolvePromise, reject });
-      const payload = JSON.stringify({ id, method, params });
-      this.open.then(() => this.ws.send(payload)).catch(reject);
+      const message = { id, method, params };
+      if (sessionId) message.sessionId = sessionId;
+      this.open.then(() => this.ws.send(JSON.stringify(message))).catch(reject);
     });
   }
 
@@ -255,6 +299,7 @@ class Cdp {
 }
 
 async function daemon() {
+  assertSupportedRuntime();
   const id = runId();
   const { stateDir, evidenceDir } = dirs(id);
   mkdirSync(stateDir, { recursive: true });
@@ -288,9 +333,20 @@ async function daemon() {
   const siteUrl = `http://127.0.0.1:${sitePort}/`;
   log(`site ${siteUrl}`);
 
-  const chromeBin = process.env.CHROME_PATH || '/usr/local/bin/google-chrome';
+  const chromeBin = assertChromePresent();
   const userDataDir = join(stateDir, 'chrome-profile');
   mkdirSync(userDataDir, { recursive: true });
+  const blockedHostRules = [
+    'script.google.com',
+    'script.googleusercontent.com',
+    'docs.google.com',
+    'sheets.google.com',
+    'sheets.googleapis.com',
+    'line.me',
+    'www.line.me',
+    'line-apps.com',
+    'line.naver.jp',
+  ].map((host) => `MAP ${host} 127.0.0.1`).join(', ');
   const chrome = spawn(chromeBin, [
     '--headless=new',
     '--disable-gpu',
@@ -301,10 +357,15 @@ async function daemon() {
     '--no-first-run',
     '--metrics-recording-only',
     '--remote-debugging-port=0',
+    `--host-resolver-rules=${blockedHostRules}`,
     `--user-data-dir=${userDataDir}`,
     '--window-size=1280,900',
     'about:blank',
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  writeFileSync(join(stateDir, 'pids.json'), JSON.stringify({
+    daemonPid: process.pid,
+    chromePid: chrome.pid,
+  }));
   const debugPort = await new Promise((resolvePromise, reject) => {
     const timer = setTimeout(() => reject(new Error('chrome debug port timeout')), 15000);
     const onData = (buf) => {
@@ -346,6 +407,51 @@ async function daemon() {
     } else {
       cdp.send('Fetch.failRequest', { requestId: params.requestId, errorReason: 'BlockedByClient' }).catch((err) => log(`block ${err.message}`));
     }
+  });
+
+  const version = await fetch(`http://127.0.0.1:${debugPort}/json/version`).then((res) => res.json());
+  const browserCdp = new Cdp(version.webSocketDebuggerUrl);
+  await browserCdp.open;
+  const mainTargetId = page.id;
+  browserCdp.on('Target.attachedToTarget', (params) => {
+    const info = params.targetInfo || {};
+    const sessionId = params.sessionId;
+    if (info.type === 'page' && info.targetId && info.targetId !== mainTargetId) {
+      record({
+        method: 'GET',
+        url: info.url || 'about:blank',
+        host: hostOf(info.url || 'about:blank'),
+        decision: 'blocked',
+        reason: 'extra-target',
+      });
+      if (sessionId) {
+        browserCdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, sessionId)
+          .catch((err) => log(`extra fetch ${err.message}`));
+      }
+      browserCdp.send('Target.closeTarget', { targetId: info.targetId }).catch((err) => log(`close target ${err.message}`));
+      return;
+    }
+    if (params.waitingForDebugger && sessionId) {
+      browserCdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch((err) => log(`resume ${err.message}`));
+    }
+  });
+  browserCdp.on('Fetch.requestPaused', (params) => {
+    const url = params.request?.url || '';
+    const method = params.request?.method || 'GET';
+    const choice = decisionFor(url, method);
+    record({ method, url, host: hostOf(url), resourceType: params.resourceType || '', ...choice, session: 'extra' });
+    browserCdp.send('Fetch.failRequest', {
+      requestId: params.requestId,
+      errorReason: 'BlockedByClient',
+    }, params.sessionId).catch((err) => log(`extra block ${err.message}`));
+  });
+  await browserCdp.send('Target.setAutoAttach', {
+    autoAttach: true,
+    waitForDebuggerOnStart: true,
+    flatten: true,
+  });
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `window.__shuimeiVerify=${JSON.stringify(token)};`,
   });
 
   async function evaluate(expression) {
@@ -648,6 +754,11 @@ async function daemon() {
       writeFileSync(file, Buffer.from(shot.data, 'base64'));
       return { path: file, bytes: statSync(file).size, width, height };
     }
+    if (body.op === 'selftest-post') {
+      const url = 'https://script.google.com/macros/s/SHUIMEI-VERIFY-SELFTEST-DO-NOT-ROUTE/exec';
+      const probe = await evaluate(`fetch(${JSON.stringify(url)}, { method: 'POST', body: '{}', signal: AbortSignal.timeout(3000) }).then(() => 'continued').catch(() => 'blocked')`);
+      return { probe, url };
+    }
     if (body.op === 'network') {
       const summary = summarizeNetwork(networkLog);
       if (body.expectNoBooking && summary.bookingAttempts.length) {
@@ -689,6 +800,7 @@ async function daemon() {
       site.close();
       control.close();
       cdp.close();
+      try { browserCdp.close(); } catch { /* browser socket may already be closed */ }
       process.exit(0);
     }, 300);
   };
@@ -700,7 +812,10 @@ async function daemon() {
 }
 
 function summarizeNetwork(file) {
-  const lines = existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
+  if (!existsSync(file)) throw new Error('insufficient evidence: network log is missing');
+  const raw = readFileSync(file, 'utf8');
+  const lines = raw.split('\n').filter((line) => line.trim() !== '');
+  if (!lines.length) throw new Error('insufficient evidence: network log is empty');
   const hosts = new Set();
   const blocked = [];
   const bookingAttempts = [];
@@ -708,7 +823,11 @@ function summarizeNetwork(file) {
   let continuedMutations = 0;
   for (const line of lines) {
     let row;
-    try { row = JSON.parse(line); } catch { continue; }
+    try {
+      row = JSON.parse(line);
+    } catch {
+      throw new Error('insufficient evidence: network log is unparseable');
+    }
     if (row.host) hosts.add(row.host);
     if (row.decision === 'continue') continued += 1;
     if (row.decision === 'blocked') blocked.push(`${row.reason} ${row.method} ${row.url}`);
@@ -727,23 +846,33 @@ function summarizeNetwork(file) {
   };
 }
 
-async function waitForState() {
+function daemonTail(id) {
+  const logFile = join(dirs(id).stateDir, 'daemon.log');
+  return existsSync(logFile) ? readFileSync(logFile, 'utf8').split('\n').slice(-30).join('\n') : 'no daemon log';
+}
+
+async function waitForState(child) {
   const id = runId();
   const file = statePath(id);
   const started = Date.now();
+  let exitCode = null;
+  if (child) child.once('exit', (code) => { exitCode = code ?? 0; });
   while (Date.now() - started < 25000) {
+    if (exitCode != null) {
+      throw new Error(`daemon exited ${exitCode} before ready\n${daemonTail(id)}`);
+    }
     if (existsSync(file)) {
       const state = JSON.parse(readFileSync(file, 'utf8'));
       if (state.ready && alive(state.pid)) return state;
     }
     await sleep(200);
   }
-  const logFile = join(dirs(id).stateDir, 'daemon.log');
-  const tail = existsSync(logFile) ? readFileSync(logFile, 'utf8').split('\n').slice(-30).join('\n') : 'no daemon log';
-  throw new Error(`launch timed out\n${tail}`);
+  throw new Error(`launch timed out\n${daemonTail(id)}`);
 }
 
 async function launch() {
+  assertSupportedRuntime();
+  assertChromePresent();
   const id = runId();
   const existing = readState();
   if (existing && alive(existing.pid)) {
@@ -759,9 +888,15 @@ async function launch() {
     stdio: 'ignore',
     env: { ...process.env, SHUIMEI_RUN_ID: id },
   });
-  child.unref();
-  const state = await waitForState();
-  console.log(`ready url=${state.siteUrl} run=${state.runId} evidence=${state.evidenceDir} pid=${state.pid} styled=${state.styled}`);
+  try {
+    const state = await waitForState(child);
+    child.unref();
+    console.log(`ready url=${state.siteUrl} run=${state.runId} evidence=${state.evidenceDir} pid=${state.pid} head=${state.head} styled=${state.styled}`);
+  } catch (err) {
+    killTree(child.pid);
+    killRecordedChrome();
+    throw err;
+  }
 }
 
 async function doctor() {
@@ -825,33 +960,48 @@ async function network(args) {
   return controlRequest(state, 'network', { expectNoBooking: Boolean(args['expect-no-booking']) });
 }
 
+async function selftest() {
+  const state = readState();
+  if (!state || !alive(state.pid)) throw new Error('no verification instance. Run launch first.');
+  const probe = await controlRequest(state, 'selftest-post');
+  if (probe.probe !== 'blocked') {
+    throw new Error(`safety net is broken: probe POST was ${probe.probe || 'unknown'}, not blocked`);
+  }
+  let failedAsRequired = false;
+  let message = '';
+  try {
+    await controlRequest(state, 'network', { expectNoBooking: true });
+  } catch (err) {
+    failedAsRequired = true;
+    message = err.message;
+  }
+  if (!failedAsRequired || !/script\.google\.com|booking host was touched/.test(message)) {
+    throw new Error(`safety net is broken: network --expect-no-booking stayed clean (${message || 'no error'})`);
+  }
+  console.log(JSON.stringify({
+    ok: true,
+    head: gitHead(),
+    expectNoBooking: 'failed-as-required',
+    message,
+    probe: probe.url,
+  }, null, 2));
+}
+
 async function cleanup() {
   const id = runId();
   const state = readState();
+  const pids = readPidFile(id);
   const evidenceDir = state?.evidenceDir || dirs(id).evidenceDir;
-  if (state) {
-    if (alive(state.chromePid)) {
-      try { process.kill(state.chromePid, 'SIGTERM'); } catch { /* already gone */ }
-    }
-    if (alive(state.pid)) {
-      try { process.kill(state.pid, 'SIGTERM'); } catch { /* already gone */ }
-    }
-    const started = Date.now();
-    while (Date.now() - started < 3000 && (alive(state.pid) || alive(state.chromePid))) {
-      await sleep(100);
-    }
-    if (alive(state.chromePid)) {
-      try { process.kill(state.chromePid, 'SIGKILL'); } catch { /* already gone */ }
-    }
-    if (alive(state.pid)) {
-      try { process.kill(state.pid, 'SIGKILL'); } catch { /* already gone */ }
-    }
-  }
+  const daemonPid = state?.pid || pids.daemonPid;
+  const chromePid = state?.chromePid || pids.chromePid;
+  if (daemonPid) killTree(daemonPid);
+  if (chromePid) killTree(chromePid);
   rmSync(dirs(id).stateDir, { recursive: true, force: true });
   console.log(`cleaned run=${id} evidence retained at ${evidenceDir}`);
 }
 
 async function main() {
+  assertSupportedRuntime();
   const args = parseArgs(process.argv.slice(2));
   const command = args._[0];
   if (command === 'daemon') return daemon();
@@ -867,12 +1017,14 @@ async function main() {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
+  if (command === 'selftest') return selftest();
   if (command === 'cleanup') return cleanup();
-  console.error('usage: control-shuimei.mjs launch|doctor|browser|network|cleanup');
+  console.error('usage: control-shuimei.mjs launch|doctor|browser|network|selftest|cleanup');
   process.exit(2);
 }
 
 main().catch((err) => {
+  if (process.argv[2] === 'daemon') killRecordedChrome();
   try {
     appendFileSync(join(dirs().stateDir, 'daemon.log'), `fatal ${err.stack || err.message}\n`);
   } catch {

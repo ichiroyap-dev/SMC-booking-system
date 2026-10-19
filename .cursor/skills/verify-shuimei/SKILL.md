@@ -7,7 +7,9 @@ description: "Drive the 水美土雞城 public booking site in a local browser a
 
 這份技能給下一個代理用。官網是靜態頁（`index.html`、`faq.html`），沒有套件腳本、沒有資料庫。客人看到的是首頁預約表單與常見問題。正式寫入 Google 試算表的 Apps Script 不在這個 repo。驗證只開本機靜態站與隔離的 headless Chrome，不連正式表、不寄信、不發 LINE。
 
-同一 `SHUIMEI_RUN_ID` 不能開兩份。要並行就各用一個 id；每個 id 有自己的連接埠、Chrome 設定檔與證據目錄。不要去開別人已經在用的那份。
+只支援 Linux／cloud agent。需要 Node 22+（全域 `WebSocket`）與 Chrome（預設 `/usr/local/bin/google-chrome`，可用 `CHROME_PATH`）。少一樣就立刻失敗，不會先去開 Chrome。
+
+同一 `SHUIMEI_RUN_ID` 不能開兩份。要並行就各用一個 id；每個 id 有自己的連接埠、Chrome 設定檔與證據目錄。不要去開別人已經在用的那份。新分頁與新視窗會在腳本執行前被關掉，攔截只掛在這次的主分頁上。
 
 ## Launch
 
@@ -35,9 +37,9 @@ SHUIMEI_RUN_ID=local node .cursor/skills/verify-shuimei/scripts/control-shuimei.
 
 - supervisor 與這次啟動的 Chrome pid 都還在。
 - `http://127.0.0.1:<port>/` 的 `X-Shuimei-Verify` 是 `<runId>:<pid>`，內文含「水美土雞城」與 `id="bookingForm"`。
-- Chrome 目前網址屬於這次的 site URL，而且頁面上的驗證記號與 state 一致。
-- 啟動時記下的 git HEAD 等於現在的 `HEAD`。不一致就 cleanup 再 launch。
-- `network.jsonl` 裡沒有任何預約主機（`script.google.com`、`script.googleusercontent.com`、`docs.google.com`、`sheets.google.com`、`sheets.googleapis.com`、`line.me`、`line-apps.com`），也沒有被放行的 POST／PUT／PATCH／DELETE。
+- Chrome 目前網址屬於這次的 site URL，而且頁面上的驗證記號與 state 一致。記號用 `Page.addScriptToEvaluateOnNewDocument` 掛上，站內換頁（例如點「常見問題」）之後仍然在。
+- 啟動時記下的 git HEAD 等於現在的 `HEAD`。不一致就 cleanup 再 launch。doctor 印出的 `head` 必須就是這次 commit。
+- `network.jsonl` 存在、每一行都是 JSON，而且沒有任何預約主機（`script.google.com`、`script.googleusercontent.com`、`docs.google.com`、`sheets.google.com`、`sheets.googleapis.com`、`line.me`、`line-apps.com`），也沒有被放行的 POST／PUT／PATCH／DELETE。檔案不見、是空的、或有一行解析失敗時，doctor 與 `network` 都要非 0 結束並印出 `insufficient evidence`。不可以當成乾淨。
 
 doctor 退出碼 0 才可以往下操作。
 
@@ -118,8 +120,9 @@ Helper 是 `.cursor/skills/verify-shuimei/scripts/control-shuimei.mjs`。在 rep
 | `browser scroll --selector <css>` | 把元素捲到畫面中間 |
 | `browser snapshot --aria --path <file>` | 把無障礙樹寫進證據目錄 |
 | `browser screenshot --path <file>` | 把頁面截圖寫進證據目錄 |
-| `network --expect-no-booking` | 印出主機統計；有預約主機就失敗 |
-| `cleanup` | 只收這次的程序與設定檔，保留證據 |
+| `network --expect-no-booking` | 印出主機統計；有預約主機，或日誌不能當證據，就失敗 |
+| `selftest` | 送一筆只會被擋下的測試 POST 到 `script.google.com` 的假路徑，並要求 `network --expect-no-booking` 失敗。安全網是好的時，這個指令結束碼是 0。跑完日誌就不再是乾淨的，要 cleanup 再 launch 才能做 UI 證明 |
+| `cleanup` | 只收這次的程序與設定檔，包含啟動失敗時寫下的 Chrome pid。保留證據 |
 
 環境變數只有 `SHUIMEI_RUN_ID`（預設 `local`）與選用的 `CHROME_PATH`（預設 `/usr/local/bin/google-chrome`）。不要加 API 金鑰。
 
