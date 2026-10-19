@@ -336,17 +336,9 @@ async function daemon() {
   const chromeBin = assertChromePresent();
   const userDataDir = join(stateDir, 'chrome-profile');
   mkdirSync(userDataDir, { recursive: true });
-  const blockedHostRules = [
-    'script.google.com',
-    'script.googleusercontent.com',
-    'docs.google.com',
-    'sheets.google.com',
-    'sheets.googleapis.com',
-    'line.me',
-    'www.line.me',
-    'line-apps.com',
-    'line.naver.jp',
-  ].map((host) => `MAP ${host} 127.0.0.1`).join(', ');
+  const blockedHostRules = BOOKING_HOSTS
+    .flatMap((host) => [`MAP ${host} 127.0.0.1`, `MAP *.${host} 127.0.0.1`])
+    .join(', ');
   const chrome = spawn(chromeBin, [
     '--headless=new',
     '--disable-gpu',
@@ -429,6 +421,15 @@ async function daemon() {
           .catch((err) => log(`extra fetch ${err.message}`));
       }
       browserCdp.send('Target.closeTarget', { targetId: info.targetId }).catch((err) => log(`close target ${err.message}`));
+      return;
+    }
+    if ((info.type === 'worker' || info.type === 'service_worker') && sessionId) {
+      const resume = () => {
+        if (!params.waitingForDebugger) return;
+        browserCdp.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch((err) => log(`resume ${err.message}`));
+      };
+      browserCdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, sessionId)
+        .then(resume, (err) => { log(`worker fetch ${err.message}`); resume(); });
       return;
     }
     if (params.waitingForDebugger && sessionId) {
@@ -755,9 +756,11 @@ async function daemon() {
       return { path: file, bytes: statSync(file).size, width, height };
     }
     if (body.op === 'selftest-post') {
-      const url = 'https://script.google.com/macros/s/SHUIMEI-VERIFY-SELFTEST-DO-NOT-ROUTE/exec';
-      const probe = await evaluate(`fetch(${JSON.stringify(url)}, { method: 'POST', body: '{}', signal: AbortSignal.timeout(3000) }).then(() => 'continued').catch(() => 'blocked')`);
-      return { probe, url };
+      const nonce = String(body.nonce || '');
+      if (!/^[a-f0-9]{16}$/.test(nonce)) throw new Error('selftest nonce is missing');
+      const url = `https://script.google.com/macros/s/SHUIMEI-VERIFY-SELFTEST-${nonce}/exec`;
+      const fetchResult = await evaluate(`fetch(${JSON.stringify(url)}, { method: 'POST', body: '{}', signal: AbortSignal.timeout(3000) }).then((res) => 'completed ' + res.status).catch((err) => 'fetch-error ' + (err && err.name ? err.name : 'Error'))`);
+      return { fetchResult, url, nonce };
     }
     if (body.op === 'network') {
       const summary = summarizeNetwork(networkLog);
@@ -963,9 +966,19 @@ async function network(args) {
 async function selftest() {
   const state = readState();
   if (!state || !alive(state.pid)) throw new Error('no verification instance. Run launch first.');
-  const probe = await controlRequest(state, 'selftest-post');
-  if (probe.probe !== 'blocked') {
-    throw new Error(`safety net is broken: probe POST was ${probe.probe || 'unknown'}, not blocked`);
+  const nonce = randomBytes(8).toString('hex');
+  const probe = await controlRequest(state, 'selftest-post', { nonce });
+  const logFile = join(state.evidenceDir, 'network.jsonl');
+  const summary = summarizeNetwork(logFile);
+  const rows = readFileSync(logFile, 'utf8').split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line));
+  const mine = rows.filter((row) => String(row.url || '').includes(nonce));
+  const blockedPost = mine.find((row) => String(row.method || '').toUpperCase() === 'POST' && row.decision === 'blocked');
+  if (!blockedPost) {
+    const seen = mine.map((row) => `${row.method || '?'} ${row.decision || 'missing'}`).join(', ') || 'no row';
+    throw new Error(`safety net is broken: probe POST row was ${seen}, not POST blocked`);
+  }
+  if (summary.continuedMutations !== 0) {
+    throw new Error(`safety net is broken: continuedMutations is ${summary.continuedMutations}, not 0`);
   }
   let failedAsRequired = false;
   let message = '';
@@ -982,6 +995,9 @@ async function selftest() {
     ok: true,
     head: gitHead(),
     expectNoBooking: 'failed-as-required',
+    continuedMutations: summary.continuedMutations,
+    probeDecision: blockedPost.decision,
+    fetchResult: probe.fetchResult,
     message,
     probe: probe.url,
   }, null, 2));
@@ -1001,9 +1017,9 @@ async function cleanup() {
 }
 
 async function main() {
-  assertSupportedRuntime();
   const args = parseArgs(process.argv.slice(2));
   const command = args._[0];
+  if (command !== 'cleanup') assertSupportedRuntime();
   if (command === 'daemon') return daemon();
   if (command === 'launch') return launch();
   if (command === 'doctor') return doctor();

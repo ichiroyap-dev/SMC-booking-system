@@ -121,7 +121,7 @@ Helper 是 `.cursor/skills/verify-shuimei/scripts/control-shuimei.mjs`。在 rep
 | `browser snapshot --aria --path <file>` | 把無障礙樹寫進證據目錄 |
 | `browser screenshot --path <file>` | 把頁面截圖寫進證據目錄 |
 | `network --expect-no-booking` | 印出主機統計；有預約主機，或日誌不能當證據，就失敗 |
-| `selftest` | 送一筆只會被擋下的測試 POST 到 `script.google.com` 的假路徑，並要求 `network --expect-no-booking` 失敗。安全網是好的時，這個指令結束碼是 0。跑完日誌就不再是乾淨的，要 cleanup 再 launch 才能做 UI 證明 |
+| `selftest` | 送一筆帶本次 nonce 的測試 POST 到 `script.google.com` 的假路徑。判定只看 `network.jsonl` 裡這一筆：method 是 POST、decision 是 blocked，而且 continuedMutations 是 0。連線失敗本身不算擋下。另外仍要求 `network --expect-no-booking` 失敗。日誌缺失或無法解析是證據不足，結束碼 1。安全網是好的時結束碼是 0。跑完日誌就不再是乾淨的，要 cleanup 再 launch 才能做 UI 證明 |
 | `cleanup` | 只收這次的程序與設定檔，包含啟動失敗時寫下的 Chrome pid。保留證據 |
 
 環境變數只有 `SHUIMEI_RUN_ID`（預設 `local`）與選用的 `CHROME_PATH`（預設 `/usr/local/bin/google-chrome`）。不要加 API 金鑰。
