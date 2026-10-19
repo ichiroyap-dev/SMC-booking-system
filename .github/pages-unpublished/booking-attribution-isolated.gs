@@ -1,5 +1,5 @@
 /**
- * 隔離測試用。必須貼在新建的獨立試算表專案，不要貼進任何既有專案。
+ * 隔離測試用。只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。
  * 這支沒有 doPost，只有 doGet。誤貼進正式專案會蓋掉同名入口，所以不要貼。
  * 不要部署成正式 web app，不要寫正式試算表。
  *
@@ -12,7 +12,14 @@
  * 寫入後先 flush，再讀回同一列。讀回值要等於原值字串，而且 getFormula 為空。
  * 對不上或讀不回來就停下：回結果未知（寫明欄位、原值、讀回值）、不寄信、請核對原列，不要重送。
  * 舊寫法：前導單引號不會被 Sheets 存進格子。setValues 會把 = 算掉。setRichTextValue 會把 + 開頭改成文字 =+。
- * 寫入改走 Sheets API values.update，valueInputOption 必須是 RAW。RAW 不解析，原樣儲存。
+ * 資料列在鎖內用 values.get 讀整張分頁的公式（valueRenderOption=FORMULA），不設 A:ZZ 上限。
+ * 再用 values.update 的 RAW 寫到最後一筆有值的下一列。="" 這類公式也算有資料。
+ * updatedRange 要對上分頁、正好那一列、欄從 A 到這列最後一欄。只對到列號不夠。
+ * 記錄裡的 tableRange 是推算，不是 API 回傳的 tableRange。
+ * 不看試算表快取的最後一列，也不用 A1 的 append。中段空白下方的資料仍算在表尾。
+ * 自由文字、電話、來源是 RAW 文字。人數、桌數是數字。日期、時間、收到時間是試算表序號。
+ * 電話保留開頭的 0。姓名、備註開頭的單引號不刪，客人可能真的打了。
+ * 報告分頁仍用 values.update 的 RAW，以及 values.clear。
  * 使用前要在編輯器左側「服務」加入 Google Sheets API。不必另外手改 appsscript.json。
  * 確認成功並放開鎖之後才寄信。兩封信的收件人都固定為 SMC_SHOP_EMAIL，不採用 payload 的 email。
  * 網頁驗收用 doGet 的 HtmlService 頁 IsolatedCheck，由 google.script.run 呼叫 submitIsolatedFromPage。
@@ -27,6 +34,10 @@
  * 對不上就不會寫入任何訂單、也不會寄信。腳本不會自動幫你做出這個標記。
  *
  * 編輯器選 runIsolatedEightCases 後按執行，或在綁定的試算表選單「隔離測試」送出 8 筆。
+ * 這些入口只記執行紀錄，設計上沒有彈窗。結果以執行紀錄的摘要為準，不要等彈窗。
+ * 表尾三筆只用編輯器入口 runIsolatedOneBooking201／202／203，每次只送一筆固定編號。
+ * 帶編號的 helper 是私有函式，網頁呼叫不到（google.script.run 不能呼叫尾綴 _ 的函式）。
+ * 編輯器只選 runIsolatedOneBooking201／202／203。沒有新的 doGet／doPost，也不要為了這三筆重新部署。
  * 這個檔在 .github/pages-unpublished/booking-attribution-isolated.gs。
  * 目前的建置方式不會公開 .github，請從 repo 複製，不要從官網網址下載。
  * 換建置流程或 upload-pages-artifact 換版本後，要再確認這個目錄沒有被公開。
@@ -73,6 +84,98 @@ function bookingText_(value) {
   if (typeof value === 'string') return formulaGuard_(value);
   if (typeof value === 'number' && isFinite(value)) return formulaGuard_(String(value));
   return '';
+}
+
+var COLUMN_FORMAT = {
+  '收到時間': 'yyyy-mm-dd hh:mm:ss',
+  '電話': '@',
+  '人數': '0',
+  '桌數': '0',
+  '日期': 'yyyy-mm-dd',
+  '時間': 'hh:mm'
+};
+
+function sheetsEpochMs_() {
+  return Date.UTC(1899, 11, 30);
+}
+
+function serialFromMs_(ms) {
+  return (ms - sheetsEpochMs_()) / 86400000;
+}
+
+function textStore_(value) {
+  return formulaGuard_(value);
+}
+
+function phoneStore_(value) {
+  // 一律文字。保留開頭的 0，也不刪客人打的單引號。
+  return formulaGuard_(value);
+}
+
+function numberStore_(value) {
+  if (typeof value === 'number' && isFinite(value) && Math.floor(value) === value) return value;
+  var text = typeof value === 'string' ? value.trim() : '';
+  if (/^(0|[1-9][0-9]*)$/.test(text)) return Number(text);
+  return formulaGuard_(value);
+}
+
+function dateStore_(value) {
+  var text = typeof value === 'string' ? value.trim() : '';
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return formulaGuard_(value);
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  var ms = Date.UTC(year, month - 1, day);
+  var check = new Date(ms);
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return formulaGuard_(value);
+  return serialFromMs_(ms);
+}
+
+function timeStore_(value) {
+  var text = typeof value === 'string' ? value.trim() : '';
+  var match = /^(\d{2}):(\d{2})$/.exec(text);
+  if (!match) return formulaGuard_(value);
+  var hour = Number(match[1]);
+  var minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return formulaGuard_(value);
+  return (hour * 60 + minute) / 1440;
+}
+
+function spreadsheetZone_(ss) {
+  try {
+    if (ss && ss.getSpreadsheetTimeZone) return String(ss.getSpreadsheetTimeZone() || '');
+  } catch (err) {}
+  return '';
+}
+
+// 序號是試算表時區的牆鐘，不是 UTC 瞬時。2026-10-18T07:00:00Z 在台北是 15:00。
+function wallClockSerial_(ms, timeZone) {
+  if (!timeZone || typeof Utilities === 'undefined' || !Utilities || typeof Utilities.formatDate !== 'function') return null;
+  var text = Utilities.formatDate(new Date(ms), timeZone, 'yyyy-MM-dd HH:mm:ss');
+  var match = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(String(text || ''));
+  if (!match) return null;
+  return serialFromMs_(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])));
+}
+
+function datetimeStore_(value, timeZone) {
+  var text = typeof value === 'string' ? value.trim() : '';
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/.test(text)) return formulaGuard_(value);
+  var ms = Date.parse(text);
+  if (!isFinite(ms)) return formulaGuard_(value);
+  var serial = wallClockSerial_(ms, timeZone);
+  if (serial == null) return formulaGuard_(value);
+  return serial;
+}
+
+function displayCount_(stored, raw) {
+  if (typeof stored === 'number' && isFinite(stored)) return String(stored);
+  return stored == null ? '' : String(stored);
+}
+
+function displayDate_(stored, raw) {
+  if (typeof stored === 'number' && isFinite(stored) && typeof raw === 'string') return raw.trim();
+  return stored == null ? '' : String(stored);
 }
 
 function emptyAttribution_() {
@@ -155,33 +258,38 @@ function shopEmailFor_(booking, attr, orderId, to) {
   };
 }
 
-function buildBookingResult_(payload, orderId, receivedAt, guestTo, shopTo) {
+function buildBookingResult_(payload, orderId, receivedAt, guestTo, shopTo, timeZone) {
+  var peopleStored = numberStore_(payload.people);
+  var tablesStored = numberStore_(payload.tables);
+  var dateStored = dateStore_(payload.date);
+  var timeStored = timeStore_(payload.time);
+  var receivedStored = datetimeStore_(receivedAt || '', timeZone);
   var booking = {
     action: 'book',
     type: payload.type === 'takeout' ? 'takeout' : 'dining',
-    name: bookingText_(payload.name),
-    phone: bookingText_(payload.phone),
-    email: bookingText_(payload.email),
-    people: bookingText_(payload.people),
-    tables: bookingText_(payload.tables),
-    date: bookingText_(payload.date),
-    time: bookingText_(payload.time),
-    note: bookingText_(payload.note),
-    orderItems: bookingText_(payload.orderItems)
+    name: textStore_(payload.name),
+    phone: phoneStore_(payload.phone),
+    email: textStore_(payload.email),
+    people: displayCount_(peopleStored, payload.people),
+    tables: displayCount_(tablesStored, payload.tables),
+    date: displayDate_(dateStored, payload.date),
+    time: displayDate_(timeStored, payload.time),
+    note: textStore_(payload.note),
+    orderItems: textStore_(payload.orderItems)
   };
   var attr = attributionFromPayload_(payload);
   var row = [
     orderId,
-    receivedAt || '',
+    receivedStored,
     booking.action,
     booking.type,
     booking.name,
     booking.phone,
     booking.email,
-    booking.people,
-    booking.tables,
-    booking.date,
-    booking.time,
+    peopleStored,
+    tablesStored,
+    dateStored,
+    timeStored,
     booking.note,
     booking.orderItems,
     attr.source,
@@ -283,14 +391,39 @@ function openIsolatedSpreadsheet_() {
   return { ok: true, ss: ss, id: id };
 }
 
+function applyColumnFormats_(sheet, headers) {
+  var rows = 1;
+  try {
+    if (sheet.getMaxRows) rows = sheet.getMaxRows();
+  } catch (err) {
+    rows = 1;
+  }
+  if (!rows || rows < 1) rows = 1;
+  for (var i = 0; i < headers.length; i += 1) {
+    var fmt = COLUMN_FORMAT[headers[i]];
+    if (!fmt) continue;
+    try { sheet.getRange(1, i + 1, rows, 1).setNumberFormat(fmt); } catch (err) {}
+  }
+}
+
 function ensureSheet_(ss, name, headers) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
-    // 表頭是 SpreadsheetApp 寫入，要等 flush 才進伺服器。訂單與郵件預覽沒有 clear，
-    // 之後的 flush 只補上這一列，不會清掉 API 寫在下面的資料列。
-    sheet.appendRow(headers);
+    if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
+    var id = ss.getId ? ss.getId() : '';
+    if (!id) throw new Error('找不到試算表 ID');
+    var headerRow = [];
+    for (var h = 0; h < headers.length; h += 1) headerRow.push(String(headers[h]));
+    // 表頭用 API 立刻寫進伺服器。不靠 appendRow 再等 flush，避免 append 寫到第 1 列後被表頭蓋掉。
+    Sheets.Spreadsheets.Values.update(
+      { values: [headerRow] },
+      id,
+      quotedSheet_(sheet) + '!A1:' + columnLetter_(headers.length) + '1',
+      { valueInputOption: 'RAW' }
+    );
   }
+  applyColumnFormats_(sheet, headers);
   return sheet;
 }
 
@@ -376,9 +509,104 @@ function writeLiteralMatrix_(sheet, startRow, matrix) {
   return values;
 }
 
-// 資料列仍用 getLastRow()+1。不可依賴試算表快取和 Sheets API 即時一致。開旗標前要換掉，這輪不改。
+function rawApiCell_(value) {
+  if (typeof value === 'number' && isFinite(value)) return value;
+  return String(formulaGuard_(value));
+}
+
+function lastValueRow_(grid) {
+  var last = 0;
+  var maxCol = 0;
+  for (var r = 0; r < grid.length; r += 1) {
+    var line = grid[r] || [];
+    for (var c = 0; c < line.length; c += 1) {
+      if (line[c] != null && String(line[c]) !== '') {
+        last = r + 1;
+        if (c + 1 > maxCol) maxCol = c + 1;
+      }
+    }
+  }
+  return { row: last, col: maxCol };
+}
+
+function columnIndex_(letters) {
+  var n = 0;
+  var text = String(letters || '').toUpperCase();
+  for (var i = 0; i < text.length; i += 1) {
+    var code = text.charCodeAt(i);
+    if (code < 65 || code > 90) return 0;
+    n = n * 26 + (code - 64);
+  }
+  return n;
+}
+
+// $ 只從儲存格部分去掉。分頁名稱本身可以有 $，例如 'Cash$1'!A5:V5。
+function parseUpdatedRange_(range) {
+  var text = String(range || '').trim();
+  var bang = text.lastIndexOf('!');
+  if (bang < 0) return null;
+  var name = text.slice(0, bang).trim();
+  var cells = text.slice(bang + 1).trim().replace(/\$/g, '');
+  if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") {
+    name = name.slice(1, -1).replace(/''/g, "'");
+  }
+  var pair = /^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/.exec(cells);
+  if (pair) {
+    return {
+      name: name,
+      startCol: columnIndex_(pair[1]),
+      startRow: Number(pair[2]),
+      endCol: columnIndex_(pair[3]),
+      endRow: Number(pair[4])
+    };
+  }
+  var single = /^([A-Za-z]+)(\d+)$/.exec(cells);
+  if (!single) return null;
+  return {
+    name: name,
+    startCol: columnIndex_(single[1]),
+    startRow: Number(single[2]),
+    endCol: columnIndex_(single[1]),
+    endRow: Number(single[2])
+  };
+}
+
+function updatedRangeMatches_(updated, sheetName, targetRow, numCols) {
+  var parsed = parseUpdatedRange_(updated);
+  if (!parsed || !parsed.startCol || !parsed.endCol) return false;
+  return parsed.name === String(sheetName)
+    && parsed.startRow === targetRow
+    && parsed.endRow === targetRow
+    && parsed.startCol === 1
+    && parsed.endCol === numCols;
+}
+
+// A1 的 values.append 只接在包含 A1 的表格後面，中段空白下方的資料不會算進去。
+// 這裡在鎖內讀整張分頁的公式，寫到最後一筆有值的下一列。="" 也算有資料。格式不算值。
+// updatedRange 必須是這張分頁、正好目標列、欄從 A 到這列最後一欄。對不上就不寄信。
 function writeRow_(sheet, row) {
-  writeLiteralMatrix_(sheet, sheet.getLastRow() + 1, [row]);
+  if (!sheetsApiReady_()) throw new Error(sheetsMissingMessage_());
+  var parent = sheet.getParent();
+  var id = parent && parent.getId ? parent.getId() : '';
+  if (!id) throw new Error('找不到試算表 ID');
+  var read = Sheets.Spreadsheets.Values.get(id, quotedSheet_(sheet), { valueRenderOption: 'FORMULA' });
+  var grid = read && read.values ? read.values : [];
+  var used = lastValueRow_(grid);
+  var targetRow = used.row + 1;
+  var line = [];
+  for (var c = 0; c < row.length; c += 1) line.push(rawApiCell_(row[c]));
+  var range = literalRange_(sheet, targetRow, 1, line.length);
+  var response = Sheets.Spreadsheets.Values.update(
+    { values: [line] },
+    id,
+    range,
+    { valueInputOption: 'RAW' }
+  );
+  var updated = response && response.updatedRange ? String(response.updatedRange) : '';
+  var tableEndCol = used.col > 0 ? used.col : line.length;
+  var tableRange = used.row > 0 ? quotedSheet_(sheet) + '!A1:' + columnLetter_(tableEndCol) + used.row : '';
+  console.log('tableRange=' + tableRange + '（推算，不是 API 回傳的 tableRange） updatedRange=' + updated);
+  if (!updatedRangeMatches_(updated, sheet.getName(), targetRow, line.length)) throw new Error('寫入位置不符');
 }
 
 function unknownOutcome_(orderId, detail) {
@@ -402,9 +630,37 @@ function unknownOutcome_(orderId, detail) {
 }
 
 // flush 之後把剛寫入的那一列讀回來。讀回值要等於原值字串，而且 getFormula 為空。對不上就停下。不寄信，請核對原列，不要重送。
+function isDateObject_(value) {
+  return Object.prototype.toString.call(value) === '[object Date]';
+}
+
+function serialOf_(value, timeZone) {
+  if (typeof value === 'number' && isFinite(value)) return value;
+  if (!isDateObject_(value)) return null;
+  // 不用本地 getters，也不用專案時區。Date 的牆鐘以試算表時區解讀。
+  return wallClockSerial_(value.getTime(), timeZone);
+}
+
+function showStored_(value) {
+  if (value == null) return '';
+  if (typeof value === 'number' && isFinite(value)) return String(value);
+  return String(formulaGuard_(value));
+}
+
+function sameStored_(actual, expected, timeZone) {
+  if (typeof expected === 'number' && isFinite(expected)) {
+    var got = serialOf_(actual, timeZone);
+    return got != null && Math.abs(got - expected) < 1e-6;
+  }
+  var want = String(formulaGuard_(expected));
+  var left = actual == null ? '' : String(actual);
+  return left === want;
+}
+
 function confirmOrderRow_(sheet, orderId, expectedRow) {
   var miss = { ok: false, header: '', want: '', actual: '', formula: '' };
   if (!sheet || !expectedRow || !orderId) return miss;
+  var timeZone = spreadsheetZone_(sheet.getParent ? sheet.getParent() : null);
   var width = expectedRow.length;
   var last = sheet.getLastRow();
   if (last < 1 || width < 1) return miss;
@@ -415,8 +671,8 @@ function confirmOrderRow_(sheet, orderId, expectedRow) {
     if (id !== String(orderId)) continue;
     found = true;
     for (var c = 0; c < width; c += 1) {
-      var actual = values[r][c] == null ? '' : String(values[r][c]);
-      var want = String(formulaGuard_(expectedRow[c]));
+      var actual = values[r][c] == null ? '' : values[r][c];
+      var want = expectedRow[c];
       var formula = '';
       try {
         formula = sheet.getRange(r + 1, c + 1).getFormula();
@@ -424,12 +680,12 @@ function confirmOrderRow_(sheet, orderId, expectedRow) {
       } catch (err) {
         formula = '讀取失敗';
       }
-      if (actual !== want || formula !== '') {
+      if (!sameStored_(actual, want, timeZone) || formula !== '') {
         return {
           ok: false,
           header: ORDER_HEADERS[c] || String(c),
-          want: want,
-          actual: actual,
+          want: showStored_(want),
+          actual: showStored_(actual),
           formula: formula
         };
       }
@@ -470,20 +726,41 @@ function invalidMailboxOutcome_() {
 }
 
 function errorText_(err) {
-  if (err && err.message) return String(err.message);
-  if (err) return String(err);
-  return '沒有錯誤內容';
+  try {
+    if (err == null) return '沒有錯誤內容';
+    var message;
+    try {
+      message = err.message;
+    } catch (readErr) {
+      return '錯誤內容無法讀取';
+    }
+    if (message != null && message !== '') {
+      try {
+        return String(message);
+      } catch (stringErr) {
+        return '錯誤內容無法讀取';
+      }
+    }
+    try {
+      return String(err);
+    } catch (stringErr) {
+      return '錯誤內容無法讀取';
+    }
+  } catch (outer) {
+    return '錯誤內容無法讀取';
+  }
 }
 
 function mailNote_(sent, failed) {
-  var note = '已經寄出 ' + sent + ' 封信';
-  if (failed > 0) note += '。另有 ' + failed + ' 封沒有寄出，不要補寄';
+  var note = '確認寄出 ' + sent + ' 封。未確認寄出 ' + failed + ' 封';
+  if (failed > 0) note += '，不要補寄';
   return note;
 }
 
 function sendEmails_(result) {
   var sent = 0;
   var failed = 0;
+  // 客人信丟錯後仍嘗試店內信。丟錯只記成未確認寄出，不代表一定沒送到，不要補寄。
   function deliver_(mail) {
     if (!mail || !mail.to) return;
     try {
@@ -536,7 +813,11 @@ function acceptBooking_(payload) {
     if (!orderId) {
       outcome = { response: { status: 'error', message: '測試編號已用完，沒有收單。' }, wrote: false, mailed: false };
     } else {
-      var result = buildBookingResult_(payload, orderId, nowIso_(), shopTo, shopTo);
+      var zone = spreadsheetZone_(opened.ss);
+      if (!zone) {
+        throw new Error('找不到試算表時區。這筆訂單沒有寫入，也沒有寄信。訂單分頁若是這次新建，表頭可能已寫上，整欄格式也可能已設過。');
+      }
+      var result = buildBookingResult_(payload, orderId, nowIso_(), shopTo, shopTo, zone);
       if (ids.indexOf(orderId) !== -1) {
         result.response.mailed = false;
         result.response.duplicate = true;
@@ -558,8 +839,15 @@ function acceptBooking_(payload) {
     }
   } catch (err) {
     pendingMail = null;
+    var caught = errorText_(err);
     if (attemptedWrite) {
       outcome = unknownOutcome_(orderId);
+    } else if (caught.indexOf('找不到試算表時區') !== -1) {
+      outcome = {
+        response: { status: 'error', message: caught, mailed: false, wrote: false, duplicate: false },
+        wrote: false,
+        mailed: false
+      };
     } else {
       outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
     }
@@ -606,6 +894,84 @@ function acceptBooking_(payload) {
     outcome.failedCount = failedCount;
   }
   return outcome;
+}
+
+function runIsolatedFixedBooking_(orderId) {
+  var id = String(orderId || '').trim();
+  if (id !== 'SMC900201' && id !== 'SMC900202' && id !== 'SMC900203') {
+    var badId = '編號只能是 SMC900201、SMC900202 或 SMC900203。沒有寫入，也沒有寄信。';
+    notify_(badId, 'log');
+    return badId;
+  }
+  if (!isIsolated_()) {
+    notify_(BLOCKED_MESSAGE, 'log');
+    return BLOCKED_MESSAGE;
+  }
+  var shop = shopMailbox_();
+  if (!shop) {
+    var badMail = 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。';
+    notify_(badMail, 'log');
+    return badMail;
+  }
+  if (!sheetsApiReady_()) {
+    var missingSheets = sheetsMissingMessage_();
+    notify_(missingSheets, 'log');
+    return missingSheets;
+  }
+  var opened = openIsolatedSpreadsheet_();
+  if (!opened.ok) {
+    notify_(opened.message, 'log');
+    return opened.message;
+  }
+  var outcome;
+  try {
+    outcome = acceptBooking_(isolatedBasePayload_(shop, id));
+  } catch (err) {
+    outcome = { response: { status: 'error', message: errorText_(err) }, wrote: false, mailed: false };
+  }
+  if (!outcome || !outcome.response) outcome = { response: { status: 'error', message: '沒有回應' }, wrote: false, mailed: false };
+  var res = outcome.response;
+  var sent = outcome.sentCount || 0;
+  var failed = outcome.failedCount || 0;
+  if (res.status === 'unknown' || res.status !== 'success') {
+    var fail = '結果未知。停在單筆「' + id + '」。原因：' + (res.message || res.status || '沒有回應') + '。'
+      + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+    notify_(fail, 'log');
+    return fail;
+  }
+  if (res.duplicate === true) {
+    if (outcome.wrote !== false || outcome.mailed !== false) {
+      var badDup = '結果未知。停在單筆「' + id + '」。原因：預期重複編號，要 duplicate=true、wrote=false、mailed=false。實際 wrote=' + outcome.wrote + '、mailed=' + outcome.mailed + '。'
+        + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+      notify_(badDup, 'log');
+      return badDup;
+    }
+    var dup = '這個編號已經收過，這次沒有新增。duplicate=true、wrote=false、mailed=false。'
+      + mailNote_(sent, failed) + '。';
+    notify_(dup, 'log');
+    return dup;
+  }
+  if (outcome.wrote !== true || outcome.mailed !== true) {
+    var unconf = '結果未知。停在單筆「' + id + '」。原因：寄信未確認。'
+      + mailNote_(sent, failed) + '。不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+    notify_(unconf, 'log');
+    return unconf;
+  }
+  var ok = '單筆 ' + id + ' 已收單。' + mailNote_(sent, failed) + '。';
+  notify_(ok, 'log');
+  return ok;
+}
+
+function runIsolatedOneBooking201() {
+  return runIsolatedFixedBooking_('SMC900201');
+}
+
+function runIsolatedOneBooking202() {
+  return runIsolatedFixedBooking_('SMC900202');
+}
+
+function runIsolatedOneBooking203() {
+  return runIsolatedFixedBooking_('SMC900203');
 }
 
 function submitIsolatedFromPage(payload) {
@@ -723,20 +1089,22 @@ function isolatedEightPayloads_(email) {
       { header: 'utm廣告群組', raw: formula.utmAdgroup }
     ] },
     { label: '7 格式壞掉', payload: isolatedWithAttr_(email, 'SMC900106', malformed) },
-    { label: '8 同一編號再送', payload: isolatedWithAttr_(email, 'SMC900101', brand) }
+    { label: '8 同一編號再送', payload: isolatedWithAttr_(email, 'SMC900101', brand), expectDuplicate: true }
   ];
 }
 
-function notify_(message) {
-  console.log(message);
+function notify_(message, mode) {
+  // Isolated runners choose LOG-ONLY: runIsolatedEightCases (including the onOpen menu)
+  // and runIsolatedOneBooking201／202／203 never call SpreadsheetApp.getUi() or alert().
+  if (mode !== 'log') mode = 'log';
   try {
-    SpreadsheetApp.getUi().alert(message);
-    return { ok: true, error: '' };
-  } catch (err) {
-    var text = errorText_(err);
-    console.log(text);
-    return { ok: false, error: text };
+    console.log(message);
+  } catch (logErr) {
+    try {
+      console.log('錯誤內容無法讀取');
+    } catch (ignored) {}
   }
+  return { ok: true, error: '' };
 }
 
 function showLiteral_(value) {
@@ -819,14 +1187,10 @@ function inspectFormulaProbes_(sheet, orderId, probes) {
     var formula = '讀取失敗';
     var ok = false;
     if (rowIndex > 0 && col > 0) {
-      try {
-        var cell = sheet.getRange(rowIndex, col);
-        read = cell.getValue() == null ? '' : String(cell.getValue());
-        formula = cell.getFormula() == null ? '' : String(cell.getFormula());
-        ok = formula === '' && read === want;
-      } catch (err) {
-        ok = false;
-      }
+      var cell = sheet.getRange(rowIndex, col);
+      read = cell.getValue() == null ? '' : String(cell.getValue());
+      formula = cell.getFormula() == null ? '' : String(cell.getFormula());
+      ok = formula === '' && read === want;
     }
     checks.push({ header: probe.header, raw: raw, read: read, formula: formula, ok: ok });
   }
@@ -851,25 +1215,71 @@ function writeProbeSheet_(ss, checks) {
   return writeLiteralMatrix_(sheet, 1, rows);
 }
 
+// 新單要 success、有寫入、兩封都確認寄出。重複那一筆要 duplicate=true、wrote=false、mailed=false。
+// 回空字串代表這個案例可以繼續，否則回停下的原因。
+function markUnverified_(lines) {
+  for (var r = 1; r < lines.length; r += 1) {
+    var result = String(lines[r][2] || '');
+    if (result.indexOf('未驗證') === -1) lines[r][2] = result ? result + '／未驗證' : '未驗證';
+  }
+}
+
+function writeStopReports_(ss, lines) {
+  var note = '';
+  try {
+    writeResultSheet_(ss, lines);
+  } catch (err) {
+    note += '「驗收結果」也沒有留住。錯誤：' + errorText_(err) + '。';
+  }
+  return note;
+}
+
+function finishStopped_(opened, lines, summary, extras) {
+  extras = extras || {};
+  markUnverified_(lines);
+  if (extras.formulaNotRun) summary += '本輪公式核對未執行。';
+  summary += writeStopReports_(opened.ss, lines);
+  if (summary.indexOf('不要重跑') === -1) summary += '不要重跑，不要補寄，不要部署，不要開網頁驗收。';
+  notify_(summary, 'log');
+  return summary;
+}
+
+function caseStopReason_(item, outcome) {
+  var res = outcome && outcome.response ? outcome.response : {};
+  var status = res.status || '';
+  if (status === 'unknown') return '結果未知：' + (res.message || '');
+  if (status !== 'success') return '錯誤：' + (res.message || status || '沒有回應');
+  if (item.expectDuplicate) {
+    if (res.duplicate !== true || outcome.wrote !== false || outcome.mailed !== false) {
+      return '預期重複編號，要 duplicate=true、wrote=false、mailed=false。實際 duplicate=' + res.duplicate
+        + '、wrote=' + outcome.wrote + '、mailed=' + outcome.mailed;
+    }
+    return '';
+  }
+  if (res.duplicate === true || outcome.wrote !== true) return '新單沒有寫入。duplicate=' + res.duplicate + '、wrote=' + outcome.wrote;
+  if (outcome.mailed !== true) return '寄信未確認';
+  return '';
+}
+
 function runIsolatedEightCases() {
   if (!isIsolated_()) {
-    notify_(BLOCKED_MESSAGE);
+    notify_(BLOCKED_MESSAGE, 'log');
     return BLOCKED_MESSAGE;
   }
   var shop = shopMailbox_();
   if (!shop) {
     var badMail = 'SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。';
-    notify_(badMail);
+    notify_(badMail, 'log');
     return badMail;
   }
   if (!sheetsApiReady_()) {
     var missingSheets = sheetsMissingMessage_();
-    notify_(missingSheets);
+    notify_(missingSheets, 'log');
     return missingSheets;
   }
   var opened = openIsolatedSpreadsheet_();
   if (!opened.ok) {
-    notify_(opened.message);
+    notify_(opened.message, 'log');
     return opened.message;
   }
   var cases = isolatedEightPayloads_(shop);
@@ -880,7 +1290,13 @@ function runIsolatedEightCases() {
   var sentMails = 0;
   var failedMails = 0;
   for (var i = 0; i < cases.length; i += 1) {
-    var outcome = acceptBooking_(cases[i].payload);
+    var outcome;
+    try {
+      outcome = acceptBooking_(cases[i].payload);
+    } catch (caseErr) {
+      outcome = { response: { status: 'error', message: errorText_(caseErr) }, wrote: false, mailed: false };
+    }
+    if (!outcome || !outcome.response) outcome = { response: { status: 'error', message: '沒有回應' }, wrote: false, mailed: false };
     sentMails += outcome.sentCount || 0;
     failedMails += outcome.failedCount || 0;
     lines.push([
@@ -890,14 +1306,33 @@ function runIsolatedEightCases() {
       outcome.wrote ? '是' : '否',
       outcome.mailed ? '是' : '否'
     ]);
+    var stopReason = caseStopReason_(cases[i], outcome);
+    if (stopReason) {
+      var caseFail = '結果未知。停在「' + cases[i].label + '」。原因：' + stopReason + '。後面的案例沒有執行。'
+        + mailNote_(sentMails, failedMails) + '。';
+      return finishStopped_(opened, lines, caseFail, { formulaNotRun: !writtenProbe && i < 5 });
+    }
     if (cases[i].probes) {
       var orderSheet = opened.ss.getSheetByName('訂單');
-      var checks = inspectFormulaProbes_(orderSheet, outcome.response.orderId || '', cases[i].probes);
+      var checks;
+      try {
+        checks = inspectFormulaProbes_(orderSheet, outcome.response.orderId || '', cases[i].probes);
+      } catch (probeReadErr) {
+        var probeReadFail = '結果未知。停在「' + cases[i].label + '」的公式核對讀取。錯誤：' + errorText_(probeReadErr) + '。'
+          + mailNote_(sentMails, failedMails) + '。';
+        return finishStopped_(opened, lines, probeReadFail, { formulaNotRun: false });
+      }
       try {
         writtenProbe = writeProbeSheet_(opened.ss, checks);
       } catch (probeErr) {
         var probeFail = '結果未知。停在「' + cases[i].label + '」的公式核對寫入。' + mailNote_(sentMails, failedMails) + '。錯誤：' + errorText_(probeErr) + '。不要重跑，不要部署。';
-        notify_(probeFail);
+        markUnverified_(lines);
+        try {
+          writeResultSheet_(opened.ss, lines);
+        } catch (stopReportErr) {
+          probeFail += '「驗收結果」也沒有留住。錯誤：' + errorText_(stopReportErr) + '。';
+        }
+        notify_(probeFail, 'log');
         return probeFail;
       }
       var pass = outcome.response.status === 'success';
@@ -916,7 +1351,7 @@ function runIsolatedEightCases() {
     resultWritten = writeResultSheet_(opened.ss, lines);
   } catch (resultErr) {
     var resultFail = '結果未知。「驗收結果」沒有留住。錯誤：' + errorText_(resultErr) + '。不要重跑，不要部署。';
-    notify_(resultFail);
+    notify_(resultFail, 'log');
     return resultFail;
   }
   var readError = '';
@@ -956,18 +1391,13 @@ function runIsolatedEightCases() {
   }
   if (readError) {
     var unknownReport = '結果未知。' + readError + '。不要重跑，不要部署。';
-    notify_(unknownReport);
+    notify_(unknownReport, 'log');
     return unknownReport;
   }
   var summary = stopped
     ? '公式核對失敗。' + (failNote ? failNote + '。' : '') + '請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。'
-    : '已送出 8 筆。四種前綴都通過，才可以部署。全成功應有 14 封測試信。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
-  var notice = notify_(summary);
-  if (notice && notice.ok === false && summary.indexOf('四種前綴都通過') !== -1) {
-    var alertUnknown = '結果未知。試算表分頁的 alert 沒有彈出。錯誤：' + (notice.error || '沒有錯誤內容') + '。不要把成功摘要當成通過。不要重跑，不要部署。';
-    console.log(alertUnknown);
-    return alertUnknown;
-  }
+    : '已送出 8 筆。四種前綴都通過，才可以部署。' + mailNote_(sentMails, failedMails) + '。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。';
+  notify_(summary, 'log');
   return summary;
 }
 

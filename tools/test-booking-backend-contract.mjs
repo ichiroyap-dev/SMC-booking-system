@@ -43,7 +43,7 @@ assert(attr.ATTRIBUTION_KEYS.length === 9, '瀏覽器內仍計算 9 個來源欄
 for (const key of attr.ATTRIBUTION_KEYS) {
     assert(typeof fields[key] === 'string', `${key} 必須是字串`);
 }
-assert(fields.source.startsWith("'") && !fields.utmSource.startsWith('='), '公式開頭的 utm 在瀏覽器內要變成純文字');
+assert(fields.source.startsWith('=') && !fields.source.startsWith("'") && fields.utmSource.startsWith('='), '公式開頭的 utm 送原文，不加單引號');
 
 for (const type of ['dining', 'takeout']) {
     const plain = baseOrder(type);

@@ -1,3 +1,298 @@
+# 隔離驗證（開旗標前的必修）
+
+私人網頁維持 `355da77` 版本 1，這輪不重新部署，不開旗標，不寫正式試算表，不寄信。這輪的 `.gs` 不要貼上已部署的專案。
+
+第 8 輪寫過「只是錯誤訊息和文件的小修」。那句少了行為改變：客人的信寄失敗後，仍然會寄店內的信。`355da77` 沒有這個行為。這輪的摘要改寫實際封數：確認寄出、未確認寄出。寄信呼叫回傳錯誤時寫「未確認寄出」，不要寫成已經確定沒有寄出，也不要補寄。
+
+## PR46 第 8 輪紅燈的兩種重現
+
+這組數字用的是第 8 輪的測試和文件，commit `beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c`。差異在於文件有沒有一起換回 `355da77`。只換腳本、文件留在新版（第 8 輪），得到 9 項和 7 項。腳本和文件都換回舊版，得到 14 項和 11 項。Node `v22.14.0`。2026-10-18 在這支分支上照下面兩組指令重跑，數字相同。跑完要把檔案放回目前這支分支。
+
+只換腳本（第 8 輪的新文件＋舊 `.gs`）。測試也要放回第 8 輪，否則會混進這輪新增的寄信斷言：
+
+```bash
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-booking-reconciliation.mjs > tools/test-booking-reconciliation.mjs
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-isolated-e2e.mjs > tools/test-isolated-e2e.mjs
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:.github/pages-unpublished/isolated-e2e-verification.md > .github/pages-unpublished/isolated-e2e-verification.md
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+git show 355da77:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-booking-reconciliation.mjs
+node tools/test-isolated-e2e.mjs
+```
+
+`test-booking-reconciliation.mjs` 結束碼 1，9 項。紀錄 `.github/pages-unpublished/isolated-red-r8-recon-gs-only.log`。
+`test-isolated-e2e.mjs` 結束碼 1，7 項。紀錄 `.github/pages-unpublished/isolated-red-r8-e2e-gs-only.log`。
+
+腳本和文件一起換回 `355da77`（測試仍是第 8 輪）：
+
+```bash
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-booking-reconciliation.mjs > tools/test-booking-reconciliation.mjs
+git show beb2cf191cf6d2f82c6d5a493bd4dbc2772ae88c:tools/test-isolated-e2e.mjs > tools/test-isolated-e2e.mjs
+git show 355da77:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+git show 355da77:.github/pages-unpublished/isolated-e2e-verification.md > .github/pages-unpublished/isolated-e2e-verification.md
+git show 355da77:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-booking-reconciliation.mjs
+node tools/test-isolated-e2e.mjs
+```
+
+`test-booking-reconciliation.mjs` 結束碼 1，14 項。紀錄 `.github/pages-unpublished/isolated-red-r8-recon-docs.log`。
+`test-isolated-e2e.mjs` 結束碼 1，11 項。紀錄 `.github/pages-unpublished/isolated-red-r8-e2e-docs.log`。
+
+若改用這輪的測試、只換 `355da77` 的腳本，文件留在這輪，對帳是 9 項，端到端是 9 項。這輪的測試留著，只把腳本和兩份文件換回 `355da77`，對帳是 14 項，端到端是 13 項。不是把測試也換回 `355da77`。多出來的是這輪新增的「確認寄出／未確認寄出」斷言，不是第 8 輪那組 9／7 和 14／11。紀錄 `isolated-red-preflag-recon-gs-only.log`、`isolated-red-preflag-e2e-gs-only.log`、`isolated-red-preflag-recon-docs.log`、`isolated-red-preflag-e2e-docs.log`。
+
+## PR47 第 1 輪紅燈與綠燈
+
+Node `v22.14.0`。紅燈是測試配上 `3ebf58a` 的腳本。F2 的紅燈要用 `TZ=UTC`，讓專案時區和試算表的 `Asia/Taipei` 不同。綠燈是同一指令、腳本放回這輪，結束碼 0。`TZ=Asia/Taipei` 再跑 F2 也是 0，讀回不再靠行程時區。
+
+```bash
+git show 3ebf58a:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+TZ=UTC node tools/test-pr47-r1.mjs --item f1
+TZ=UTC node tools/test-pr47-r1.mjs --item f2
+TZ=UTC node tools/test-pr47-r1.mjs --item f6
+TZ=UTC node tools/test-pr47-r1.mjs --item checklist
+TZ=UTC node tools/test-pr47-r1.mjs --item nit-doc
+TZ=UTC node tools/test-pr47-r1.mjs --item nit-pages
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| f1 收到時間序號 | 結束碼 1，3 項 | 0 |
+| f2 Date 讀回 | 結束碼 1，5 項 | 0 |
+| f6 表尾位置 | 結束碼 1，6 項 | 0 |
+| 移植清單補欄 | 結束碼 1，12 項 | 0 |
+| 文件用詞 | 結束碼 1，8 項 | 0 |
+| Pages 環境不足 | 結束碼 1，3 項 | 0 |
+
+紀錄在 `isolated-red-pr47-r1-f1.log` 到 `isolated-red-pr47-r1-nit-pages.log`，綠燈是 `isolated-green-pr47-r1-*.log`。跑完要把腳本放回這支分支。
+
+## PR47 第 3 輪：Codex 第 2 輪退回
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r2.mjs` 配上固定腳本 `46a7254b15884868dff6f5593abfb65ed3fba288`。綠燈是同一指令、腳本放回這輪，結束碼 0。跑完要把腳本放回這支分支。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show 46a7254b15884868dff6f5593abfb65ed3fba288:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r2.mjs --item range
+node tools/test-pr47-r2.mjs --item occupy
+node tools/test-pr47-r2.mjs --item checklist
+node tools/test-pr47-r2.mjs --item nit
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| updatedRange 分頁、單列、欄位 | 結束碼 1，8 項 | 結束碼 0 |
+| 公式空結果與 ZZ 之後 | 結束碼 1，8 項 | 結束碼 0 |
+| 移植清單的擴列與跨寫入者 | 結束碼 1，6 項 | 結束碼 0 |
+| tableRange 推算與缺時區用詞 | 結束碼 1，4 項 | 結束碼 0 |
+
+紀錄是 `isolated-red-pr47-r2-range.log`、`isolated-red-pr47-r2-occupy.log`、`isolated-red-pr47-r2-checklist.log`、`isolated-red-pr47-r2-nit.log`。綠燈是 `isolated-green-pr47-r2-*.log`。
+
+## PR47 第 4 輪：Codex 第 3 輪退回
+
+八案例遇到第一個問題就停。新單要 `success`、有寫入、兩封都確認寄出；案例 8 要 `duplicate=true`、`wrote=false`、`mailed=false`。不符就停在那個案例，不跑後面的案例、不再寄信，摘要寫出案例和原因，不會出現「四種前綴都通過」或「才可以部署」。單一筆裡，客人信丟錯後仍寄店內信，這點沒改；但那個案例算寄信未確認，八案例會停下。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r3.mjs` 配上固定腳本 `5ad73c1a4efffbef942dbfe0cf7e74fa5018942e`。綠燈是同一指令、腳本放回這輪。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show 5ad73c1a4efffbef942dbfe0cf7e74fa5018942e:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r3.mjs --item stop
+node tools/test-pr47-r3.mjs --item checklist
+node tools/test-pr47-r3.mjs --item nit
+node tools/test-pr47-r3.mjs --item evidence
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 八案例遇錯就停（案例 1 位置錯、案例 2 讀回不符、案例 3 寄信未確認、案例 8 不是重複） | 結束碼 1，40 項 | 結束碼 0 |
+| 移植清單：跨寫入者與 FORMULA 實測 | 結束碼 1，6 項 | 結束碼 0 |
+| `$` 分頁名稱與單格範圍 | 結束碼 1，4 項 | 結束碼 0 |
+| Evidence 分開寫 PASS 與 BLOCKED | 結束碼 1，4 項 | 結束碼 0 |
+
+紅燈時，案例 1 位置錯誤仍跑完 2–7，寄出 12 封，摘要寫「四種前綴都通過」。紀錄是 `isolated-red-pr47-r3-*.log`，綠燈是 `isolated-green-pr47-r3-*.log`。
+
+`test-preflag-fixes.mjs` 的 nit3 改了預期：客人信全丟錯時，八案例停在案例 1，確認 1 封、未確認 1 封，不再寄後面七筆。
+
+本機 PASS 與 Pages BLOCKED 分開看：
+
+- 本機 PASS：`test-pr47-r3.mjs`、`test-pr47-r2.mjs`、`TZ=UTC node tools/test-pr47-r1.mjs`、`test-booking-reconciliation.mjs`、`test-isolated-e2e.mjs`、`test-booking-backend-contract.mjs`，結束碼都是 0。這些不連網。
+- Pages：這台 gh 已登入、能連網，`node tools/check-pages-unpublished.mjs` 結束碼 0，`node tools/test-preflag-fixes.mjs --item 5` 結束碼 0。
+- Pages BLOCKED：gh 未登入時，`node tools/check-pages-unpublished.mjs` 是 BLOCKED，結束碼 2。`node tools/test-preflag-fixes.mjs --item 5` 在同樣環境下結束碼 1。這是環境不足，不是通過，也不算 Pages 已公開。需要的環境：能連到 https://www.sweetmeichicken.com，gh 已登入並能讀 Pages 設定與 pages-build-deployment。
+
+## PR47 第 5 輪：Codex 第 4 輪退回
+
+案例 6 公式核對讀取丟錯要接住，留下案例、階段、錯誤和當時封數；盡力寫報告，報告寫入失敗不可蓋掉摘要。案例 7 的位置錯誤、讀回不符、寄信未確認要有自動測試。表尾三筆用編輯器單筆入口，每次一個編號。中途停下時，驗收結果已寫的列標「未驗證」；案例 6 前停下要寫「本輪公式核對未執行」。總管的停止矩陣改成會失敗的斷言。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r5.mjs` 配上固定腳本 `b7a67f5dad9218775ec373b73dddc5c5d95c1ae1`。綠燈是同一指令、腳本放回這輪。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show b7a67f5dad9218775ec373b73dddc5c5d95c1ae1:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r5.mjs --item probe
+node tools/test-pr47-r5.mjs --item case7
+node tools/test-pr47-r5.mjs --item single
+node tools/test-pr47-r5.mjs --item matrix
+node tools/test-pr47-r5.mjs --item nit
+node tools/test-pr47-r5.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 案例 6 公式核對讀取丟錯 | 結束碼 1，9 項 | 結束碼 0 |
+| 案例 7 停下 | 結束碼 0（`b7a67f5` 已會停；這輪補成回歸測試） | 結束碼 0 |
+| 編輯器單筆入口 | 結束碼 1，4 項 | 結束碼 0 |
+| 停止矩陣 1–8 | 結束碼 0（總管探測已對；這輪改成斷言） | 結束碼 0 |
+| 未驗證與公式核對未執行 | 結束碼 1，2 項 | 結束碼 0 |
+| 手冊清空與單筆入口 | 結束碼 1，3 項 | 結束碼 0 |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
+## PR47 第 6 輪：Codex 第 5 輪退回
+
+儲存格 `getValue`／`getFormula` 丟錯要走既有停止摘要：案例、階段（公式核對讀取）、錯誤、確認／未確認封數。單筆編號改成直接比對 `SMC900201`／`SMC900202`／`SMC900203`，不再用物件鍵。帶編號的 helper 改成 `runIsolatedFixedBooking_`；刪掉公開的 `runIsolatedOneBooking`。單筆重複要 `wrote=false`、`mailed=false`。手冊補 201／202／203 佈置、寫入位置，以及「人工確認測試表 ID 和收件信箱是測試用」。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r6.mjs` 配上固定腳本 `a50a3645f848ef0221411c7589f1ca461539e240`。綠燈是同一指令、腳本放回這輪。沒有連 Google，沒有寫表，沒有寄信。
+
+```bash
+git show a50a3645f848ef0221411c7589f1ca461539e240:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r6.mjs --item cell
+node tools/test-pr47-r6.mjs --item allow
+git show a50a3645f848ef0221411c7589f1ca461539e240:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-pr47-r6.mjs --item docs
+node tools/test-pr47-r6.mjs --item nit
+```
+
+`docs` 紅燈必須連舊手冊一起換回。只換舊 `.gs`、留下新手冊，文件測試不會紅。
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 儲存格 getValue／getFormula 丟錯 | 結束碼 1，10 項。摘要只寫「公式核對失敗」，缺案例、階段、錯誤與封數。`isolated-red-pr47-r6-cell.log` | 結束碼 0。`isolated-green-pr47-r6-cell.log` |
+| 編號白名單 | 結束碼 1，9 項。`toString`／`constructor`／`__proto__` 寫入 `SMC900001` 並寄 2 封。`isolated-red-pr47-r6-allow.log` | 結束碼 0。`isolated-green-pr47-r6-allow.log` |
+| 手冊佈置與人工確認 | 結束碼 1，4 項。`isolated-red-pr47-r6-docs.log` | 結束碼 0。`isolated-green-pr47-r6-docs.log` |
+| helper 私有與重複 wrote/mailed | 結束碼 1，5 項。`isolated-red-pr47-r6-nit.log` | 結束碼 0。`isolated-green-pr47-r6-nit.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
+## PR47 第 6 輪 NIT（文件）
+
+Codex 第 6 輪 `APPROVE_WITH_NITS`。這輪只改文件，不改 `.gs`、不改 HTML。程式仍停在 `fa16c4356f8064ae6514d211b9931c0aff9eae61`。
+
+1. `.gs` 第 38 行「不可從編輯器選單或 google.script.run 跑」留著不改。官方只保證 `_` 函式不能被 `google.script.run` 呼叫；編輯器選單有沒有藏起來，這輪沒實證。依硬規則不改 `.gs` 註解。
+2. 手冊補訂單分頁至少1000列、欄擴至 AAA。三筆各自在執行前佈置，不要一次全部放好；預期位置仍是 A9:V9、A11:V11（A10 公式仍在）、A15:V15（AAA14 不可被蓋），最後再跑 201 判重複。
+3. 上面 `docs` 紅燈指令改成同時換回舊手冊。
+
+Node `v22.14.0`。紅燈是這輪新增的文件斷言配上尚未改的手冊與 verification。綠燈是同一指令、文件放回這輪。
+
+```bash
+node tools/test-pr47-r6.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 1000 列／AAA、逐筆佈置、docs 紅燈也換舊手冊 | 結束碼 1，4 項。`isolated-red-pr47-r6-docs-nits.log` | 結束碼 0。`isolated-green-pr47-r6-docs-nits.log` |
+
+## PR47 第 7 輪：編輯器無彈窗不可降成結果未知
+
+Owner 已核准隔離重跑，並用編輯器跑了 `fa16c43` 的 `runIsolatedEightCases`。資料核對通過：確認 14 封、未確認 0 封，列數 8／8／9／5，案例 8 `duplicate=true`、`wrote=false`、`mailed=false`，公式核對通過。最後因 `Cannot call SpreadsheetApp.getUi() from this context.`，舊程式把成功摘要改成結果未知。那張測試表當證據保留，核准後要換新固定版、清空後從頭重跑。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。
+
+編輯器或沒有 UI 的 `getUi` 失敗要記「編輯器執行，無彈窗，以執行紀錄為準」，回傳與執行紀錄的成功摘要同一句，不降成結果未知。其他 alert 錯誤、摘要不全、寄信未確認或中途停下，仍是結果未知。八案例與 `runIsolatedOneBooking201`／`202`／`203` 都要這樣。註解只寫網頁呼叫不到（`google.script.run` 不能呼叫尾綴 `_` 的函式），不再說編輯器選單看不到。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r7.mjs` 配上固定腳本 `fa16c4356f8064ae6514d211b9931c0aff9eae61`。綠燈是同一指令、腳本放回這輪。
+
+```bash
+git show fa16c4356f8064ae6514d211b9931c0aff9eae61:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r7.mjs --item eight
+node tools/test-pr47-r7.mjs --item single
+node tools/test-pr47-r7.mjs --item other
+git show fa16c4356f8064ae6514d211b9931c0aff9eae61:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-pr47-r7.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 八案例編輯器 getUi | 結束碼 1，4 項。成功被改成結果未知。`isolated-red-pr47-r7-eight.log` | 結束碼 0。`isolated-green-pr47-r7-eight.log` |
+| 單筆 201／202／203 編輯器 getUi | 結束碼 1，3 項。缺「無彈窗，以執行紀錄為準」。`isolated-red-pr47-r7-single.log` | 結束碼 0。`isolated-green-pr47-r7-single.log` |
+| 其他 alert／真失敗仍未知 | 結束碼 1，2 項。單筆其他 alert 仍報已收單。`isolated-red-pr47-r7-other.log` | 結束碼 0。`isolated-green-pr47-r7-other.log` |
+| 註解與手冊 | 結束碼 1，4 項。`isolated-red-pr47-r7-docs.log` | 結束碼 0。`isolated-green-pr47-r7-docs.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
+## PR47 第 8 輪：alert 失敗不可當成無 UI
+
+Codex 退回 `cd1aeba`：`getUi` 與 `alert` 共用一個 catch，`alert` 丟出 `Cannot call SpreadsheetApp.getUi() from this context.` 時，八案例與 201／202／203 成功及重複仍報通過。這輪把 `notify_` 拆成兩段 try。只有 `getUi` 自己丟錯且符合現有編輯器辨識才記無 UI：執行紀錄寫原始錯誤與「編輯器執行，無彈窗，以執行紀錄為準」，不降成結果未知。`alert` 自己失敗一律結果未知，即使文字完全相同。手冊改成依當下有沒有 UI 描述，不再說編輯器執行一定沒有彈窗。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。`fa16c43` 測試表仍當證據保留，核准後從頭重跑。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r8.mjs` 配上固定腳本 `cd1aebaaa67a30fb92be331f71facf23d83155af`。綠燈是同一指令、腳本放回這輪。`docs` 紅燈連舊手冊一起換回。
+
+```bash
+git show cd1aebaaa67a30fb92be331f71facf23d83155af:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r8.mjs --item alert
+git show cd1aebaaa67a30fb92be331f71facf23d83155af:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-pr47-r8.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| alert 丟出相同文字 | 結束碼 1，11 項。八案例、201／202／203 成功及重複仍通過；getUi 自己丟錯沒留原始錯誤。`isolated-red-pr47-r8-alert.log` | 結束碼 0。`isolated-green-pr47-r8-alert.log` |
+| 手冊依 UI 能力描述 | 結束碼 1，5 項。`isolated-red-pr47-r8-docs.log` | 結束碼 0。`isolated-green-pr47-r8-docs.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
+## PR47 第 9 輪：入口明確只記執行紀錄
+
+Owner 決定不再用錯誤文字判斷有沒有 UI。`runIsolatedEightCases`（含 onOpen 選單）與 `runIsolatedOneBooking201`／`202`／`203` 一律 LOG-ONLY：不呼叫 `SpreadsheetApp.getUi()`，也不呼叫 `alert()`。完整摘要寫進 `console.log`，回傳同一句。刪掉 `isEditorUiUnavailable_`。`errorText_` 遇無原型、`message` getter 丟錯或 `toString` 丟錯時回「錯誤內容無法讀取」，不外拋。先前資料失敗再加上通知失敗時，原失敗摘要與「結果未知」都要留下。檔頭與手冊改成：僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。`.gs` 第 2 行「只用綁定專案」已過時，以文件為準，這輪不改 `.gs`。編輯器入口只記執行紀錄，設計上沒有彈窗，結果以執行紀錄為準。執行紀錄沒有完整摘要就停，不算通過。`fa16c43` 測試表仍當證據保留，核准後從頭重跑。這輪沒貼上、沒寫真表、沒寄信、沒部署、沒開旗標。
+
+Node `v22.14.0`。紅燈是 `tools/test-pr47-r9.mjs` 配上固定腳本 `404b6c41b75733ab91ae22065e4f4eca629eca62`。綠燈是同一指令、腳本放回這輪。
+
+```bash
+git show 404b6c41b75733ab91ae22065e4f4eca629eca62:.github/pages-unpublished/booking-attribution-isolated.gs > .github/pages-unpublished/booking-attribution-isolated.gs
+node tools/test-pr47-r9.mjs --item log
+node tools/test-pr47-r9.mjs --item err
+node tools/test-pr47-r9.mjs --item keep
+git show 404b6c41b75733ab91ae22065e4f4eca629eca62:.github/pages-unpublished/booking-attribution-isolated-runbook.md > .github/pages-unpublished/booking-attribution-isolated-runbook.md
+node tools/test-pr47-r9.mjs --item docs
+```
+
+| 項目 | 紅燈 | 綠燈 |
+| --- | --- | --- |
+| 八案例與 201／202／203 成功、重複、失敗都不呼叫 getUi／alert | 結束碼 1，15 項。`isolated-red-pr47-r9-log.log` | 結束碼 0。`isolated-green-pr47-r9-log.log` |
+| 無原型／message getter／toString 丟錯 | 結束碼 1，36 項。`isolated-red-pr47-r9-err.log` | 結束碼 0。`isolated-green-pr47-r9-err.log` |
+| 先前失敗加上通知失敗仍保留原摘要 | 結束碼 1，12 項。`isolated-red-pr47-r9-keep.log` | 結束碼 0。`isolated-green-pr47-r9-keep.log` |
+| 專案措辭與只記執行紀錄 | 結束碼 1，5 項。`isolated-red-pr47-r9-docs.log` | 結束碼 0。`isolated-green-pr47-r9-docs.log` |
+
+本機 PASS 與 Pages BLOCKED 仍分開看，見上一輪。
+
+Codex r9 判定 APPROVE_WITH_NITS 後只改文件：專案措辭改為可沿用已核對 Script ID 的獨立專案或綁定專案。`.gs` 維持 `57da622`，第 2 行舊綁定句以文件為準。執行紀錄沒有完整摘要就停，不算通過。舊版 alert 句移到歷史段落，標明不適用本輪。
+
+## 合併到 main 之後
+
+合併到 main 後，公開網站的 JS 會立刻改送原文，不再加前導單引號。開旗標的順序是：先把正式腳本改成 RAW 寫入並在副本上驗證，最後才開旗標。Google 只保證 RAW 不解析輸入，不能把 `=`、`+`、`-`、`@` 說成一定會被當成公式執行。
+
+## 開旗標前必修的紅燈與綠燈
+
+Node `v22.14.0`。指令是 `node tools/test-preflag-fixes.mjs --item <項目>`。紅燈是改程式前；綠燈是改完後同一指令，結束碼都是 0。
+
+| 項目 | 紅燈 | 綠燈紀錄 |
+| --- | --- | --- |
+| 1 前端送原文 | 結束碼 1，7 項。`isolated-red-preflag-item1.log` | `isolated-green-preflag-item1.log` |
+| 2 append 與表尾 | 結束碼 1，8 項。`isolated-red-preflag-item2.log` | `isolated-green-preflag-item2.log` |
+| 3 欄位契約 | 結束碼 1，16 項。`isolated-red-preflag-item3.log` | `isolated-green-preflag-item3.log` |
+| 4 移植清單 | 結束碼 1，10 項。`isolated-red-preflag-item4.log` | `isolated-green-preflag-item4.log` |
+| 5 Pages 排除 | 結束碼 1，1 項。`isolated-red-preflag-item5.log` | `isolated-green-preflag-item5.log` |
+| 客人信失敗仍寄店內信 | 第 8 輪腳本只有手冊缺句：結束碼 1，1 項。`isolated-red-preflag-nit1.log`。只換 `355da77` 的腳本、手冊留這輪：結束碼 1，2 項。`isolated-red-preflag-nit1-gs-only.log`。手冊也還沒那句時是 3 項，`isolated-red-preflag-nit1-355da77.log` | `isolated-green-preflag-nit1.log` |
+| 手冊最後一行為準 | 結束碼 1，1 項。`isolated-red-preflag-nit2.log` | `isolated-green-preflag-nit2.log` |
+| 摘要封數 | 結束碼 1，5 項。`isolated-red-preflag-nit3.log` | `isolated-green-preflag-nit3.log` |
+| 第 8 輪兩種紅燈寫進文件 | 結束碼 1，2 項。`isolated-red-preflag-nit4.log` | `isolated-green-preflag-nit4.log` |
+
+全套綠燈：`node tools/test-booking-reconciliation.mjs` 結束碼 0，`isolated-green-recon-preflag.log`。`node tools/test-isolated-e2e.mjs` 結束碼 0，`isolated-green-e2e-preflag.log`。`node tools/test-booking-backend-contract.mjs` 結束碼 0。
+
+決定：防護只放在 RAW 寫入。前端送原文，不加 `'`。後端不刪使用者欄位開頭的 `'`。資料列在鎖內先 `values.get` 整張分頁的公式（`FORMULA`，不設 `A:ZZ` 上限），再用 `values.update` RAW 寫到最後一筆有值的下一列。`updatedRange` 要對上分頁、正好那一列、欄從 A 到最後一欄。記錄裡的 `tableRange` 是推算。不看快取最後一列加一，也不用範圍 A1 的 `values.append`。電話永遠文字並保留開頭 0。人數、桌數是整數才存數字。日期、時間存試算表序號。收到時間用試算表時區的牆鐘序號。契約在 `docs/booking-sheet-columns.md`。正式腳本這輪不改，清單在 `.github/pages-unpublished/production-port-checklist.md`。Pages 檢查是 `node tools/check-pages-unpublished.mjs`，不部署。
+
+固定檔案停在 commit `57da6221c36d97cce201d8b2de349efe96b8d4d3`。這份說明是下一個 commit，連結指回那個 SHA。這輪不要貼上、不要重新部署。私人網頁維持 `355da77` 版本 1。
+
+| 檔案 | raw 連結 | SHA-256 |
+| --- | --- | --- |
+| `.github/pages-unpublished/booking-attribution-isolated.gs` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/booking-attribution-isolated.gs | `3aac1336d0f21b6e7ca62637bf1e23e94abc2aaa5d8ff7ae5b365365641be14c` |
+| `.github/pages-unpublished/IsolatedCheck.html` | https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/IsolatedCheck.html | `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce` |
+
+## 第 8 輪原文（不適用本輪）
+
 # 隔離驗證（第 8 輪，錯誤訊息）
 
 要貼進 Apps Script 的程式停在 commit `6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb`。這份報告是下一個 commit，連結指回那個 SHA。不要再貼 `d14798a`。2026-10-18 16:02（台北）Owner 用 `355da77` 重跑，8 個案例全部通過。16:07 已部署成私人網頁應用程式：版本 1，存取只有自己。已部署的是 355da77；新 commit 只是錯誤訊息和文件的小修，是否重新部署由 Owner 決定。
@@ -167,10 +462,10 @@ node tools/test-isolated-e2e.mjs
 
 ## 請 Owner 做的三步
 
-必須是新建的獨立試算表專案，不要貼進任何既有專案。未核對雜湊前不要貼。不要打開 `www.sweetmeichicken.com`。不要覆寫正式部署。信箱用 Owner 自己的測試信箱。結果未知時，不可以重新整理後重送。
+僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。未核對雜湊前不要貼。不要打開 `www.sweetmeichicken.com`。不要覆寫正式部署。信箱用 Owner 自己的測試信箱。結果未知時，不可以重新整理後重送。`.gs` 第 2 行「只用綁定專案」已過時，以文件為準。執行紀錄沒有完整摘要就停，不算通過。
 
 1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。
-2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。從試算表開 Apps Script，貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。結果會寫進編輯器執行記錄，也會嘗試在試算表分頁彈出 alert。沒有看到這段結果、還在執行，或出現錯誤，就停止回報。首次執行可能再授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown、報告空白或讀回不符就停，不部署。重跑前先留下 14:59 的 CSV 和郵件紀錄。同一張表要清除內容：訂單、郵件預覽、驗收結果、公式核對。表頭可以留著。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
+2. **核對程式，先跑八案例。** 用上面的 raw 連結與 `Get-FileHash -Algorithm SHA256`。沿用已核對 Script ID 的現有獨立專案，或使用隔離試算表的綁定專案，更新同一專案。不要從「這張新試算表」另開未核對的專案。貼上腳本，新增 `IsolatedCheck` HTML。編輯器左側「服務」加 Google Sheets API，不必手改 `appsscript.json`。設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。先不要部署，執行 `runIsolatedEightCases`。獨立專案從編輯器執行；onOpen 選單僅適用綁定專案。編輯器入口只記執行紀錄，設計上沒有彈窗。結果以執行紀錄為準。執行紀錄沒有完整摘要就停，不算通過。沒有看到這段結果、還在執行，或出現錯誤，就停止回報。首次執行可能再授權，範圍是 `https://www.googleapis.com/auth/spreadsheets`。全成功預期 14 封測試信。訂單分頁四格的讀回值要等於原值，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」的原值與讀回值是 JSON 字串。任何 unknown、報告空白或讀回不符就停，不部署。重跑前先留下 14:59 的 CSV 和郵件紀錄。同一張表要清除內容：訂單、郵件預覽、驗收結果、公式核對。表頭可以留著。如果訂單和郵件預覽沒清，所有案例都會被判成重複。
 3. **全部核對通過才開私人頁。** 新增網路應用程式部署，執行身分「我」、存取「只有我」。不要覆寫正式部署。用同帳號開新網址，帶入品牌欄位送一次。網頁每一筆新單再 2 封。未知或沒有回應就停，不可以重新整理後重送。`127.0.0.1` 那頁只留給模擬測試，不要拿來送這個部署。
 
 做完後一次回傳：測試表 ID、測試信箱、八案例的驗收結果、公式核對四格、exec 網址、存取是不是「只有我」，以及確認沒有改正式環境。

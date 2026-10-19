@@ -1,0 +1,11 @@
+preflag item 4 failed: 10
+ - 要有正式腳本移植清單
+ - 移植清單要寫到 doPost
+ - 移植清單要寫到 11
+ - 移植清單要寫到 values.append
+ - 移植清單要寫到 INSERT_ROWS
+ - 移植清單要寫到 https://www.googleapis.com/auth/spreadsheets
+ - 移植清單要寫到 AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q
+ - 移植清單要寫到 回滾
+ - 移植清單要寫到 Sheets
+ - 清單要寫這輪不部署

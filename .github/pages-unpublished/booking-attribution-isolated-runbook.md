@@ -1,6 +1,6 @@
 # 隔離 Apps Script 驗收（內用）
 
-必須是新建的獨立試算表專案，不要貼進任何既有專案。這支腳本沒有 `doPost`，只有 `doGet`。貼進既有專案會蓋掉同名的訂位入口。
+僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。這支腳本沒有 `doPost`，只有 `doGet`。貼進既有專案會蓋掉同名的訂位入口。`.gs` 第 2 行「只用專用隔離試算表綁定的 Apps Script 專案，第一次建立，之後都更新同一個專案；禁止貼進正式或其他專案。」已過時，以本手冊為準。
 
 這份給 Owner 或 hub 在**自己的 Google 帳號**做。不必自己組 JSON，也不必會寫程式。本機測試沒有連 Google，也沒有寄出真信。本機模擬會把以 `=` 開頭的儲存格字串算掉，用來重現試算表；`+`、`-`、`@` 與其他函式不會執行公式。這仍不能代替你打開 Google 試算表看那一格。結果未知時，不可以重新整理後重送。
 
@@ -8,30 +8,48 @@
 
 客人信不可以出現 `launch_202610`、`ag_brand`、`ag_geo_dining`。那些只出現在「訂單」分頁與「店內對帳」信。
 
-回應有 `status`、`orderId`、`message`。成功或重複時還有 `mailed`、`duplicate`、`wrote`。`mailed` 為 true 才是兩封都交給寄信；false 是沒有全部寄出。`duplicate` 為 true 是這個編號已經收過。`wrote` 為 false 是這次沒有新增一列。**回應沒有備註**。備註要對這三處：你送出的內容、試算表「備註」欄、客人信與店內信。不要在回應裡找備註。讀回與寫入不一致就停下，請核對原列，不要重送。
+回應有 `status`、`orderId`、`message`。成功或重複時還有 `mailed`、`duplicate`、`wrote`。`mailed` 為 true 才是兩封都交給寄信；false 是未確認全部寄出。`duplicate` 為 true 是這個編號已經收過。`wrote` 為 false 是這次沒有新增一列。**回應沒有備註**。備註要對這三處：你送出的內容、試算表「備註」欄、客人信與店內信。不要在回應裡找備註。讀回與寫入不一致就停下，請核對原列，不要重送。
 
 ## Owner 三步
 
-必須是新建的獨立試算表專案，不要貼進任何既有專案。程式停在 commit `6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。
+需 Owner GO。沒有這句授權，不要貼上、不要執行、不要寫表、不要寄信。
 
-2026-10-18 16:02（台北）用 `355da77` 重跑，8 個案例全部通過。16:07 已部署成私人網頁應用程式：版本 1，存取只有自己。已部署的是 355da77；新 commit 只是錯誤訊息和文件的小修，是否重新部署由 Owner 決定。貼上這個新腳本只會改編輯器裡之後執行的 `runIsolatedEightCases`，不會改已經部署的版本 1。
+僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。程式停在 commit `57da6221c36d97cce201d8b2de349efe96b8d4d3`。這個路徑在 `.github` 裡，目前的建置方式會排除，正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄是否又被公開。`.gs` 第 2 行「只用綁定專案」已過時，以本手冊為準。
 
-1. **先準備測試表和信箱。** 用自己的帳號新增「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。這個信箱就是下一步的 `SMC_SHOP_EMAIL`。
-2. **核對程式，先跑八案例。** 未核對雜湊前不要貼。在 PowerShell 下載後執行 `Get-FileHash .\檔名 -Algorithm SHA256`，要和下面的預期值相同。
-   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/booking-attribution-isolated.gs
-     預期 SHA-256 `a0f1bcf7a4cb3f1a9f392e5c064eb577399c19cb065e8901eeae4e9fbe24094a`
-   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/IsolatedCheck.html
+2026-10-18 16:02（台北）用 `355da77` 重跑，8 個案例全部通過。16:07 已部署成私人網頁應用程式：版本 1，存取只有自己。私人網頁維持 `355da77` 版本 1。這輪不要重新部署，也不要把這輪的腳本貼上後在真表執行。這輪改了寫入方式、欄位型別，以及客人信失敗後仍寄店內信，不是只改錯誤訊息。下面的 raw 連結和 SHA-256 只供核對檔案。固定 commit 是 `57da6221c36d97cce201d8b2de349efe96b8d4d3`。
+
+2026-10-18 Owner 已用編輯器跑過 `fa16c43` 的八案例。資料核對通過：確認寄出 14 封、未確認 0 封，訂單／郵件預覽／驗收結果／公式核對列數 8／8／9／5，案例 8 是 `duplicate=true`、`wrote=false`、`mailed=false`，公式核對通過。最後因編輯器沒有 `getUi`，舊程式把成功摘要改成結果未知。那張測試表當證據保留，不要清掉當下一輪。核准後要換新固定版，清空後從頭重跑。
+
+1. **先準備測試表和信箱。** 僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。用自己的帳號準備「隔離測試」試算表，不共用。新增「隔離標記」分頁，A1 填 `SMC-ISOLATED-TEST`。記下試算表 ID。選定自己收得到信的測試信箱，不用客人信箱。這個信箱就是下一步的 `SMC_SHOP_EMAIL`。重跑前清空四張分頁（訂單、郵件預覽、驗收結果、公式核對，表頭以下）。「隔離標記」不要清。訂單分頁至少1000列、欄擴至 AAA。
+2. **核對程式。這輪不要貼上、不要執行八案例。** 未核對雜湊前不要貼。在 PowerShell 下載後執行 `Get-FileHash .\檔名 -Algorithm SHA256`，要和下面的預期值相同。
+   - 腳本 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/booking-attribution-isolated.gs
+     預期 SHA-256 `3aac1336d0f21b6e7ca62637bf1e23e94abc2aaa5d8ff7ae5b365365641be14c`
+   - 頁面 raw：https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/IsolatedCheck.html
      預期 SHA-256 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
-   - 從這張新試算表開 Apps Script。貼上腳本，再「+」→ HTML，檔名 `IsolatedCheck`。不必手改 `appsscript.json`。編輯器左側「服務」旁按「+」，選 Google Sheets API，按新增。預設的 Apps Script Cloud 專案會自己打開這個 API，不必再去 Cloud Console。存檔後 `appsscript.json` 會出現 `enabledAdvancedServices`：`userSymbol` 是 `Sheets`、`version` 是 `v4`、`serviceId` 是 `sheets`。
+   - 僅使用已核對 Script ID 的專用隔離 Apps Script 專案；可沿用現有獨立專案，或使用隔離試算表的綁定專案。後續更新同一專案，禁止貼入正式、共用或其他專案。兩者皆只以 SMC_TEST_SHEET_ID 開啟已核對的測試表；獨立專案從編輯器執行，onOpen 選單僅適用綁定專案。沿用已核對 Script ID 的現有獨立專案，或使用隔離試算表的綁定專案，更新同一專案。不要從「這張新試算表」另開未核對的專案。貼上腳本，再「+」→ HTML，檔名 `IsolatedCheck`。不必手改 `appsscript.json`。編輯器左側「服務」旁按「+」，選 Google Sheets API，按新增。預設的 Apps Script Cloud 專案會自己打開這個 API，不必再去 Cloud Console。存檔後 `appsscript.json` 會出現 `enabledAdvancedServices`：`userSymbol` 是 `Sheets`、`version` 是 `v4`、`serviceId` 是 `sheets`。
    - 設定 `SMC_ATTRIBUTION_ISOLATED=yes`、`SMC_SHOP_EMAIL=測試信箱`、`SMC_TEST_SHEET_ID=測試表 ID`。
-   - **實測第一步：** 先不要部署。先讓試算表分頁保持開著。函數選單選 `runIsolatedEightCases`，按執行。結果會寫進編輯器執行記錄，也會嘗試在試算表分頁彈出 alert。alert 出現後先讀完，按確定，再等執行完全結束。等待對話框不是故障。沒有看到這段結果、還在執行，或出現錯誤，就停止回報，不要重跑。首次執行可能再授權。同意畫面只會列出還沒給過的項目，也可能不再詢問。進階服務用的範圍是 `https://www.googleapis.com/auth/spreadsheets`（查看、編輯、建立及刪除您所有的 Google 試算表）。它不能改成「只限目前這張試算表」。寄信權限是原本的「以您的名義傳送電子郵件」。存取仍是「只有我」，不要改成「任何人」。若出現雲端硬碟、Gmail 或日曆的新範圍，就停下來，不要繼續。
-   - 全成功應收到 14 封測試信（7 筆新單各 2 封，重複那筆不寄）。網頁驗收每一筆新單再 2 封。封數不同時，以「驗收結果」的寄信欄為準，不要只靠封數。
+   - **實測第一步：** 先不要部署。私人網頁維持既有版本，這輪不要重新部署。函數選單選 `runIsolatedEightCases`，按執行。獨立專案從編輯器執行；onOpen 選單僅適用綁定專案。編輯器入口只記執行紀錄，設計上沒有彈窗。編輯器執行，無彈窗，以執行紀錄為準。不要等彈窗。這一輪沒有彈窗，以執行記錄的最後一行為準；分頁寫 success，不等於整輪通過。執行紀錄沒有完整摘要就停，不算通過。沒有看到這段結果、還在執行，或出現錯誤，就停止回報，不要重跑。客人的信寄失敗後，仍然會寄店內的信。`sendEmail` 丟錯記成未確認寄出，不要補寄。任一案例結果未知、錯誤、寄信未確認，或案例 8 不是重複，八案例就停在那個案例，後面的案例不跑、不再寄信。摘要會寫「停在」哪個案例和原因，不會寫四種前綴都通過。首次執行可能再授權。同意畫面只會列出還沒給過的項目，也可能不再詢問。進階服務用的範圍是 `https://www.googleapis.com/auth/spreadsheets`（查看、編輯、建立及刪除您所有的 Google 試算表）。它不能改成「只限目前這張試算表」。寄信權限是原本的「以您的名義傳送電子郵件」。存取仍是「只有我」，不要改成「任何人」。若出現雲端硬碟、Gmail 或日曆的新範圍，就停下來，不要繼續。
+   - 全成功的執行記錄要寫「確認寄出 14 封。未確認寄出 0 封」（7 筆新單各 2 封，重複那筆不寄）。網頁驗收每一筆新單再 2 封。封數不同時，以「驗收結果」的寄信欄和執行記錄的最後一行為準，不要只靠信箱封數。
    - 核對「訂單」「郵件預覽」「驗收結果」「公式核對」。訂單分頁案例 6 的四格，讀回值必須完全等於原值 `=1+1`、`+1+1`、`-1+1`、`@cmd`，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」分頁的原值與讀回值是 JSON 字串，例如 `"+1+1"`。任何 unknown、讀回不符或公式異常，就停止，不部署、不要開網頁驗收，先回報原列。結果未知時，不可以重新整理後重送。
-3. **全部核對通過才開私人頁。** 新增網路應用程式部署，執行身分「我」、存取「只有我」，**不可**改成「任何人」。不要覆寫正式部署。用同帳號開新網址，按鈕經 `google.script.run` 送一次品牌欄位。核對新編號、原列及兩封信。未知或沒有回應就停，不可以重新整理後重送。不要用 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 送這個部署；那頁只留給模擬測試。
+3. **這輪不要開私人頁。** 私人網頁維持 `355da77` 版本 1。之後若 Owner 另決要開，才新增網路應用程式部署，執行身分「我」、存取「只有我」，**不可**改成「任何人」。不要覆寫正式部署。用同帳號開新網址，按鈕經 `google.script.run` 送一次品牌欄位。核對新編號、原列及兩封信。未知或沒有回應就停，不可以重新整理後重送。不要用 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 送這個部署；那頁只留給模擬測試。
+
+4. **表尾三筆用編輯器單筆入口。需 Owner GO。** 沒有這句授權，不要跑。人工確認測試表 ID 和收件信箱是測試用。訂單分頁至少1000列、欄擴至 AAA。不要開網頁，不要新增 doGet／doPost，也不要重新部署。函數選單只選 `runIsolatedOneBooking201`、`runIsolatedOneBooking202` 或 `runIsolatedOneBooking203`，每次只送一筆。不要從選單跑帶編號的函式。編號只能是 `SMC900201`、`SMC900202`、`SMC900203`。這三個入口也只記執行紀錄，設計上沒有彈窗。回傳摘要與執行紀錄同一句。結果以執行紀錄為準。
+
+   八案例通過後，訂單已有表頭加 7 列新單（A2:V8）。三筆各自在執行前佈置，不要一次全部放好。若先把 A10 的公式放好，201 會寫到第 11 列，而不是 A9:V9。確認上一筆後，才佈置並跑下一筆。
+
+   | 入口 | 當筆執行前佈置 | 預期寫入 |
+   | --- | --- | --- |
+   | `runIsolatedOneBooking201` | 第 1000 列只有格式 | 寫入 A9:V9 |
+   | `runIsolatedOneBooking202` | A10 放真正公式 `=""` | 寫入 A11:V11，A10 的 `=""` 公式仍在 |
+   | `runIsolatedOneBooking203` | 12–13 列空、AAA14 放文字 | 寫入 A15:V15，AAA14 不可被蓋 |
+
+   防護與八案例相同：重複、寫入位置、讀回、寄信封數；結果未知就停，不補寄。郵件預覽依序 A9:G9、A10:G10、A11:G11，每筆確認兩封。最後再跑 201 一次，必須判成重複：`duplicate=true`、`wrote=false`、`mailed=false`，不再寫入、不再寄信。
 
 做完後一次回傳：測試表 ID、測試信箱、八案例的驗收結果、公式核對四格、exec 網址、存取是不是「只有我」，以及確認沒有改正式環境。
 
-## 2026-10-18 14:59 之後怎麼重跑
+## 2026-10-18 14:59 之後怎麼重跑（不適用本輪）
+
+不適用本輪。舊版會彈 alert，讀完按確定；等待對話框不是故障。這一輪改以執行紀錄的完整摘要為準。
 
 14:31 那次用 commit `3e6c185`。同一張表先清除內容，時間 14:31:13–14:31:28（台北）。案例 1–5 成功。案例 6（`SMC900105`）已寫入、沒寄信、結果未知。`=1+1`、`-1+1`、`@cmd` 讀回等於原值。utm內容 `+1+1` 被存成文字 `=+1+1`，`getFormula` 是空的。「公式核對」的原值欄也被改成 `=+1+1`。案例 7、8 沒有跑。還沒部署。`setRichTextValue` 會把 `+` 開頭改成 `=+`，再以純文字留下。
 
@@ -39,7 +57,7 @@
 
 重跑前先把 14:59 的四張 CSV（含兩個 0 bytes 檔）和郵件紀錄留好，跟新的一輪分開。重跑前四張分頁都要清除內容：訂單、郵件預覽、驗收結果、公式核對。只留同一張表，保留表頭，清除表頭以下的內容，不要刪掉整列。「隔離標記」A1 維持 `SMC-ISOLATED-TEST`。不要新建試算表，也不要改 `SMC_TEST_SHEET_ID`。如果訂單和郵件預覽沒清，所有案例都會被判成重複，不會改寫舊列，也不會寄信。
 
-然後貼第 2 步的 raw 連結（不要再貼 `5f89c71`），確認已經加入 Google Sheets API，先不要部署，再執行一次 `runIsolatedEightCases`。先讓試算表分頁保持開著。alert 出現後先讀完，按確定，再等執行完全結束。等待對話框不是故障。同時看編輯器執行記錄裡的同一段文字。沒有這段結果、還在執行，或出現錯誤，就停止。跑完再重新整理。訂單 8 列（含表頭）：`SMC900001`、`SMC900101` 到 `SMC900106` 各一列。郵件預覽 8 列。驗收結果 9 列：案例 1–7 是 success、寫入是、寄信是；案例 8 是 success、寫入否、寄信否。公式核對 5 列，原值與讀回值是 `"=1+1"`、`"+1+1"`、`"-1+1"`、`"@cmd"`，getFormula 是（空），判定是通過。訂單格子本身是沒有外加引號的原值。14 封信。若出現錯誤、結果未知、報告空白、少列或讀回不符，就停止，不要重跑，不要部署。
+然後貼第 2 步的 raw 連結（不要再貼 `5f89c71`），確認已經加入 Google Sheets API，先不要部署，再執行一次 `runIsolatedEightCases`。編輯器入口只記執行紀錄，設計上沒有彈窗。同時看編輯器執行記錄裡的同一段文字。沒有這段結果、還在執行，或出現錯誤，就停止。跑完再重新整理。訂單 8 列（含表頭）：`SMC900001`、`SMC900101` 到 `SMC900106` 各一列。郵件預覽 8 列。驗收結果 9 列：案例 1–7 是 success、寫入是、寄信是；案例 8 是 success、寫入否、寄信否。公式核對 5 列，原值與讀回值是 `"=1+1"`、`"+1+1"`、`"-1+1"`、`"@cmd"`，getFormula 是（空），判定是通過。訂單格子本身是沒有外加引號的原值。14 封信。若出現錯誤、結果未知、報告空白、少列或讀回不符，就停止，不要重跑，不要部署。
 
 收到時間欄是按下當下的時間。本機測試把它固定成 `2026-10-08T00:00:00.000Z`。試算表上不必相同，但不可空白。
 
@@ -196,12 +214,12 @@
 
 ## 固定版本
 
-要貼的兩個檔案停在 commit `6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb`。這段連結是下一個 commit 寫上的，不會引用自己。
+要核對的兩個檔案停在 commit `57da6221c36d97cce201d8b2de349efe96b8d4d3`。這段連結是下一個 commit 寫上的，不會引用自己。這輪不要貼上、不要重新部署。
 
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/booking-attribution-isolated.gs
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/booking-attribution-isolated.gs
   - `Get-FileHash .\booking-attribution-isolated.gs -Algorithm SHA256`
-  - 預期 `a0f1bcf7a4cb3f1a9f392e5c064eb577399c19cb065e8901eeae4e9fbe24094a`
-- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/6328d17f72d6bf4b9d8f41a82bc3dd96719a31eb/.github/pages-unpublished/IsolatedCheck.html
+  - 預期 `3aac1336d0f21b6e7ca62637bf1e23e94abc2aaa5d8ff7ae5b365365641be14c`
+- https://raw.githubusercontent.com/ichiroyap-dev/SMC-booking-system/57da6221c36d97cce201d8b2de349efe96b8d4d3/.github/pages-unpublished/IsolatedCheck.html
   - `Get-FileHash .\IsolatedCheck.html -Algorithm SHA256`
   - 預期 `c6ce8cda0968b5ef8af1de6bd04529c2d8d4c8dd839168a1582c04e2ef4f0cce`
 

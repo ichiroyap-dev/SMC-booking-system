@@ -110,21 +110,43 @@ function omitTrailingEmptyCells(rows) {
 function parseA1(range) {
   const text = String(range);
   const bang = text.lastIndexOf('!');
+  if (bang < 0) {
+    let only = text;
+    if (only.charAt(0) === "'" && only.charAt(only.length - 1) === "'") only = only.slice(1, -1).replace(/''/g, "'");
+    return { name: only, entire: true };
+  }
   let name = text.slice(0, bang);
   const cells = text.slice(bang + 1);
   if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");
   const columns = cells.match(/^([A-Z]+):([A-Z]+)$/);
   if (columns) return { name, entire: true };
   const match = cells.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-  if (!match) throw new Error('bad range ' + range);
-  return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+  if (match) return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+  const single = cells.match(/^([A-Z]+)(\d+)$/);
+  if (single) {
+    const row = Number(single[2]);
+    const col = columnIndex(single[1]);
+    return { name, row, col, endRow: row, endCol: col };
+  }
+  throw new Error('bad range ' + range);
+}
+
+function formatInZone(date, timeZone, pattern) {
+  const parts = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date instanceof Date ? date : new Date(date))) parts[part.type] = part.value;
+  const map = { yyyy: parts.year, MM: parts.month, dd: parts.day, HH: parts.hour === '24' ? '00' : parts.hour, mm: parts.minute, ss: parts.second };
+  return pattern.replace(/yyyy|MM|dd|HH|mm|ss/g, (token) => map[token]);
 }
 
 function memorySpreadsheet(options = {}) {
   const sheets = {};
   const ss = {
     id: '',
+    timeZone: 'Asia/Taipei',
     getId() { return ss.id; },
+    getSpreadsheetTimeZone() { return ss.timeZone; },
     getSheetByName(name) { return sheets[name] || null; },
     insertSheet(name) {
       sheets[name] = make(name);
@@ -161,6 +183,28 @@ function memorySpreadsheet(options = {}) {
     }
     return {
       getLastRow() { return cache.length; },
+      appendRaw(matrix, insertRows, mode) {
+        let last = -1;
+        for (let i = 0; i < server.length; i += 1) {
+          const line = server[i] || [];
+          if (line.some((cell) => cell != null && cell !== '')) last = i;
+        }
+        const at = last + 1;
+        for (let r = 0; r < matrix.length; r += 1) {
+          const stored = (matrix[r] || []).map((cell) => {
+            if (mode === 'RAW' && typeof cell === 'number' && Number.isFinite(cell)) return cell;
+            if (mode === 'RAW') return cell == null ? '' : String(cell);
+            return enterLikeSheets(cell);
+          });
+          if (insertRows) {
+            server.splice(at + r, 0, stored.slice());
+            cache.splice(at + r, 0, stored.slice());
+          } else {
+            server[at + r] = stored.slice();
+            cache[at + r] = stored.slice();
+          }
+        }
+      },
       appendRow(row) {
         const copy = row.slice();
         const index = cache.length;
@@ -212,9 +256,9 @@ function memorySpreadsheet(options = {}) {
             for (let r = 0; r < rowsN; r += 1) {
               for (let c = 0; c < colsN; c += 1) {
                 const cell = values[r] ? values[r][c] : '';
-                const text = cell == null ? '' : String(cell);
-                putCache(row - 1 + r, col - 1 + c, text, '');
-                putServer(row - 1 + r, col - 1 + c, text, '');
+                const stored = typeof cell === 'number' && Number.isFinite(cell) ? cell : (cell == null ? '' : String(cell));
+                putCache(row - 1 + r, col - 1 + c, stored, '');
+                putServer(row - 1 + r, col - 1 + c, stored, '');
               }
             }
           },
@@ -260,6 +304,8 @@ function memorySpreadsheet(options = {}) {
 function loadIsolated(options = {}) {
   const sandbox = {
     console,
+    Date,
+    Utilities: { formatDate: formatInZone },
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(text) {
@@ -364,6 +410,18 @@ function loadIsolated(options = {}) {
           const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
           if (mode === 'RAW') target.setRawValues(values);
           else target.setValues(values);
+          return { updatedRange: range };
+        },
+        append(resource, spreadsheetId, range, options) {
+          const mode = options && options.valueInputOption;
+          const insert = options && options.insertDataOption;
+          box.rawWrites.push({ spreadsheetId, range, mode, insert, op: 'append', lockHeld: box.lockHeld });
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          sheet.appendRaw(resource && resource.values ? resource.values : [], insert === 'INSERT_ROWS', mode);
         },
         clear(resource, spreadsheetId, range) {
           const ss = box.byId[spreadsheetId];
@@ -374,7 +432,8 @@ function loadIsolated(options = {}) {
           sheet.clearServer();
         },
         get(spreadsheetId, range) {
-          if (box.blankReportRead) return { values: [] };
+          const parsedEarly = parseA1(range);
+          if (box.blankReportRead && (parsedEarly.name === '驗收結果' || parsedEarly.name === '公式核對')) return { values: [] };
           const ss = box.byId[spreadsheetId];
           if (!ss) throw new Error('spreadsheet not open');
           const parsed = parseA1(range);
@@ -460,9 +519,23 @@ function sheetRows(isolated, name) {
   return sheet.rows();
 }
 
+function displayStored(header, value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const epoch = Date.UTC(1899, 11, 30);
+    if (header === '日期') return new Date(Math.round(epoch + value * 86400000)).toISOString().slice(0, 10);
+    if (header === '收到時間') return new Date(Math.round(epoch + value * 86400000) - 8 * 60 * 60 * 1000).toISOString();
+    if (header === '時間') {
+      const minutes = Math.round(value * 1440);
+      return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+    }
+  }
+  return String(value);
+}
+
 function asMap(headers, row) {
   const out = {};
-  headers.forEach((key, index) => { out[key] = row[index] == null ? '' : String(row[index]); });
+  headers.forEach((key, index) => { out[key] = displayStored(key, row[index]); });
   return out;
 }
 
@@ -618,7 +691,7 @@ assert(runbook.includes('upload-pages-artifact'), '手冊要提醒 action 換版
 assert(!runbook.includes('tools/isolated-dining-check.html'), '手冊不可再叫人開公開路徑上的驗收頁');
 assert(!runbook.includes('apps-script/booking-attribution-isolated.gs'), '手冊不可再指向公開路徑上的隔離腳本');
 assert(!runbook.includes('tools/isolated-check-guard.js'), '手冊不可再指向公開路徑上的 guard');
-for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', '未全部寄出', 'duplicate']) {
+for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', '未確認全部寄出', 'duplicate']) {
   assert(runbook.includes(phrase), `驗收步驟缺少 ${phrase}`);
 }
 assert(!runbook.includes('備註四邊'), '手冊不可再要求回應裡的備註');
@@ -1025,7 +1098,7 @@ assert(formulaPayload.utmCampaign === '=1+1', '公式案例要用活動欄放 =1
 assert(formulaPayload.utmContent === '+1+1', '公式案例要用內容欄放 +1+1');
 assert(formulaPayload.utmTerm === '-1+1', '公式案例要用關鍵字放 -1+1');
 assert(formulaPayload.utmAdgroup === '@cmd', '公式案例要用廣告群組放 @cmd');
-assert(runner.box.alerts.some((item) => item.includes('四種前綴都通過')), '四種前綴通過才可以部署');
+assert(eightMsg.includes('四種前綴都通過'), '四種前綴通過才可以部署');
 const probeRows = sheetRows(runner, '公式核對');
 assert(probeRows.length === 5, '公式核對要有表頭與四格');
 if (probeRows.length === 5) {
@@ -1142,9 +1215,8 @@ try {
 } catch (err) {
   noteThrew = true;
 }
-assert(!noteThrew, 'alert 失敗時 notify_ 仍要返回');
+assert(!noteThrew, 'notify_ 只記執行紀錄，不可外拋');
 assert(noteLogs.some((line) => line.includes('四種前綴都通過')), 'notify_ 要把訊息寫進 console.log');
-assert(noteLogs.some((line) => line.includes('沒有試算表介面')), 'alert 的錯誤要寫進 console.log，不可吞掉');
 
 const mismatch = loadIsolated();
 mismatch.box.mutateReportCell = true;
@@ -1154,7 +1226,7 @@ assert(mismatchMsg.includes('結果未知') && mismatchMsg.includes('實際：ta
 const probeBoom = loadIsolated();
 probeBoom.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
 const probeMsg = String(probeBoom.sandbox.runIsolatedEightCases());
-assert(probeMsg.includes('結果未知') && probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('已經寄出 12 封信'), '公式核對寫入失敗要寫明停在哪一步，以及已經寄出幾封信');
+assert(probeMsg.includes('結果未知') && probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('確認寄出 12 封'), '公式核對寫入失敗要寫明停在哪一步，以及確認寄出幾封');
 assert(probeBoom.box.mails.length === 12, '停在案例 6 時已經寄出 12 封');
 assert(!sheetRows(probeBoom, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對寫入失敗後不可繼續案例 7');
 
@@ -1223,9 +1295,9 @@ partialCount.sandbox.MailApp.sendEmail = function (to, subject, body) {
 partialCount.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
 const partialCountMsg = String(partialCount.sandbox.runIsolatedEightCases());
 assert(partialCount.box.mails.length === 11, '案例 1–5 各兩封，加上案例 6 的客人信，實際成功 11 封');
-assert(partialCountMsg.includes('已經寄出 11 封信'), '部分寄信要算已確認成功的 11 封，不可寫成 10');
-assert(partialCountMsg.includes('另有 1 封沒有寄出') && partialCountMsg.includes('不要補寄'), '沒寄出的那封要另外標示，而且不要補寄');
-assert(!partialCountMsg.includes('已經寄出 10 封信'), '部分成功不可寫成已經寄出 10 封信');
+assert(partialCountMsg.includes('確認寄出 11 封'), '部分寄信要算已確認成功的 11 封，不可寫成 10');
+assert(partialCountMsg.includes('未確認寄出 1 封') && partialCountMsg.includes('不要補寄'), '丟錯的那封要標成未確認寄出，而且不要補寄');
+assert(!partialCountMsg.includes('確認寄出 10 封') && !partialCountMsg.includes('沒有寄出'), '不可寫成 10 封，也不可保證沒有寄出');
 
 const alertLogs = [];
 const alertRun = loadIsolated();
@@ -1236,15 +1308,14 @@ alertRun.sandbox.SpreadsheetApp.getUi = function () {
   return { alert() { throw new Error('沒有試算表介面'); } };
 };
 const alertMsg = String(alertRun.sandbox.runIsolatedEightCases());
-assert(alertMsg.includes('結果未知') && alertMsg.includes('沒有試算表介面'), '八案例的 alert 失敗要回結果未知，並帶上錯誤');
-assert(!alertMsg.includes('四種前綴都通過') && !alertMsg.includes('才可以部署'), 'alert 失敗不可回成功摘要');
-assert(alertLogs.some((line) => line.includes('沒有試算表介面')), '八案例的 alert 錯誤仍要進執行記錄');
+assert(alertMsg.includes('四種前綴都通過') && !alertMsg.includes('結果未知'), '八案例只記執行紀錄，alert 丟錯仍回成功摘要');
+assert(alertLogs.some((line) => line.includes('四種前綴都通過')), '八案例成功摘要仍要進執行記錄');
 
 assert(!verification.includes('API 寫入不會更新這份快取'), '快取那句沒有官方來源，要改掉');
 assert(verification.includes('不可依賴') && verification.includes('即時一致'), '快取要改成不可依賴跨服務即時一致');
 assert(verification.includes('真表上觀察到') && verification.includes('模擬重現'), '根因要分開真表觀察和模擬重現');
 assert(verification.includes('確認 Pages 建置仍把 .github/pages-unpublished 排除在公開網站之外'), '開旗標前要確認 Pages 仍排除未公開目錄');
-assert(runbook.includes('按確定') && runbook.includes('對話框'), '手冊要寫讀完 alert 按確定，等待對話框不是故障');
+assert(runbook.includes('沒有完整摘要') && runbook.includes('不算通過'), '手冊要寫執行紀錄沒有完整摘要就停、不算通過');
 
 if (failures.length) {
   console.error('reconciliation failed:');
