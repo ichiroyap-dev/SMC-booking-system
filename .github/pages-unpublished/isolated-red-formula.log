@@ -1,0 +1,19 @@
+test 交錯取號: pass
+test 寄信在放鎖之後: pass
+test 編號耗盡: pass
+test 寫入後郵件預覽失敗: pass
+test 寫入後 flush 失敗: pass
+case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected
+廣告／品牌 | google | ag_brand | 品牌 | no | google | ag_brand | 品牌 | no | yes
+廣告／非品牌 | google | ag_geo_dining | 非品牌 | no | google | ag_geo_dining | 非品牌 | no | yes
+非廣告 | direct/unknown | - | - | no | direct/unknown | - | - | no | yes
+來源不明 | 有點擊識別碼、來源待核對 | - | - | no | 有點擊識別碼、來源待核對 | - | - | no | yes
+reconciliation failed:
+ - 公式案例要用內容欄放 +1+1
+ - 公式案例要用關鍵字放 -1+1
+ - 公式案例要用廣告群組放 @cmd
+ - 四種前綴通過才可以部署
+ - 公式核對要有表頭與四格
+ - 任一格不符就要失敗，不准進入部署和網頁驗收
+ - 公式核對失敗後不可繼續後面的案例
+ - 手冊要列出四種原值與 getFormula

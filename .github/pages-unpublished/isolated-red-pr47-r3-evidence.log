@@ -1,0 +1,5 @@
+pr47 r3 item evidence failed: 4
+ - 文件要把本機 PASS 分開寫
+ - 文件要把 Pages BLOCKED 分開寫
+ - 文件要寫 BLOCKED 是結束碼 2
+ - 文件要點名 test-preflag-fixes 項目 5 在 gh 未登入時是 BLOCKED

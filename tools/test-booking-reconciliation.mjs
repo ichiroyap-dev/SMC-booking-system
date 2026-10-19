@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 // Local reconciliation only. Does not call script.google.com, send mail, or open a sheet.
-// The in-memory sheet stores setValues strings and does not execute formulas.
-// A leading apostrophe here is not evidence that Google Sheets will skip calculation.
+// setValues reproduces Sheets: a leading apostrophe is discarded, and a string starting with = is calculated.
+// setNumberFormat('@') does not stop that. setRichTextValue of a leading + stores the text =+ with an empty formula.
+// Sheets.Spreadsheets.Values.update with valueInputOption RAW stores the string unchanged.
+// SpreadsheetApp appendRow, setValues, setRichTextValue, and clear change the local cache immediately,
+// but stored rows change only when SpreadsheetApp.flush() replays those calls.
+// A deferred clear therefore wipes a Sheets API write that landed in between.
+// values.clear and values.get change or read stored rows immediately.
 // Usage: node tools/test-booking-reconciliation.mjs
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -78,14 +83,159 @@ function fieldsFor(search) {
   return attr.bookingFields(store, t0);
 }
 
-function memorySpreadsheet() {
+function enterLikeSheets(input) {
+  let text = input == null ? '' : String(input);
+  if (text.charAt(0) === "'") text = text.slice(1);
+  if (text.charAt(0) === '=') {
+    const sum = text.match(/^=(\d+(?:\.\d+)?)\+(\d+(?:\.\d+)?)$/);
+    return sum ? String(Number(sum[1]) + Number(sum[2])) : '#ERROR!';
+  }
+  return text;
+}
+
+function columnIndex(letters) {
+  let n = 0;
+  for (let i = 0; i < letters.length; i += 1) n = n * 26 + (letters.charCodeAt(i) - 64);
+  return n;
+}
+
+function omitTrailingEmptyCells(rows) {
+  return rows.map((row) => {
+    const copy = row.slice();
+    while (copy.length && (copy[copy.length - 1] == null || copy[copy.length - 1] === '')) copy.pop();
+    return copy;
+  });
+}
+
+function parseA1(range) {
+  const text = String(range);
+  const bang = text.lastIndexOf('!');
+  if (bang < 0) {
+    let only = text;
+    if (only.charAt(0) === "'" && only.charAt(only.length - 1) === "'") only = only.slice(1, -1).replace(/''/g, "'");
+    return { name: only, entire: true };
+  }
+  let name = text.slice(0, bang);
+  const cells = text.slice(bang + 1);
+  if (name.charAt(0) === "'" && name.charAt(name.length - 1) === "'") name = name.slice(1, -1).replace(/''/g, "'");
+  const columns = cells.match(/^([A-Z]+):([A-Z]+)$/);
+  if (columns) return { name, entire: true };
+  const match = cells.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+  if (match) return { name, row: Number(match[2]), col: columnIndex(match[1]), endRow: Number(match[4]), endCol: columnIndex(match[3]) };
+  const single = cells.match(/^([A-Z]+)(\d+)$/);
+  if (single) {
+    const row = Number(single[2]);
+    const col = columnIndex(single[1]);
+    return { name, row, col, endRow: row, endCol: col };
+  }
+  throw new Error('bad range ' + range);
+}
+
+function formatInZone(date, timeZone, pattern) {
+  const parts = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date instanceof Date ? date : new Date(date))) parts[part.type] = part.value;
+  const map = { yyyy: parts.year, MM: parts.month, dd: parts.day, HH: parts.hour === '24' ? '00' : parts.hour, mm: parts.minute, ss: parts.second };
+  return pattern.replace(/yyyy|MM|dd|HH|mm|ss/g, (token) => map[token]);
+}
+
+function memorySpreadsheet(options = {}) {
   const sheets = {};
-  function make() {
-    const data = [];
+  const ss = {
+    id: '',
+    timeZone: 'Asia/Taipei',
+    getId() { return ss.id; },
+    getSpreadsheetTimeZone() { return ss.timeZone; },
+    getSheetByName(name) { return sheets[name] || null; },
+    insertSheet(name) {
+      sheets[name] = make(name);
+      return sheets[name];
+    },
+  };
+  function make(name) {
+    const cache = [];
+    const cacheFormulas = {};
+    const server = [];
+    const serverFormulas = {};
+    const pending = [];
+    function putCache(r, c, value, formula) {
+      const line = cache[r] ? cache[r].slice() : [];
+      line[c] = value;
+      cache[r] = line;
+      cacheFormulas[r + ':' + c] = formula || '';
+    }
+    function putServer(r, c, value, formula) {
+      const line = server[r] ? server[r].slice() : [];
+      line[c] = value;
+      server[r] = line;
+      serverFormulas[r + ':' + c] = formula || '';
+    }
+    function queueCell(r, c, value, formula) {
+      putCache(r, c, value, formula);
+      pending.push({ type: 'cell', r, c, value, formula: formula || '' });
+    }
+    function syncCache() {
+      cache.length = 0;
+      for (let i = 0; i < server.length; i += 1) cache.push(server[i] ? server[i].slice() : []);
+      Object.keys(cacheFormulas).forEach((key) => { delete cacheFormulas[key]; });
+      Object.keys(serverFormulas).forEach((key) => { cacheFormulas[key] = serverFormulas[key]; });
+    }
     return {
-      getLastRow() { return data.length; },
-      appendRow(row) { data.push(row.slice()); },
-      clear() { data.length = 0; },
+      getLastRow() { return cache.length; },
+      appendRaw(matrix, insertRows, mode) {
+        let last = -1;
+        for (let i = 0; i < server.length; i += 1) {
+          const line = server[i] || [];
+          if (line.some((cell) => cell != null && cell !== '')) last = i;
+        }
+        const at = last + 1;
+        for (let r = 0; r < matrix.length; r += 1) {
+          const stored = (matrix[r] || []).map((cell) => {
+            if (mode === 'RAW' && typeof cell === 'number' && Number.isFinite(cell)) return cell;
+            if (mode === 'RAW') return cell == null ? '' : String(cell);
+            return enterLikeSheets(cell);
+          });
+          if (insertRows) {
+            server.splice(at + r, 0, stored.slice());
+            cache.splice(at + r, 0, stored.slice());
+          } else {
+            server[at + r] = stored.slice();
+            cache[at + r] = stored.slice();
+          }
+        }
+      },
+      appendRow(row) {
+        const copy = row.slice();
+        const index = cache.length;
+        cache.push(copy);
+        pending.push({ type: 'row', index, row: copy });
+      },
+      clear() {
+        cache.length = 0;
+        Object.keys(cacheFormulas).forEach((key) => { delete cacheFormulas[key]; });
+        pending.push({ type: 'clear' });
+      },
+      clearServer() {
+        server.length = 0;
+        Object.keys(serverFormulas).forEach((key) => { delete serverFormulas[key]; });
+        cache.length = 0;
+        Object.keys(cacheFormulas).forEach((key) => { delete cacheFormulas[key]; });
+      },
+      applyPending() {
+        const ops = pending.splice(0, pending.length);
+        for (const op of ops) {
+          if (op.type === 'clear') {
+            server.length = 0;
+            Object.keys(serverFormulas).forEach((key) => { delete serverFormulas[key]; });
+          } else if (op.type === 'row') {
+            server[op.index] = op.row.slice();
+          } else if (op.type === 'cell') {
+            putServer(op.r, op.c, op.value, op.formula);
+          }
+        }
+        syncCache();
+      },
       getRange(row, col, numRows, numCols) {
         const rowsN = numRows == null ? 1 : numRows;
         const colsN = numCols == null ? 1 : numCols;
@@ -93,15 +243,29 @@ function memorySpreadsheet() {
           setNumberFormat() { return this; },
           setValues(values) {
             for (let r = 0; r < rowsN; r += 1) {
-              const line = data[row - 1 + r] ? data[row - 1 + r].slice() : [];
-              for (let c = 0; c < colsN; c += 1) line[col - 1 + c] = values[r][c];
-              data[row - 1 + r] = line;
+              for (let c = 0; c < colsN; c += 1) queueCell(row - 1 + r, col - 1 + c, enterLikeSheets(values[r][c]), '');
+            }
+          },
+          setRichTextValue(rich) {
+            let text = rich && typeof rich.getText === 'function' ? rich.getText() : '';
+            if (text.charAt(0) === '+') text = '=' + text;
+            queueCell(row - 1, col - 1, text, '');
+            return this;
+          },
+          setRawValues(values) {
+            for (let r = 0; r < rowsN; r += 1) {
+              for (let c = 0; c < colsN; c += 1) {
+                const cell = values[r] ? values[r][c] : '';
+                const stored = typeof cell === 'number' && Number.isFinite(cell) ? cell : (cell == null ? '' : String(cell));
+                putCache(row - 1 + r, col - 1 + c, stored, '');
+                putServer(row - 1 + r, col - 1 + c, stored, '');
+              }
             }
           },
           getValues() {
             const out = [];
             for (let r = 0; r < rowsN; r += 1) {
-              const line = data[row - 1 + r] || [];
+              const line = cache[row - 1 + r] || [];
               const slice = [];
               for (let c = 0; c < colsN; c += 1) {
                 const cell = line[col - 1 + c];
@@ -112,26 +276,36 @@ function memorySpreadsheet() {
             return out;
           },
           getValue() {
-            const line = data[row - 1] || [];
+            const line = cache[row - 1] || [];
             return line[col - 1] == null ? '' : line[col - 1];
+          },
+          getFormula() {
+            const text = cache[row - 1] && cache[row - 1][col - 1] != null ? String(cache[row - 1][col - 1]) : '';
+            if (options.forceFormula && text === '=1+1') return '=1+1';
+            return cacheFormulas[(row - 1) + ':' + (col - 1)] || '';
           },
         };
       },
-      rows() { return data.map((row) => row.slice()); },
+      rows() {
+        const out = [];
+        for (let i = 0; i < server.length; i += 1) out.push(server[i] ? server[i].slice() : []);
+        return out;
+      },
+      getName() { return name; },
+      getParent() { return ss; },
     };
   }
-  return {
-    getSheetByName(name) { return sheets[name] || null; },
-    insertSheet(name) {
-      sheets[name] = make();
-      return sheets[name];
-    },
+  ss.flushPending = function flushPending() {
+    Object.keys(sheets).forEach((name) => sheets[name].applyPending());
   };
+  return ss;
 }
 
 function loadIsolated(options = {}) {
   const sandbox = {
     console,
+    Date,
+    Utilities: { formatDate: formatInZone },
     ContentService: {
       MimeType: { JSON: 'application/json' },
       createTextOutput(text) {
@@ -157,8 +331,9 @@ function loadIsolated(options = {}) {
     lockDenied: 0,
     lockAcquires: 0,
     lockLog: [],
+    rawWrites: [],
   };
-  const marked = memorySpreadsheet();
+  const marked = memorySpreadsheet(options);
   if (options.marker !== 'missing') {
     const marker = marked.insertSheet('隔離標記');
     marker.appendRow([options.marker === 'wrong' ? 'OTHER-SHEET' : 'SMC-ISOLATED-TEST']);
@@ -180,10 +355,23 @@ function loadIsolated(options = {}) {
     openById(id) {
       box.opened.push(id);
       if (!box.byId[id]) box.byId[id] = memorySpreadsheet();
+      box.byId[id].id = id;
       return box.byId[id];
     },
     flush() {
       box.lockLog.push(box.lockHeld ? 'flush-held' : 'flush-free');
+      Object.keys(box.byId).forEach((id) => {
+        const book = box.byId[id];
+        if (book && typeof book.flushPending === 'function') book.flushPending();
+      });
+    },
+    newRichTextValue() {
+      const rich = {
+        body: '',
+        setText(value) { this.body = String(value); return this; },
+        build() { return { getText: () => rich.body }; },
+      };
+      return rich;
     },
     getUi() {
       return {
@@ -205,6 +393,60 @@ function loadIsolated(options = {}) {
     sendEmail(to, subject, body) {
       box.mails.push({ to, subject, body });
       box.lockLog.push(box.lockHeld ? 'mail-held' : 'mail-free');
+    },
+  };
+  sandbox.Sheets = {
+    Spreadsheets: {
+      Values: {
+        update(resource, spreadsheetId, range, options) {
+          const mode = options && options.valueInputOption;
+          box.rawWrites.push({ spreadsheetId, range, mode });
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          const values = resource && resource.values ? resource.values : [];
+          const target = sheet.getRange(parsed.row, parsed.col, parsed.endRow - parsed.row + 1, parsed.endCol - parsed.col + 1);
+          if (mode === 'RAW') target.setRawValues(values);
+          else target.setValues(values);
+          return { updatedRange: range };
+        },
+        append(resource, spreadsheetId, range, options) {
+          const mode = options && options.valueInputOption;
+          const insert = options && options.insertDataOption;
+          box.rawWrites.push({ spreadsheetId, range, mode, insert, op: 'append', lockHeld: box.lockHeld });
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          sheet.appendRaw(resource && resource.values ? resource.values : [], insert === 'INSERT_ROWS', mode);
+        },
+        clear(resource, spreadsheetId, range) {
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          sheet.clearServer();
+        },
+        get(spreadsheetId, range) {
+          const parsedEarly = parseA1(range);
+          if (box.blankReportRead && (parsedEarly.name === '驗收結果' || parsedEarly.name === '公式核對')) return { values: [] };
+          const ss = box.byId[spreadsheetId];
+          if (!ss) throw new Error('spreadsheet not open');
+          const parsed = parseA1(range);
+          const sheet = ss.getSheetByName(parsed.name);
+          if (!sheet) throw new Error('sheet missing');
+          let values = omitTrailingEmptyCells(sheet.rows());
+          if (box.mutateReportCell && parsed.name === '驗收結果' && values[1]) {
+            values = values.map((row) => row.slice());
+            values[1][2] = 'tampered';
+          }
+          return { values };
+        },
+      },
     },
   };
   sandbox.LockService = {
@@ -234,8 +476,7 @@ function loadIsolated(options = {}) {
 }
 
 function post(isolated, payload) {
-  const response = isolated.sandbox.doPost({ postData: { contents: JSON.stringify(payload) } });
-  return JSON.parse(response.getContent());
+  return isolated.sandbox.acceptBooking_(payload).response;
 }
 
 function assertMailAfterRelease(box, label) {
@@ -278,9 +519,23 @@ function sheetRows(isolated, name) {
   return sheet.rows();
 }
 
+function displayStored(header, value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const epoch = Date.UTC(1899, 11, 30);
+    if (header === '日期') return new Date(Math.round(epoch + value * 86400000)).toISOString().slice(0, 10);
+    if (header === '收到時間') return new Date(Math.round(epoch + value * 86400000) - 8 * 60 * 60 * 1000).toISOString();
+    if (header === '時間') {
+      const minutes = Math.round(value * 1440);
+      return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+    }
+  }
+  return String(value);
+}
+
 function asMap(headers, row) {
   const out = {};
-  headers.forEach((key, index) => { out[key] = row[index] == null ? '' : String(row[index]); });
+  headers.forEach((key, index) => { out[key] = displayStored(key, row[index]); });
   return out;
 }
 
@@ -436,7 +691,7 @@ assert(runbook.includes('upload-pages-artifact'), '手冊要提醒 action 換版
 assert(!runbook.includes('tools/isolated-dining-check.html'), '手冊不可再叫人開公開路徑上的驗收頁');
 assert(!runbook.includes('apps-script/booking-attribution-isolated.gs'), '手冊不可再指向公開路徑上的隔離腳本');
 assert(!runbook.includes('tools/isolated-check-guard.js'), '手冊不可再指向公開路徑上的 guard');
-for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', 'ALLOWED_DEPLOYMENT_IDS', '未全部寄出', 'duplicate']) {
+for (const phrase of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106', 'ag_brand', 'ag_geo_dining', 'direct/unknown', '=1+1', '測試同學', 'runIsolatedEightCases', 'SMC-ISOLATED-TEST', 'isolated-dining-check.html', '回應沒有備註', '不會執行公式', '127.0.0.1', '未確認全部寄出', 'duplicate']) {
   assert(runbook.includes(phrase), `驗收步驟缺少 ${phrase}`);
 }
 assert(!runbook.includes('備註四邊'), '手冊不可再要求回應裡的備註');
@@ -507,6 +762,9 @@ for (const item of cases) {
 
 const formula = previewPayload(brandFields, 'SMC900105');
 formula.utmCampaign = '=1+1';
+formula.utmContent = '+1+1';
+formula.utmTerm = '-1+1';
+formula.utmAdgroup = '@cmd';
 assert(formula.note === NOTE && formula.date === '2026-10-22' && formula.people === '2', '公式案例的訂位欄仍是固定預期值');
 assertBookingResponse(post(isolated, formula), 'SMC900105');
 
@@ -539,10 +797,10 @@ const expectedAttr = {
     source: 'google',
     utmSource: 'google',
     utmMedium: 'cpc',
-    utmCampaign: "'=1+1",
-    utmContent: 'ag_brand',
-    utmTerm: '',
-    utmAdgroup: '',
+    utmCampaign: '=1+1',
+    utmContent: '+1+1',
+    utmTerm: '-1+1',
+    utmAdgroup: '@cmd',
     adgroupBucket: '品牌',
     gclid: '',
   },
@@ -572,13 +830,13 @@ for (const id of Object.keys(expectedAttr)) {
   }
   const sentGuest = isolated.box.mails.filter((item) => item.subject === mail['客人主旨']);
   const sentShop = isolated.box.mails.filter((item) => item.subject === mail['店內主旨']);
-  assert(sentGuest.length === 1 && sentGuest[0].body === guest && sentGuest[0].to === 'hub-test@example.com', `${id} 寄出的客人信要與固定預期一致，且只一封`);
+  assert(sentGuest.length === 1 && sentGuest[0].body === guest && sentGuest[0].to === 'shop-test@example.com', `${id} 寄出的客人信要與固定預期一致，收件人固定為測試信箱，且只一封`);
   assert(sentShop.length === 1 && sentShop[0].body === shop && sentShop[0].to === 'shop-test@example.com', `${id} 寄出的店內信要與固定預期一致，且只一封`);
 }
 
 assert(!mailById(isolated, 'SMC900101')['店內正文'].includes('ag_geo_dining'), '品牌店內信不可混入非品牌代碼');
 assert(mailById(isolated, 'SMC900102')['店內正文'].includes('ag_geo_dining') && mailById(isolated, 'SMC900102')['店內正文'].includes('非品牌'), '非品牌店內信要有自己的代碼');
-assert(rowById(isolated, 'SMC900105')['utm活動'] === "'=1+1" && rowById(isolated, 'SMC900105')['utm活動'] !== '2', '公式開頭要變成純文字；這不是 Google 試算表已執行過的證明');
+assert(rowById(isolated, 'SMC900105')['utm活動'] === '=1+1' && rowById(isolated, 'SMC900105')['utm活動'] !== '2', '公式開頭要留下原值字串，不可變成算式結果');
 
 isolated.sandbox.MailApp.sendEmail = () => { throw new Error('mail down'); };
 const mailed = post(isolated, previewPayload(brandFields, 'SMC900107'));
@@ -599,10 +857,30 @@ const guardIso = loadIsolated();
 assert(guardIso.sandbox.formulaGuard_(' 靠窗') === ' 靠窗', '一般備註的開頭空白要保留');
 assert(guardIso.sandbox.attributionText_(' 靠窗') === '靠窗', '來源欄仍去掉兩端空白');
 for (const hidden of ['\u200B', '\u200C', '\u200D', '\uFEFF', '\u0000']) {
-  assert(guardIso.sandbox.formulaGuard_(hidden + '=1+1') === "'=1+1", '公式前的零寬或 NUL 要先拿掉');
-  assert(guardIso.sandbox.attributionText_(hidden + '=1+1') === "'=1+1", '來源欄的零寬或 NUL 要先拿掉');
+  assert(guardIso.sandbox.formulaGuard_(hidden + '=1+1') === '=1+1', '公式前的零寬或 NUL 要先拿掉');
+  assert(guardIso.sandbox.attributionText_(hidden + '=1+1') === '=1+1', '來源欄的零寬或 NUL 要先拿掉');
 }
-assert(guardIso.sandbox.formulaGuard_(' \u200B=1+1') === "'=1+1", '空白加零寬仍要擋下公式');
+assert(guardIso.sandbox.formulaGuard_(' \u200B=1+1') === '=1+1', '空白加零寬仍要擋下公式');
+const formulaDemo = guardIso.box.byId['isolated-test-sheet'].insertSheet('等號模擬');
+formulaDemo.getRange(1, 1).setNumberFormat('@');
+formulaDemo.getRange(1, 1).setValues([['=1+1']]);
+formulaDemo.getRange(1, 2).setNumberFormat('@');
+formulaDemo.getRange(1, 2).setValues([["'=1+1"]]);
+formulaDemo.getRange(1, 3).setValues([['+1+1']]);
+formulaDemo.getRange(1, 4).setValues([['-1+1']]);
+formulaDemo.getRange(1, 5).setValues([['@cmd']]);
+formulaDemo.getRange(1, 6).setRichTextValue(guardIso.sandbox.SpreadsheetApp.newRichTextValue().setText('=1+1').build());
+assert(formulaDemo.getRange(1, 1).getValue() === '2' && formulaDemo.getRange(1, 1).getFormula() === '', 'setValues 把 = 開頭算成結果，純文字格式擋不住');
+assert(formulaDemo.getRange(1, 2).getValue() === '2', '前導單引號在 setValues 會被吃掉，= 仍被計算');
+assert(formulaDemo.getRange(1, 3).getValue() === '+1+1' && formulaDemo.getRange(1, 4).getValue() === '-1+1' && formulaDemo.getRange(1, 5).getValue() === '@cmd', '+ - @ 不是公式開頭，setValues 會原樣留下');
+assert(formulaDemo.getRange(1, 6).getValue() === '=1+1' && formulaDemo.getRange(1, 6).getFormula() === '', 'setRichTextValue 留下 =1+1 且 getFormula 為空');
+formulaDemo.getRange(2, 1).setNumberFormat('@');
+formulaDemo.getRange(2, 1).setRichTextValue(guardIso.sandbox.SpreadsheetApp.newRichTextValue().setText('+1+1').build());
+assert(formulaDemo.getRange(2, 1).getValue() === '=+1+1' && formulaDemo.getRange(2, 1).getFormula() === '', 'setRichTextValue 會把 + 開頭改成文字 =+，getFormula 仍是空的');
+formulaDemo.getParent().id = 'isolated-test-sheet';
+guardIso.sandbox.Sheets.Spreadsheets.Values.update({ values: [['+1+1', '=1+1', '-1+1', '@cmd']] }, 'isolated-test-sheet', "'等號模擬'!A3:D3", { valueInputOption: 'RAW' });
+assert(formulaDemo.getRange(3, 1).getValue() === '+1+1' && formulaDemo.getRange(3, 2).getValue() === '=1+1' && formulaDemo.getRange(3, 3).getValue() === '-1+1' && formulaDemo.getRange(3, 4).getValue() === '@cmd', 'RAW 要原樣留下四種開頭');
+assert(formulaDemo.getRange(3, 1).getFormula() === '' && formulaDemo.getRange(3, 2).getFormula() === '', 'RAW 寫入的格子 getFormula 要為空');
 const leads = [['空白', ' '], ['Tab', '\t'], ['換行', '\n']];
 const prefixes = ['=', '+', '-', '@'];
 let guardN = 0;
@@ -610,10 +888,10 @@ for (const [leadName, lead] of leads) {
   for (const prefix of prefixes) {
     guardN += 1;
     const raw = lead + prefix + '1+1';
-    const quoted = "'" + prefix + '1+1';
+    const literal = prefix + '1+1';
     const id = 'SMC91' + String(1000 + guardN);
-    assert(guardIso.sandbox.attributionText_(raw) === quoted, `${leadName}+${prefix} 來源要先去掉空白再加引號`);
-    assert(guardIso.sandbox.formulaGuard_(raw) === quoted, `${leadName}+${prefix} 訂位文字要先去掉空白再加引號`);
+    assert(guardIso.sandbox.attributionText_(raw) === literal, `${leadName}+${prefix} 來源要先去掉空白，留下原值字串`);
+    assert(guardIso.sandbox.formulaGuard_(raw) === literal, `${leadName}+${prefix} 訂位文字要先去掉空白，留下原值字串`);
     const payload = previewPayload(brandFields, id);
     payload.utmCampaign = raw;
     payload.note = raw;
@@ -624,12 +902,12 @@ for (const [leadName, lead] of leads) {
     assert(payload.note === raw && payload.utmCampaign === raw && payload.name === raw, `${id} 送出內容保持原字`);
     const row = rowById(guardIso, id);
     const mail = mailById(guardIso, id);
-    assert(row['utm活動'] === quoted && row['utm活動'] !== '2' && row['utm活動'] !== prefix + '1+1', `${id} utm活動不可是未跳脫的公式`);
-    assert(row['備註'] === quoted && row['姓名'] === quoted && row['品項'] === quoted, `${id} 原訂位文字在寫入前要跳脫`);
+    assert(row['utm活動'] === literal && row['utm活動'] !== '2', `${id} utm活動要留下原值字串，不可變成算式結果`);
+    assert(row['備註'] === literal && row['姓名'] === literal && row['品項'] === literal, `${id} 原訂位文字寫入後仍是去掉空白後的原值`);
     assert(row['日期'] === '2026-10-22' && row['時間'] === '12:00' && row['人數'] === '2' && row['桌數'] === '1', `${id} 其他訂位欄不可被公式案例改掉`);
-    assert(mail['客人正文'] === expectedGuest(id, quoted), `${id} 客人信備註要是跳脫後的文字`);
-    assert(mail['店內正文'].includes('備註：' + quoted) && mail['店內正文'].includes('utm活動：' + quoted) && mail['店內正文'].includes('品項：' + quoted), `${id} 店內信要是跳脫後的文字`);
-    assert(!mail['客人正文'].includes(raw) && !mail['店內正文'].includes(raw) && !row['備註'].includes(lead + prefix), `${id} 寫入與兩封信不可留下會變成公式的前綴`);
+    assert(mail['客人正文'] === expectedGuest(id, literal), `${id} 客人信備註要是原值字串`);
+    assert(mail['店內正文'].includes('備註：' + literal) && mail['店內正文'].includes('utm活動：' + literal) && mail['店內正文'].includes('品項：' + literal), `${id} 店內信要是原值字串`);
+    assert(!mail['客人正文'].includes(raw) && !mail['店內正文'].includes(raw) && !row['備註'].includes(lead + prefix), `${id} 寫入與兩封信不可留下公式前的空白`);
   }
 }
 
@@ -681,18 +959,27 @@ const eight = runner.sandbox.isolatedEightPayloads_('shop-test@example.com');
 assert(eight.length === 8, '按鈕要送 8 筆');
 assert(eight[5].payload.utmCampaign === '=1+1' && eight[5].payload.note === NOTE, '第 6 筆公式在活動欄，備註仍是原句');
 assert(eight[7].payload._testOrderId === 'SMC900101' && eight[7].payload.utmContent === 'ag_brand', '第 8 筆是品牌同一編號');
-assert(String(runner.sandbox.runIsolatedEightCases()).includes('8'), '按鈕要回報已送出 8 筆');
+const eightMsg = String(runner.sandbox.runIsolatedEightCases());
+assert(eightMsg.includes('8') && !eightMsg.includes('結果未知'), '按鈕要回報已送出 8 筆');
+runner.sandbox.SpreadsheetApp.flush();
 const runnerOrders = sheetRows(runner, '訂單');
 assert(runnerOrders.length === 8, '8 筆裡同一編號只佔一列，加上表頭是 8 列');
 for (const id of ['SMC900001', 'SMC900101', 'SMC900102', 'SMC900103', 'SMC900104', 'SMC900105', 'SMC900106']) {
   assert(runnerOrders.slice(1).filter((row) => row[0] === id).length === 1, `按鈕結果應有一列 ${id}`);
 }
 assert(runner.box.mails.filter((item) => item.subject.includes('SMC900101')).length === 2, '同一編號只寄一輪客人信與店內信');
+assert(runner.box.mails.length === 14, '八案例全成功是 14 封：七筆新單各兩封，重複那筆不寄');
 const resultRows = sheetRows(runner, '驗收結果');
 assert(resultRows.length === 9, '驗收結果要有表頭加 8 列');
-assert(resultRows[8][1] === 'SMC900101' && resultRows[8][2] === 'success' && resultRows[8][3] === '否' && resultRows[8][4] === '否', '第 8 筆不可再寫入或再寄信');
+const eighth = resultRows[8] || [];
+assert(eighth[1] === 'SMC900101' && eighth[2] === 'success' && eighth[3] === '否' && eighth[4] === '否', '第 8 筆不可再寫入或再寄信');
 const runnerFormula = asMap(runnerOrders[0], runnerOrders.find((row) => row[0] === 'SMC900105'));
-assert(runnerFormula['utm活動'] === "'=1+1" && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列也要是純文字，訂位欄不變');
+assert(runnerFormula['utm活動'] === '=1+1' && runnerFormula['utm活動'] !== '2' && runnerFormula['utm內容'] === '+1+1' && runnerFormula['utm內容'] !== '=+1+1' && runnerFormula['備註'] === NOTE && runnerFormula['日期'] === '2026-10-22', '按鈕送出的公式列要留下原值字串，加號不可變成 =+，訂位欄不變');
+assert(runner.box.rawWrites.length > 0 && runner.box.rawWrites.every((item) => item.mode === 'RAW'), '寫入必須走 Sheets API 的 RAW');
+assert(gs.includes("valueInputOption: 'RAW'") && gs.includes('Sheets.Spreadsheets.Values.update'), '隔離腳本要用 Sheets API，而且 valueInputOption 是 RAW');
+assert(gs.includes('舊寫法'), '檔頭要註明前導單引號那句是舊寫法');
+assert(gs.includes('Sheets.Spreadsheets.Values.clear') && gs.includes('Sheets.Spreadsheets.Values.get'), '報告分頁要用 API 清除，最後再用 API 讀回');
+assert(!gs.includes('sheet.clear()'), '不可再呼叫會延後的 sheet.clear');
 
 function withoutTestId(fields) {
   const payload = attr.payloadIfAttributionEnabled(baseOrder(), fields);
@@ -804,6 +1091,231 @@ for (const item of cases) {
   ].join(' | '));
 }
 console.log(lines.join('\n'));
+
+const formulaPayload = eight[5].payload;
+assert(formulaPayload.note === NOTE, '公式案例的備註仍是原句');
+assert(formulaPayload.utmCampaign === '=1+1', '公式案例要用活動欄放 =1+1');
+assert(formulaPayload.utmContent === '+1+1', '公式案例要用內容欄放 +1+1');
+assert(formulaPayload.utmTerm === '-1+1', '公式案例要用關鍵字放 -1+1');
+assert(formulaPayload.utmAdgroup === '@cmd', '公式案例要用廣告群組放 @cmd');
+assert(eightMsg.includes('四種前綴都通過'), '四種前綴通過才可以部署');
+const probeRows = sheetRows(runner, '公式核對');
+assert(probeRows.length === 5, '公式核對要有表頭與四格');
+if (probeRows.length === 5) {
+  const probeMap = {};
+  for (const row of probeRows.slice(1)) probeMap[row[0]] = row;
+  for (const [header, raw] of [['utm活動', '=1+1'], ['utm內容', '+1+1'], ['utm關鍵字', '-1+1'], ['utm廣告群組', '@cmd']]) {
+    const row = probeMap[header];
+    assert(row && row[1] === JSON.stringify(raw), `${header} 原值要用 JSON 字串原樣呈現`);
+    assert(row && row[2] === JSON.stringify(raw), `${header} 讀回值要用 JSON 字串原樣呈現`);
+    assert(row && row[1] !== '=+' + raw.slice(1) && row[2] !== '=+1+1', `${header} 報告分頁不可把 + 補成 =+`);
+    assert(row && row[3] === '（空）', `${header} 的 getFormula 要為空`);
+    assert(row && row[4] === '通過', `${header} 不符就不可算通過`);
+  }
+}
+const forced = loadIsolated({ forceFormula: true });
+const forcedMsg = String(forced.sandbox.runIsolatedEightCases());
+assert(forcedMsg.includes('不要部署') && forcedMsg.includes('不要開網頁驗收'), '任一格不符就要失敗，不准進入部署和網頁驗收');
+assert(!sheetRows(forced, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對失敗後不可繼續後面的案例');
+assert(runbook.includes('getFormula') && runbook.includes('+1+1') && runbook.includes('-1+1') && runbook.includes('@cmd'), '手冊要列出四種原值與 getFormula');
+assert(runbook.includes('Google Sheets API') && runbook.includes('RAW') && runbook.includes('同一張表') && runbook.includes('表頭以下'), '手冊要寫進階服務、RAW，以及同一張表清除表頭以下的內容');
+assert(!runbook.includes('或新建一張試算表'), '重跑說明只留同一張表清除內容，不要再教換新試算表');
+assert(runbook.includes('可能再授權') && runbook.includes('清除內容') && runbook.includes('所有案例都會被判成重複'), '手冊要寫可能再授權、清除內容，以及沒清訂單和郵件預覽時全部變成重複');
+assert(!runbook.includes('會再授權'), '手冊不要寫成一定會再授權');
+
+const reportSheet = loadIsolated();
+reportSheet.box.byId['isolated-test-sheet'].id = 'isolated-test-sheet';
+reportSheet.sandbox.writeResultSheet_(reportSheet.box.byId['isolated-test-sheet'], [
+  ['案例', '訂單編號', '結果', '寫入', '寄信'],
+  ['加號', '+1+1', 'success', '是', '是'],
+]);
+reportSheet.sandbox.SpreadsheetApp.flush();
+const reportRows = sheetRows(reportSheet, '驗收結果');
+assert(reportRows[1] && reportRows[1][1] === JSON.stringify('+1+1') && reportRows[1][1] !== '=+1+1', '驗收結果裡以 + 開頭的內容要原樣呈現');
+
+const deferred = loadIsolated();
+const deferredBook = deferred.box.byId['isolated-test-sheet'];
+const deferredDemo = deferredBook.insertSheet('延後清除');
+deferredDemo.appendRow(['仍在']);
+assert(deferredDemo.rows().length === 0, 'SpreadsheetApp 的 appendRow 要等 flush 才寫進儲存的列');
+deferred.sandbox.SpreadsheetApp.flush();
+assert(deferredDemo.rows().length === 1 && deferredDemo.rows()[0][0] === '仍在', 'flush 後 appendRow 才生效');
+deferredDemo.clear();
+assert(deferredDemo.rows().length === 1, 'SpreadsheetApp 的 clear 要等 flush 才生效');
+deferred.sandbox.SpreadsheetApp.flush();
+assert(deferredDemo.rows().length === 0, 'flush 後 clear 才把儲存的列清掉');
+deferredBook.id = 'isolated-test-sheet';
+for (const name of ['驗收結果', '公式核對']) {
+  const seeded = deferredBook.insertSheet(name);
+  seeded.appendRow(name === '驗收結果' ? ['案例', '訂單編號', '結果', '寫入', '寄信'] : ['欄位', '原值', '讀回值', 'getFormula', '判定']);
+}
+deferred.sandbox.SpreadsheetApp.flush();
+const deferredMsg = String(deferred.sandbox.runIsolatedEightCases());
+deferred.sandbox.SpreadsheetApp.flush();
+const deferredResults = sheetRows(deferred, '驗收結果');
+const deferredProbes = sheetRows(deferred, '公式核對');
+assert(deferredResults.length === 9, '報告被延後的 clear 洗掉：腳本結束的 flush 之後，驗收結果應仍有 9 列');
+assert(deferredProbes.length === 5, '報告被延後的 clear 洗掉：腳本結束的 flush 之後，公式核對應仍有 5 列');
+assert(deferredMsg.includes('四種前綴都通過') && !deferredMsg.includes('結果未知'), '報告留住時八案例才算通過');
+
+const blankRead = loadIsolated();
+blankRead.box.blankReportRead = true;
+const blankReadMsg = String(blankRead.sandbox.runIsolatedEightCases());
+assert(blankReadMsg.includes('結果未知') && blankReadMsg.includes('驗收結果') && blankReadMsg.includes('公式核對'), '讀回列數不對要標成未知，並寫明兩張分頁');
+assert(blankReadMsg.includes('讀回') && blankReadMsg.includes('預期'), '讀回失敗要寫明實際列數和預期列數');
+assert(!blankReadMsg.includes('才可以部署'), '報告讀回是空白時不可說可以部署');
+
+const noSheets = loadIsolated();
+delete noSheets.sandbox.Sheets;
+const noSheetsRes = post(noSheets, previewPayload(brandFields, 'SMC900801'));
+assert(noSheetsRes.status === 'error' && noSheetsRes.wrote === false && noSheetsRes.mailed !== true, '沒啟用進階服務要在寫入前回錯誤，不可標成已寄出');
+assert(noSheets.box.mails.length === 0 && sheetRows(noSheets, '訂單').length === 0, '沒啟用進階服務不可寫表或寄信');
+assert(String(noSheets.sandbox.runIsolatedEightCases()).includes('沒有寫入'), '沒啟用進階服務時八案例要停住');
+
+const blankMail = loadIsolated();
+blankMail.props.SMC_SHOP_EMAIL = '';
+const blankBooking = blankMail.sandbox.acceptBooking_(previewPayload(brandFields, 'SMC900701'));
+assert(blankBooking.response.status === 'error' && blankBooking.wrote === false && blankBooking.mailed === false && blankBooking.response.mailed !== true, '信箱空白要直接回錯誤，不寫表、不寄信，也不可標成已寄出');
+assert(blankMail.box.mails.length === 0 && sheetRows(blankMail, '訂單').length === 0, '信箱空白不可寫表或寄信');
+const blankRun = String(blankMail.sandbox.runIsolatedEightCases());
+assert(blankRun.includes('沒有寫入') && blankRun.includes('沒有寄信'), '信箱空白時八案例要停住');
+assert(blankMail.box.mails.length === 0 && sheetRows(blankMail, '訂單').length === 0, '八案例在信箱空白時仍不可寫表或寄信');
+const badMail = loadIsolated();
+badMail.props.SMC_SHOP_EMAIL = 'not-an-email';
+const badBooking = badMail.sandbox.acceptBooking_(previewPayload(brandFields, 'SMC900702'));
+assert(badBooking.response.status === 'error' && badBooking.wrote === false && badBooking.mailed === false, '信箱格式錯誤要直接回錯誤，不寫表、不寄信');
+assert(badMail.box.mails.length === 0 && sheetRows(badMail, '訂單').length === 0, '信箱格式錯誤不可寫表或寄信');
+
+const readbackSrc = gs.slice(gs.indexOf('var readError'));
+assert(readbackSrc.includes('SpreadsheetApp.flush()'), '最後讀回報告的開頭要先 flush');
+const lateClear = loadIsolated();
+const realWriteResult = lateClear.sandbox.writeResultSheet_;
+lateClear.sandbox.writeResultSheet_ = function (ss, lines) {
+  const written = realWriteResult(ss, lines);
+  ss.getSheetByName('驗收結果').clear();
+  return written;
+};
+const lateMsg = String(lateClear.sandbox.runIsolatedEightCases());
+lateClear.sandbox.SpreadsheetApp.flush();
+assert(lateMsg.includes('結果未知') && lateMsg.includes('驗收結果') && lateMsg.includes('讀回 0') && lateMsg.includes('預期 9'), '讀回前先 flush，延後的 clear 要報結果未知，並列出 0 列和預期 9 列');
+assert(!lateMsg.includes('四種前綴都通過'), '延後的 clear 把報告洗掉時不可說四種前綴都通過');
+assert(sheetRows(lateClear, '驗收結果').length === 0, '這個突變在腳本結束後驗收結果是空的');
+
+const noteLogs = [];
+const note = loadIsolated();
+note.sandbox.console = {
+  log(...args) { noteLogs.push(args.map((item) => String(item)).join(' ')); },
+};
+note.sandbox.SpreadsheetApp.getUi = function () {
+  return { alert() { throw new Error('沒有試算表介面'); } };
+};
+let noteThrew = false;
+try {
+  note.sandbox.notify_('已送出 8 筆。四種前綴都通過');
+} catch (err) {
+  noteThrew = true;
+}
+assert(!noteThrew, 'notify_ 只記執行紀錄，不可外拋');
+assert(noteLogs.some((line) => line.includes('四種前綴都通過')), 'notify_ 要把訊息寫進 console.log');
+
+const mismatch = loadIsolated();
+mismatch.box.mutateReportCell = true;
+const mismatchMsg = String(mismatch.sandbox.runIsolatedEightCases());
+assert(mismatchMsg.includes('結果未知') && mismatchMsg.includes('實際：tampered') && mismatchMsg.includes('預期：success'), '內容不符要寫出實際值和預期值');
+
+const probeBoom = loadIsolated();
+probeBoom.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
+const probeMsg = String(probeBoom.sandbox.runIsolatedEightCases());
+assert(probeMsg.includes('結果未知') && probeMsg.includes('6 公式開頭') && probeMsg.includes('公式核對寫入') && probeMsg.includes('確認寄出 12 封'), '公式核對寫入失敗要寫明停在哪一步，以及確認寄出幾封');
+assert(probeBoom.box.mails.length === 12, '停在案例 6 時已經寄出 12 封');
+assert(!sheetRows(probeBoom, '訂單').some((row) => row[0] === 'SMC900106'), '公式核對寫入失敗後不可繼續案例 7');
+
+const trail = loadIsolated();
+const trailBook = trail.box.byId['isolated-test-sheet'];
+trailBook.id = 'isolated-test-sheet';
+const trailWritten = trail.sandbox.writeResultSheet_(trailBook, [
+  ['案例', '訂單編號', '結果', '寫入', '寄信'],
+  ['尾端空白', 'SMC900199', 'success', '是', ''],
+]);
+const trailActual = trail.sandbox.readSheetValues_(trailBook.getSheetByName('驗收結果'));
+assert(trailActual[1] && trailActual[1].length === 4, 'API 讀回要省略列尾的空欄');
+assert(trail.sandbox.reportProblem_('驗收結果', trailActual, trailWritten) === '', '列尾空欄被 API 省略時要補齊再比對');
+
+const verification = readFileSync(join(root, unpublishedDir, 'isolated-e2e-verification.md'), 'utf8');
+const spec = readFileSync(join(root, 'docs/booking-attribution.md'), 'utf8');
+assert(!verification.includes('不再默默留下空白'), '文件要刪掉不再默默留下空白');
+assert(!verification.includes('案例 7、8 的'), '案例 8 是重複編號，不會 flush');
+assert(verification.includes('移植到正式腳本要另外驗證'), '文件要寫移植到正式腳本要另外驗證');
+assert(verification.includes('PR37') && verification.includes('getLastRow()+1') && verification.includes('RAW 全文字'), '開旗標前的三項要在文件裡寫清楚');
+assert(spec.includes('--experimental-websocket') && spec.includes('Node 20') && spec.includes('Node 22'), '說明要寫 Node 20 的瀏覽器測試要加 --experimental-websocket，Node 22 不用');
+assert(spec.includes('test-booking-attribution.mjs') && spec.includes('test-isolated-dining-check.mjs'), '要點名兩個瀏覽器測試');
+assert(runbook.includes('執行記錄'), '手冊要寫執行記錄也有同一段結果');
+
+const flushBoom = loadIsolated();
+const realFlushWrite = flushBoom.sandbox.writeResultSheet_;
+let resultSheetWritten = false;
+flushBoom.sandbox.writeResultSheet_ = function (ss, lines) {
+  const written = realFlushWrite(ss, lines);
+  resultSheetWritten = true;
+  return written;
+};
+const realFlush = flushBoom.sandbox.SpreadsheetApp.flush;
+flushBoom.sandbox.SpreadsheetApp.flush = function () {
+  if (resultSheetWritten) throw new Error('最終 flush 失敗');
+  return realFlush.apply(this, arguments);
+};
+const flushMsg = String(flushBoom.sandbox.runIsolatedEightCases());
+assert(flushMsg.includes('結果未知') && flushMsg.includes('驗收結果') && flushMsg.includes('公式核對') && flushMsg.includes('flush') && flushMsg.includes('最終 flush 失敗'), '最終 flush 失敗要寫明階段、兩張分頁和錯誤');
+assert(!flushMsg.includes('讀不回來'), 'flush 失敗不可說成讀不回來');
+
+const probeRead = loadIsolated();
+const realProbeGet = probeRead.sandbox.Sheets.Spreadsheets.Values.get;
+probeRead.sandbox.Sheets.Spreadsheets.Values.get = function (id, range) {
+  if (String(range).includes('公式核對')) throw new Error('公式核對 get 失敗');
+  return realProbeGet.apply(this, arguments);
+};
+const probeReadMsg = String(probeRead.sandbox.runIsolatedEightCases());
+assert(probeReadMsg.includes('結果未知') && probeReadMsg.includes('公式核對') && probeReadMsg.includes('公式核對 get 失敗'), '公式核對讀回失敗要寫明分頁和錯誤');
+
+const resultBoom = loadIsolated();
+resultBoom.sandbox.writeResultSheet_ = function () { throw new Error('驗收結果寫入失敗'); };
+const resultBoomMsg = String(resultBoom.sandbox.runIsolatedEightCases());
+assert(resultBoomMsg.includes('結果未知') && resultBoomMsg.includes('驗收結果') && resultBoomMsg.includes('驗收結果寫入失敗'), '驗收結果寫入失敗要寫明分頁和錯誤');
+
+const partialCount = loadIsolated();
+const realPartialSend = partialCount.sandbox.MailApp.sendEmail;
+let shopSends = 0;
+partialCount.sandbox.MailApp.sendEmail = function (to, subject, body) {
+  if (String(subject).includes('店內對帳')) {
+    shopSends += 1;
+    if (shopSends === 6) throw new Error('第二封店內信失敗');
+  }
+  return realPartialSend.apply(this, arguments);
+};
+partialCount.sandbox.writeProbeSheet_ = function () { throw new Error('probe write failed'); };
+const partialCountMsg = String(partialCount.sandbox.runIsolatedEightCases());
+assert(partialCount.box.mails.length === 11, '案例 1–5 各兩封，加上案例 6 的客人信，實際成功 11 封');
+assert(partialCountMsg.includes('確認寄出 11 封'), '部分寄信要算已確認成功的 11 封，不可寫成 10');
+assert(partialCountMsg.includes('未確認寄出 1 封') && partialCountMsg.includes('不要補寄'), '丟錯的那封要標成未確認寄出，而且不要補寄');
+assert(!partialCountMsg.includes('確認寄出 10 封') && !partialCountMsg.includes('沒有寄出'), '不可寫成 10 封，也不可保證沒有寄出');
+
+const alertLogs = [];
+const alertRun = loadIsolated();
+alertRun.sandbox.console = {
+  log(...args) { alertLogs.push(args.map((item) => String(item)).join(' ')); },
+};
+alertRun.sandbox.SpreadsheetApp.getUi = function () {
+  return { alert() { throw new Error('沒有試算表介面'); } };
+};
+const alertMsg = String(alertRun.sandbox.runIsolatedEightCases());
+assert(alertMsg.includes('四種前綴都通過') && !alertMsg.includes('結果未知'), '八案例只記執行紀錄，alert 丟錯仍回成功摘要');
+assert(alertLogs.some((line) => line.includes('四種前綴都通過')), '八案例成功摘要仍要進執行記錄');
+
+assert(!verification.includes('API 寫入不會更新這份快取'), '快取那句沒有官方來源，要改掉');
+assert(verification.includes('不可依賴') && verification.includes('即時一致'), '快取要改成不可依賴跨服務即時一致');
+assert(verification.includes('真表上觀察到') && verification.includes('模擬重現'), '根因要分開真表觀察和模擬重現');
+assert(verification.includes('確認 Pages 建置仍把 .github/pages-unpublished 排除在公開網站之外'), '開旗標前要確認 Pages 仍排除未公開目錄');
+assert(runbook.includes('沒有完整摘要') && runbook.includes('不算通過'), '手冊要寫執行紀錄沒有完整摘要就停、不算通過');
 
 if (failures.length) {
   console.error('reconciliation failed:');

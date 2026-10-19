@@ -1,0 +1,36 @@
+未設定 SMC_TEST_SHEET_ID。沒有寫入試算表，也沒有寄信。
+隔離標記不符。沒有寫入試算表，也沒有寄信。
+這支腳本只供隔離測試。未設定 SMC_ATTRIBUTION_ISOLATED=yes，沒有寫入試算表，也沒有寄信。
+已送出 8 筆。四種前綴都通過，才可以部署。全成功應有 14 封測試信。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。
+test 交錯取號: pass
+test 寄信在放鎖之後: pass
+test 編號耗盡: pass
+test 寫入後郵件預覽失敗: pass
+test 寫入後 flush 失敗: pass
+case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected
+廣告／品牌 | google | ag_brand | 品牌 | no | google | ag_brand | 品牌 | no | yes
+廣告／非品牌 | google | ag_geo_dining | 非品牌 | no | google | ag_geo_dining | 非品牌 | no | yes
+非廣告 | direct/unknown | - | - | no | direct/unknown | - | - | no | yes
+來源不明 | 有點擊識別碼、來源待核對 | - | - | no | 有點擊識別碼、來源待核對 | - | - | no | yes
+公式核對失敗。結果未知，先核對試算表、勿重送。讀回與寫入不一致就停下，請核對原列，不要重送。欄位：utm活動。原值：=1+1。讀回值：=1+1。getFormula：=1+1。請看「公式核對」分頁的原值、讀回值與 getFormula。不要部署，不要開網頁驗收，不要重跑。
+已送出 8 筆。四種前綴都通過，才可以部署。全成功應有 14 封測試信。請到「訂單」「郵件預覽」「驗收結果」「公式核對」核對。同一編號那一筆應是沒有再寫入、也沒有再寄信。
+結果未知。驗收結果讀回 0 列，預期 9 列。公式核對讀回 0 列，預期 5 列。不要重跑，不要部署。
+尚未啟用 Google Sheets API 進階服務。請在編輯器左側「服務」加 Google Sheets API。沒有寫入，也沒有寄信。
+SMC_SHOP_EMAIL 空白或格式不對，沒有寫入，也沒有寄信。
+結果未知。驗收結果讀回 0 列，預期 9 列。不要重跑，不要部署。
+結果未知。驗收結果第 2 列第 3 欄不一致。實際：tampered。預期：success。不要重跑，不要部署。
+結果未知。停在「6 公式開頭」的公式核對寫入。已經寄出 12 封信。不要重跑，不要部署。
+結果未知。驗收結果或公式核對讀不回來。不要重跑，不要部署。
+結果未知。驗收結果或公式核對讀不回來。不要重跑，不要部署。
+結果未知。驗收結果沒有留住。不要重跑，不要部署。
+結果未知。停在「6 公式開頭」的公式核對寫入。已經寄出 10 封信。不要重跑，不要部署。
+reconciliation failed:
+ - 公式核對寫入失敗要寫明停在哪一步，以及確認寄出幾封
+ - 最終 flush 失敗要寫明階段、兩張分頁和錯誤
+ - flush 失敗不可說成讀不回來
+ - 公式核對讀回失敗要寫明分頁和錯誤
+ - 驗收結果寫入失敗要寫明分頁和錯誤
+ - 部分寄信要算已確認成功的 11 封，不可寫成 10
+ - 丟錯的那封要標成未確認寄出，而且不要補寄
+ - 八案例的 alert 失敗要回結果未知，並帶上錯誤
+ - alert 失敗不可回成功摘要
