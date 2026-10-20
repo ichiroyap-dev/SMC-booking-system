@@ -18,8 +18,10 @@ const context = vm.createContext({
   Object,
   String,
   Number,
+  Math,
   parseInt,
   isNaN,
+  isFinite,
   Date,
   Utilities: {
     formatDate(date, timeZone, format) {
@@ -121,8 +123,19 @@ function screenBooking_(params, diningRows) {
   }
   const session = context.resolveMealSession_(params);
   const bookingDate = context.sheetDayStr_(params.date);
+  const requestedTables = context.parseDineInRequestedTables_(params.tables);
+  if (requestedTables == null) {
+    return {
+      ok: false,
+      path: 'dining',
+      session,
+      bookingDate,
+      usedTables: 0,
+      currentLimit: null,
+      message: context.dineInTablesErrorMessage_(),
+    };
+  }
   const currentLimit = context.dineInTableLimit_(bookingDate, session, SHEET_LIMITS.lunch, SHEET_LIMITS.dinner);
-  const requestedTables = parseInt(params.tables || 1, 10);
   const usedTables = countUsedTables_(diningRows, bookingDate, session);
   if ((usedTables + requestedTables) > currentLimit) {
     return {
@@ -227,6 +240,30 @@ sheetCapCheck('一般日晚', '2026-11-08', '晚');
 assert(context.dineInTableLimit_('2027-02-11', '中午', 8, 6) === 8, '非春節午仍應回傳系統設定午餐上限');
 assert(context.dineInTableLimit_('2026-11-08', '晚上', 8, 6) === 6, '非春節晚仍應回傳系統設定晚餐上限');
 assert(context.dineInTableLimit_('2027-02-04', '中午', 9, 9) === 9, '除夕前一日仍用系統設定');
+
+checkDining('初一已用 16 再訂 1', { date: '2027-02-06', meal_period: '午', tables: 1 }, [
+  diningRow('2027-02-06', '中午', 16, '正常'),
+], { ok: false, limit: 15, messageIncludes: '僅剩 0 桌', messageExcludes: '僅剩 -1' });
+const negativeRemaining = context.dineInOverCapMessage_('2027-02-06', '中午', 15, 16);
+assert(negativeRemaining.includes('僅剩 0 桌'), `超額訊息應把剩餘桌數壓到 0，實際「${negativeRemaining}」`);
+assert(!negativeRemaining.includes('-1'), `超額訊息不可出現負數，實際「${negativeRemaining}」`);
+
+for (const bad of [0, '0', -1, 1.5, 'abc']) {
+  const label = `非法桌數 ${JSON.stringify(bad)}`;
+  checkDining(`${label} 除夕`, { date: '2027-02-05', meal_period: '午', tables: bad }, noRows, {
+    ok: false,
+    messageIncludes: '正整數',
+    messageExcludes: '不開放內用',
+  });
+  checkDining(`${label} 一般日`, { date: '2026-11-08', meal_period: '午', tables: bad }, noRows, {
+    ok: false,
+    messageIncludes: '正整數',
+    messageExcludes: '剩餘桌位不足',
+  });
+}
+checkDining('字串 2 桌一般日', { date: '2026-11-08', meal_period: '午', tables: '2' }, noRows, { ok: true, limit: 9 });
+const omitted = screenBooking_({ type: 'dining', date: '2026-11-08', meal_period: '午' }, [headerRow()]);
+assert(omitted.ok === true, `沒帶桌數時仍應沿用 1 桌，實際 ${omitted.ok ? '接受' : '拒絕'}「${omitted.message}」`);
 
 limitCalls = 0;
 const takeoutEve = screenBooking_({ type: 'takeout', date: '2027-02-05', meal_period: '午', tables: 20, time: '11:30' }, [
