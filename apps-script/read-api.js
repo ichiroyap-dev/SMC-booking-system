@@ -11,6 +11,14 @@
 
 var READ_API_TOKEN_PROPERTY = "READ_API_TOKEN";
 var READ_API_BLOCKED_KEYS = ["date", "phone", "tel", "mobile", "orderId", "orderID", "order_id", "bookingId", "type", "orderItems"];
+var READ_API_DINING_HEADERS = [
+  [1, "姓名"],
+  [2, "電話"],
+  [4, "日期"],
+  [5, "時段"],
+  [9, "訂單編號"],
+  [10, "狀態"]
+];
 
 function readApiJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -104,9 +112,28 @@ function readApiStatus_(value) {
   return String(value).trim();
 }
 
+function readApiHeaderLabel_(col) {
+  for (var i = 0; i < READ_API_DINING_HEADERS.length; i++) {
+    if (READ_API_DINING_HEADERS[i][0] === col) return READ_API_DINING_HEADERS[i][1];
+  }
+  return "";
+}
+
+function readApiHeadersMatch_(headerRow, pairs) {
+  if (!headerRow) return false;
+  for (var i = 0; i < pairs.length; i++) {
+    if (readApiStatus_(headerRow[pairs[i][0]]) !== pairs[i][1]) return false;
+  }
+  return true;
+}
+
 function readApiHeaderOk_(rows, idCol, statusCol) {
   if (!rows || !rows.length || !rows[0]) return false;
-  return readApiStatus_(rows[0][idCol]) === "訂單編號" && readApiStatus_(rows[0][statusCol]) === "狀態";
+  return readApiStatus_(rows[0][idCol]) === readApiHeaderLabel_(9) && readApiStatus_(rows[0][statusCol]) === readApiHeaderLabel_(10);
+}
+
+function readApiDiningHeaderOk_(rows) {
+  return !!(rows && rows.length && readApiHeadersMatch_(rows[0], READ_API_DINING_HEADERS));
 }
 
 function readApiExists_(body, sheetName, idCol, statusCol) {
@@ -139,7 +166,7 @@ function readApiPhoneKey_(value) {
 }
 
 function readApiCancelled_(status) {
-  return status === "已取消" || status === "取消訂位";
+  return status === "已取消" || status === "取消" || status === "取消訂位";
 }
 
 function readApiDuplicate_(body) {
@@ -168,7 +195,7 @@ function readApiDuplicate_(body) {
   if (!byPhone && !name) return readApiJson_({ ok: false, error: "bad_request" });
 
   var rows = readApiRows_("工作表1");
-  if (!rows || !readApiHeaderOk_(rows, 9, 10)) return readApiJson_({ ok: false, error: "unavailable" });
+  if (!readApiDiningHeaderOk_(rows)) return readApiJson_({ ok: false, error: "unavailable" });
   var hit = false;
   var matched = "";
   for (var i = 1; i < rows.length; i++) {
