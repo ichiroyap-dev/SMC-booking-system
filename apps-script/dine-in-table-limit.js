@@ -1,12 +1,18 @@
 // 貼進正式 Apps Script「程式碼」（程式碼.js / 程式碼.gs），與既有 sheetDayStr_ 同一專案。
-// 不要整檔覆蓋店內版本。正式檔匯出時（專案最後修改 2026-09-28）只改這三處：
-//   1. processBooking 內用分支，約第 469 行
-//      var currentLimit = dineInTableLimit_(normalizedBookingDay, session, limitLunch, limitDinner);
-//   2. 約第 483 行的超額訊息改為
-//      dineInOverCapMessage_(normalizedBookingDay, session, currentLimit, usedTables)
-//   3. 約第 470 行 parseInt(params.tables || 1) 改為先檢查正整數：
+// 不要整檔覆蓋店內版本。正式內用分支在算上限時還沒有日期變數。
+// 後面才宣告的 bookingDate 不要提前拿來用。
+// 日期直接傳 params.date，函式內部會呼叫 sheetDayStr_。
+//   1. 取代 currentLimit 那一行（約第 469 行，在 session 之後）：
+//      var currentLimit = dineInTableLimit_(params.date, session, limitLunch, limitDinner);
+//   2. 取代 parseInt(params.tables || 1)（約第 470 行）。null 就回訊息並 return，不要寫表：
 //      var requestedTables = parseDineInRequestedTables_(params.tables);
-//      if (requestedTables == null) { 回 dineInTablesErrorMessage_() 並 return；不要寫表 }
+//      if (requestedTables == null) {
+//        var badTablesMsg = dineInTablesErrorMessage_();
+//        if (isLineSource) { sendLineReply(replyToken, badTablesMsg); return ContentService.createTextOutput("OK"); }
+//        return responseMsg("error", badTablesMsg);
+//      }
+//   3. 取代超額訊息（約第 483 行）：
+//      var failMsg = dineInOverCapMessage_(params.date, session, currentLimit, usedTables);
 // 外帶分支（params.type !== "dining"）不要呼叫。
 
 var CNY_2027_DINE_IN_TABLE_CAPS = {
@@ -38,7 +44,8 @@ function dineInTablesErrorMessage_() {
   return "桌數必須是正整數。";
 }
 
-// 缺值沿用正式程式 params.tables || 1，當成 1 桌。0、"0"、負數、小數、非整數文字回 null。
+// 缺值沿用正式程式 params.tables || 1，當成 1 桌。
+// 接受有前導零的整數字串（"03"、"  03  "）。0、"0"、負數、"1.5"、"3.0"、非數字回 null。
 function parseDineInRequestedTables_(raw) {
   if (raw === undefined || raw === null) return 1;
   if (typeof raw === "string" && raw.trim() === "") return 1;
@@ -47,7 +54,7 @@ function parseDineInRequestedTables_(raw) {
     return null;
   }
   var text = String(raw).trim();
-  if (!/^[1-9]\d*$/.test(text)) return null;
+  if (!/^\d+$/.test(text)) return null;
   var parsed = parseInt(text, 10);
   if (!isFinite(parsed) || parsed < 1) return null;
   return parsed;

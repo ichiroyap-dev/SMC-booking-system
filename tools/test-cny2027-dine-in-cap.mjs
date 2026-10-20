@@ -262,6 +262,67 @@ for (const bad of [0, '0', -1, 1.5, 'abc']) {
   });
 }
 checkDining('字串 2 桌一般日', { date: '2026-11-08', meal_period: '午', tables: '2' }, noRows, { ok: true, limit: 9 });
+assert(context.parseDineInRequestedTables_('03') === 3, `前導零 03 應是 3 桌，實際 ${context.parseDineInRequestedTables_('03')}`);
+assert(context.parseDineInRequestedTables_('  03  ') === 3, `空白加前導零應是 3 桌，實際 ${context.parseDineInRequestedTables_('  03  ')}`);
+assert(context.parseDineInRequestedTables_('3.0') == null, '3.0 仍應拒絕');
+checkDining('前導零 03 一般日', { date: '2026-11-08', meal_period: '午', tables: '03' }, noRows, { ok: true, limit: 9 });
+
+assert(!source.includes('normalizedBookingDay'), '整合指示不可使用正式內用分支沒有的 normalizedBookingDay');
+assert(source.includes('dineInTableLimit_(params.date'), '上限必須直接傳 params.date');
+assert(source.includes('dineInOverCapMessage_(params.date'), '超額訊息必須直接傳 params.date');
+
+// 正式內用分支先算 currentLimit，之後才宣告 bookingDate。合成入口只傳 params.date。
+function syntheticProcessBooking_(params, diningRows, effects) {
+  if (params.type !== 'dining') {
+    effects.takeout += 1;
+    return { ok: true, path: 'takeout', message: '' };
+  }
+  const session = context.resolveMealSession_(params);
+  const currentLimit = context.dineInTableLimit_(params.date, session, SHEET_LIMITS.lunch, SHEET_LIMITS.dinner);
+  const requestedTables = context.parseDineInRequestedTables_(params.tables);
+  if (requestedTables == null) {
+    return { ok: false, path: 'dining', message: context.dineInTablesErrorMessage_(), currentLimit: null };
+  }
+  const bookingDate = context.sheetDayStr_(params.date);
+  const rows = [headerRow(), ...diningRows];
+  const usedTables = countUsedTables_(rows, bookingDate, session);
+  if ((usedTables + requestedTables) > currentLimit) {
+    return {
+      ok: false,
+      path: 'dining',
+      message: context.dineInOverCapMessage_(params.date, session, currentLimit, usedTables),
+      currentLimit,
+      usedTables,
+    };
+  }
+  effects.append += 1;
+  effects.line += 1;
+  effects.calendar += 1;
+  effects.finance += 1;
+  return { ok: true, path: 'dining', message: '', currentLimit, usedTables };
+}
+
+function effects() {
+  return { append: 0, line: 0, calendar: 0, finance: 0, takeout: 0 };
+}
+
+const eveFx = effects();
+const eve = syntheticProcessBooking_({ type: 'dining', date: '2027-02-05', meal_period: '午', tables: 1 }, [], eveFx);
+assert(eve.ok === false && eve.message.includes('不開放內用'), `合成入口除夕應拒絕，實際 ${eve.ok}「${eve.message}」`);
+assert(eveFx.append === 0 && eveFx.line === 0 && eveFx.calendar === 0 && eveFx.finance === 0, '除夕拒絕不可有寫表或通知');
+
+const badFx = effects();
+const badTables = syntheticProcessBooking_({ type: 'dining', date: '2027-02-06', meal_period: '午', tables: '0' }, [], badFx);
+assert(badTables.ok === false && badTables.message.includes('正整數'), `合成入口應拒絕字串 0，實際「${badTables.message}」`);
+assert(badFx.append === 0 && badFx.line === 0, '非法桌數不可寫表或通知');
+
+const leadFx = effects();
+const lead = syntheticProcessBooking_({ type: 'dining', date: '2027/2/6', meal_period: '午', tables: '03' }, [], leadFx);
+assert(lead.ok === true && lead.currentLimit === 15 && leadFx.append === 1, `前導零 03 在初一應接受，實際 ${lead.ok} 上限 ${lead.currentLimit}`);
+
+const takeFx = effects();
+const take = syntheticProcessBooking_({ type: 'takeout', date: '2027-02-05', tables: '0' }, [], takeFx);
+assert(take.ok === true && take.path === 'takeout' && takeFx.takeout === 1 && takeFx.append === 0, '外帶不走內用寫表');
 const omitted = screenBooking_({ type: 'dining', date: '2026-11-08', meal_period: '午' }, [headerRow()]);
 assert(omitted.ok === true, `沒帶桌數時仍應沿用 1 桌，實際 ${omitted.ok ? '接受' : '拒絕'}「${omitted.message}」`);
 
