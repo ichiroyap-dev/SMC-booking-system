@@ -566,6 +566,29 @@ const nameOnly = output(context.handleReadLookup_(postEvent({
 assert(nameOnly && nameOnly.ok === true && nameOnly.duplicate === 'possible' && nameOnly.matchedOrderId === 'smc100004', `只有姓名應是 possible，實際 ${JSON.stringify(nameOnly)}`);
 
 resetCalls();
+const nameMiss = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-03',
+  lookup_session: '晚上',
+  lookup_name: '測壬',
+})));
+assert(nameMiss && nameMiss.ok === true && nameMiss.duplicate === false, `只有姓名且沒有對到列應是 duplicate:false，實際 ${JSON.stringify(nameMiss)}`);
+assert(nameMiss && keysOf(nameMiss) === 'duplicate,ok', `只有姓名且沒有對到列不可帶 matchedOrderId，實際 ${nameMiss && keysOf(nameMiss)}`);
+
+resetCalls();
+const nameBlankId = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-05',
+  lookup_session: '晚上',
+  lookup_name: '測己',
+})));
+assert(nameBlankId && nameBlankId.ok === true && nameBlankId.duplicate === 'possible' && !Object.prototype.hasOwnProperty.call(nameBlankId, 'matchedOrderId'), `只有姓名且訂單編號是空的應是 possible、不帶 matchedOrderId，實際 ${JSON.stringify(nameBlankId)}`);
+
+resetCalls();
 const notDup = output(context.handleReadLookup_(postEvent({
   action: 'lookup',
   op: 'duplicate_check',
@@ -810,7 +833,7 @@ for (const phrase of [
   'read-v1', '暫停上傳', 'v152', '30 天',
   'live-upload_py.py', 'finish_takeout_verify.py', 'live_takeout_once.py', 'lineok',
   '取消訂位', 'possible', 'duplicate: true', '沒有 matchedOrderId', '重複',
-  '已取消、取消、取消訂位', 'Executions', '看不出呼叫端', 'doGet 為 0', '進行中的工作',
+  '已取消、取消、取消訂位', '只有姓名沒有對到列', 'Executions', '看不出呼叫端', 'doGet 為 0', '進行中的工作',
   '一起改回', '只可短暫', '事前檢查', '轉人工', '不算成功',
 ]) {
   assert(docs.indexOf(phrase) !== -1, `說明應寫到「${phrase}」`);

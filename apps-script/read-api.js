@@ -218,13 +218,13 @@ function readApiDuplicate_(body) {
     var orderId = String(row[9] == null ? "" : row[9]).trim();
     if (orderId) matched = orderId;
   }
+  if (!hit) return readApiJson_({ ok: true, duplicate: false });
   if (byPhone) {
-    if (!hit) return readApiJson_({ ok: true, duplicate: false });
     var phoneOut = { ok: true, duplicate: true };
     if (matched) phoneOut.matchedOrderId = matched;
     return readApiJson_(phoneOut);
   }
   var nameOut = { ok: true, duplicate: "possible" };
-  if (hit && matched) nameOut.matchedOrderId = matched;
+  if (matched) nameOut.matchedOrderId = matched;
   return readApiJson_(nameOut);
 }

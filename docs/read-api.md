@@ -72,7 +72,7 @@ if (readLookup) return readLookup;
 |---|---|---|---|
 | `ping` | 確認讀到的是這版 API | 無 | `{ "ok": true, "api": "read-v1" }` |
 | `exists` | 內用，確認訂單編號已經在「工作表1」 | `lookup_order_id` | `{ "ok": true, "found": true, "status": "預約中" }` 或 `{ "ok": true, "found": false }` |
-| `duplicate_check` | 內用送出前 | `lookup_date`、`lookup_session`，以及電話或姓名 | 沒有重複是 `{ "ok": true, "duplicate": false }`。命中是 `duplicate: true`，有訂單編號才加 `matchedOrderId`。只有姓名是 `duplicate` 為 `possible` |
+| `duplicate_check` | 內用送出前 | `lookup_date`、`lookup_session`，以及電話或姓名 | 沒有重複是 `{ "ok": true, "duplicate": false }`。電話命中是 `duplicate: true`，有訂單編號才加 `matchedOrderId`。只有姓名沒有對到列也是 `duplicate: false`；對到列是 `duplicate` 為 `possible`，有非空訂單編號才加 `matchedOrderId` |
 | `takeout_exists` | 外帶，確認訂單編號已經在「外帶訂單」 | `lookup_order_id` | 與 `exists` 相同 |
 
 不會回姓名、電話、整列或其他分頁。
@@ -93,7 +93,7 @@ if (readLookup) return readLookup;
 
 - 電話有數字時，只比電話、日期、時段，不比姓名。`午`／`中午` 都當中午，`晚`／`晚上` 都當晚上。電話只留數字並去掉一個開頭的 0。
 - 電話欄有內容、又不是 `line訂`、正規化後卻是空的：`bad_request`。不要送出。
-- 沒有電話，或電話正好是 `line訂`：改比姓名、日期、時段。回應是 `{ "ok": true, "duplicate": "possible" }`，有非空訂單編號才帶 `matchedOrderId`。上傳程式要停下來等人確認，不要自己送出。
+- 沒有電話，或電話正好是 `line訂`：改比姓名、日期、時段。只有姓名沒有對到列是 `{ "ok": true, "duplicate": false }`，上傳程式照送。對到列是 `{ "ok": true, "duplicate": "possible" }`，有非空訂單編號才帶 `matchedOrderId`。`possible` 要停下來等人確認，不要自己送出。
 - 狀態是已取消、取消、取消訂位的列不算。
 - 多筆時採用最後一筆非空的訂單編號。命中是 `duplicate: true`。若是 `duplicate: true` 但沒有 matchedOrderId，停止並人工確認，不要當成可以新開一筆。
 
@@ -101,8 +101,8 @@ if (readLookup) return readLookup;
 
 - `unauthorized`、`bad_request`、`unavailable`：不要送出。
 - `duplicate: true`：不要再送。有 `matchedOrderId` 就沿用；沒有就人工確認。
-- `duplicate: false`：才送出原本的訂位 POST。
-- `possible`：停下來等人確認。
+- `duplicate: false`：才送出原本的訂位 POST。只有姓名沒有對到列也算這一條。
+- `possible`：停下來等人確認。不要自己送出。
 
 送出成功後改呼叫 `exists`，不要再 GET 整張「工作表1」。`found: true` 才算編號已經落地。`unauthorized` 要停，不要重試成成功。
 
