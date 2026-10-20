@@ -1,0 +1,476 @@
+#!/usr/bin/env node
+// 離線檢查讀取 API。不連 Apps Script、不讀寫正式試算表、不使用正式權杖。
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const source = readFileSync(join(root, 'apps-script/read-api.js'), 'utf8');
+const failures = [];
+const assert = (cond, message) => { if (!cond) failures.push(message); };
+
+const TOKEN = 'test-token-not-a-secret';
+const DINING_NAME = '測甲';
+const DINING_PHONE = '0900111222';
+const OTHER_NAME = '測乙';
+const OTHER_PHONE = '0900333444';
+const UNKNOWN_TAB = 'ZZ_NOT_A_TAB_9f3c';
+const TEST_TAB_SENTINEL = 'ZZ_TEST_TAB_ROW';
+
+const calls = {
+  dataReads: 0,
+  sheets: [],
+  appendDining: 0,
+  appendTakeout: 0,
+  booking: 0,
+  cap: 0,
+};
+let scriptProperties = { READ_API_TOKEN: TOKEN };
+let failSheetRead = false;
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function diningRow(partial) {
+  const row = new Array(12).fill('');
+  row[1] = partial.name || '';
+  row[2] = partial.phone || '';
+  row[4] = partial.date || '';
+  row[5] = partial.session || '';
+  row[9] = partial.orderId || '';
+  row[10] = partial.status || '';
+  return row;
+}
+
+function takeoutRow(partial) {
+  const row = new Array(10).fill('');
+  row[1] = partial.name || '';
+  row[2] = partial.phone || '';
+  row[7] = partial.orderId || '';
+  row[8] = partial.status || '';
+  return row;
+}
+
+const diningRows = [
+  diningRow({
+    name: DINING_NAME,
+    phone: DINING_PHONE,
+    date: '2026-11-02',
+    session: '中午',
+    orderId: 'SMC100001',
+    status: '預約中',
+  }),
+  diningRow({
+    name: OTHER_NAME,
+    phone: OTHER_PHONE,
+    date: '2026-11-02',
+    session: '中午',
+    orderId: 'SMC100002',
+    status: '已取消',
+  }),
+  diningRow({
+    name: DINING_NAME,
+    phone: "'" + DINING_PHONE,
+    date: new Date('2026-11-02T00:30:00Z'),
+    session: '晚上',
+    orderId: 'SMC100003',
+    status: '預約中',
+  }),
+  diningRow({
+    name: DINING_NAME,
+    phone: DINING_PHONE,
+    date: '2026-11-03',
+    session: '晚上',
+    orderId: 'smc100004',
+    status: '已完成',
+  }),
+];
+
+const takeoutRows = [
+  takeoutRow({ name: '測丙', phone: '0900555666', orderId: 'SMC200002', status: '預約中' }),
+];
+
+const sheets = {
+  工作表1: [['時間戳記', '姓名', '電話', '人數', '日期', '時段', '抵達時間', '備註', '預訂桌數', '訂單編號', '狀態', 'email'], ...diningRows],
+  外帶訂單: [['時間戳記', '姓名', '電話', '品項', '日期', '時間', '備註', '訂單編號', '狀態', 'email'], ...takeoutRows],
+  測試分頁: [['標記'], [TEST_TAB_SENTINEL]],
+  待審: [['header'], ['ZZ_PENDING']],
+  候補: [['header'], ['ZZ_WAITLIST']],
+  系統設定: [['header'], ['ZZ_CONFIG']],
+};
+
+function resetCalls() {
+  calls.dataReads = 0;
+  calls.sheets = [];
+  calls.appendDining = 0;
+  calls.appendTakeout = 0;
+  calls.booking = 0;
+  calls.cap = 0;
+  failSheetRead = false;
+  scriptProperties = { READ_API_TOKEN: TOKEN };
+}
+
+const context = vm.createContext({
+  Object, String, Number, Math, parseInt, isNaN, isFinite, Date, JSON, RegExp,
+  Utilities: {
+    formatDate(date, timeZone, format) {
+      if (timeZone !== 'GMT+8') throw new Error('unexpected tz');
+      const shifted = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+      const y = shifted.getUTCFullYear();
+      const m = pad2(shifted.getUTCMonth() + 1);
+      const d = pad2(shifted.getUTCDate());
+      if (format === 'yyyy-MM-dd') return `${y}-${m}-${d}`;
+      throw new Error('unexpected format');
+    },
+  },
+  PropertiesService: {
+    getScriptProperties() {
+      return {
+        getProperty(name) {
+          if (!Object.prototype.hasOwnProperty.call(scriptProperties, name)) return null;
+          return scriptProperties[name];
+        },
+      };
+    },
+  },
+  SpreadsheetApp: {
+    getActiveSpreadsheet() {
+      return {
+        getSheetByName(name) {
+          calls.sheets.push(name);
+          const rows = sheets[name];
+          if (!rows) return null;
+          return {
+            getDataRange() {
+              return {
+                getValues() {
+                  calls.dataReads += 1;
+                  if (failSheetRead) throw new Error('sheet read failed');
+                  return rows.map((row) => row.slice());
+                },
+              };
+            },
+            appendRow() {
+              if (name === '工作表1') calls.appendDining += 1;
+              if (name === '外帶訂單') calls.appendTakeout += 1;
+            },
+          };
+        },
+      };
+    },
+  },
+  ContentService: {
+    MimeType: { JSON: 'application/json' },
+    createTextOutput(text) {
+      return {
+        text: String(text),
+        setMimeType(mime) {
+          this.mime = mime;
+          return this;
+        },
+      };
+    },
+  },
+});
+
+context.pad2_ = (n) => (n < 10 ? '0' : '') + n;
+context.isValidYmd_ = (y, m, d) => {
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === (m - 1) && dt.getUTCDate() === d;
+};
+context.sheetDayStr_ = function sheetDayStr_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime())) {
+    return context.Utilities.formatDate(v, 'GMT+8', 'yyyy-MM-dd');
+  }
+  const s = String(v).trim();
+  if (/T\d{2}:\d{2}/.test(s) || /Z$/i.test(s) || /[+-]\d{2}:?\d{2}$/.test(s)) {
+    const instant = new Date(s);
+    if (isNaN(instant.getTime())) return '';
+    return context.Utilities.formatDate(instant, 'GMT+8', 'yyyy-MM-dd');
+  }
+  const m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  if (!m) return '';
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const day = parseInt(m[3], 10);
+  if (!context.isValidYmd_(y, mo, day)) return '';
+  return `${y}-${context.pad2_(mo)}-${context.pad2_(day)}`;
+};
+context.dineInTableLimit_ = function dineInTableLimit_() {
+  calls.cap += 1;
+  return 9;
+};
+
+vm.runInContext(source, context, { filename: 'apps-script/read-api.js' });
+context.calls = calls;
+
+vm.runInContext(`
+function legacyBookingDoPost_(e) {
+  var body = JSON.parse(e.postData.contents);
+  calls.booking += 1;
+  if (body.type === 'takeout') {
+    calls.appendTakeout += 1;
+    return ContentService.createTextOutput(JSON.stringify({
+      status: 'success',
+      message: '外帶預約成功！我們會儘快為您準備。',
+      orderId: 'SMC200099'
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  dineInTableLimit_(body.date, '中午', 9, 9);
+  calls.appendDining += 1;
+  return ContentService.createTextOutput(JSON.stringify({
+    status: 'success',
+    message: '內用預約成功！',
+    orderId: 'SMC100099'
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+function doPost(e) {
+  var looked = handleReadLookup_(e);
+  if (looked) return looked;
+  return legacyBookingDoPost_(e);
+}
+`, context, { filename: 'doPost-wrapper.js' });
+
+function output(result) {
+  assert(result && typeof result.text === 'string', '回應必須是文字');
+  if (!result || typeof result.text !== 'string') return null;
+  try {
+    return JSON.parse(result.text);
+  } catch (err) {
+    failures.push('回應不是 JSON');
+    return null;
+  }
+}
+
+function leaked(text) {
+  return [DINING_NAME, DINING_PHONE, OTHER_NAME, OTHER_PHONE, TEST_TAB_SENTINEL, 'ZZ_PENDING', 'ZZ_WAITLIST', 'ZZ_CONFIG', UNKNOWN_TAB, '找不到分頁']
+    .filter((needle) => text.indexOf(needle) !== -1);
+}
+
+function assertNoPrivate(label, result) {
+  const text = result && result.text ? result.text : '';
+  const hits = leaked(text);
+  assert(hits.length === 0, `${label} 不應含個資或分頁名稱，實際含 ${hits.join(',')}`);
+}
+
+function assertUnauthorized(label, result) {
+  const body = output(result);
+  assert(body && body.ok === false && body.error === 'unauthorized', `${label} 應為 unauthorized，實際 ${result && result.text}`);
+  assertNoPrivate(label, result);
+  assert(!body || !Object.prototype.hasOwnProperty.call(body, 'data'), `${label} 不應有 data`);
+  assert(!body || !Object.prototype.hasOwnProperty.call(body, 'found'), `${label} 不應看成找不到`);
+  assert(!body || !Object.prototype.hasOwnProperty.call(body, 'duplicate'), `${label} 不應看成沒有重複`);
+}
+
+function keysOf(body) {
+  return Object.keys(body).sort().join(',');
+}
+
+function getEvent(parameter) {
+  return { parameter: parameter || {} };
+}
+
+function postEvent(body, parameter) {
+  return {
+    parameter: parameter || {},
+    postData: { contents: JSON.stringify(body) },
+  };
+}
+
+resetCalls();
+assertUnauthorized('沒帶權杖', context.handleReadLookup_(postEvent({ action: 'lookup', op: 'exists', orderId: 'SMC100001' })));
+assert(calls.dataReads === 0, '沒帶權杖不應讀表');
+
+resetCalls();
+assertUnauthorized('權杖錯誤', context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', orderId: 'SMC100001', token: 'wrong-token',
+})));
+assert(calls.dataReads === 0, '權杖錯誤不應讀表');
+
+resetCalls();
+scriptProperties = {};
+assertUnauthorized('屬性未設定', context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', orderId: 'SMC100001', token: TOKEN,
+})));
+assert(calls.dataReads === 0, '屬性未設定不應讀表');
+
+resetCalls();
+scriptProperties = { READ_API_TOKEN: '   ' };
+assertUnauthorized('屬性是空白', context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', orderId: 'SMC100001', token: '   ',
+})));
+
+resetCalls();
+assertUnauthorized('權杖只放網址', context.handleReadLookup_(postEvent(
+  { action: 'lookup', op: 'exists', orderId: 'SMC100001' },
+  { token: TOKEN },
+)));
+assert(calls.dataReads === 0, '網址權杖不應讀表');
+
+resetCalls();
+const bare = context.doGet(getEvent({}));
+assertUnauthorized('裸 GET', bare);
+assert(calls.dataReads === 0, '裸 GET 不應讀表');
+assert(bare.text.indexOf(TEST_TAB_SENTINEL) === -1, '裸 GET 不應回測試分頁');
+
+resetCalls();
+const pageDump = context.doGet(getEvent({ page: '工作表1' }));
+assertUnauthorized('GET page=工作表1', pageDump);
+assert(calls.dataReads === 0, 'GET 工作表1 不應讀表');
+assert(pageDump.text.indexOf('工作表1') === -1, 'GET 不應回分頁名稱');
+
+resetCalls();
+const unknown = context.doGet(getEvent({ page: UNKNOWN_TAB }));
+assertUnauthorized('未知分頁', unknown);
+assert(unknown.text.indexOf(UNKNOWN_TAB) === -1, '未知分頁不應回分頁名稱');
+assert(unknown.text.indexOf('找不到分頁') === -1, '未知分頁不應出現找不到分頁');
+
+resetCalls();
+const authedGet = context.doGet(getEvent({ page: '工作表1', token: TOKEN }));
+assertUnauthorized('GET 帶對的權杖', authedGet);
+assert(calls.dataReads === 0, 'GET 即使權杖正確也不應讀表');
+
+resetCalls();
+const exists = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'smc100004',
+})));
+assert(exists && exists.ok === true && exists.found === true && exists.status === '已完成', `exists 應找到狀態，實際 ${JSON.stringify(exists)}`);
+assert(keysOf(exists) === 'found,ok,status', `exists 只能有 ok/found/status，實際 ${keysOf(exists)}`);
+assertNoPrivate('exists', { text: JSON.stringify(exists) });
+assert(calls.sheets.join(',') === '工作表1', `exists 只讀工作表1，實際 ${calls.sheets.join(',')}`);
+
+resetCalls();
+const missing = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC199999',
+})));
+assert(missing && missing.ok === true && missing.found === false, `找不到應是 found:false，實際 ${JSON.stringify(missing)}`);
+assert(keysOf(missing) === 'found,ok', `找不到只能有 ok/found，實際 ${keysOf(missing)}`);
+assert(missing.error !== 'unauthorized', '找不到不可是 unauthorized');
+
+resetCalls();
+const dup = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  date: '2026/11/2',
+  session: '午',
+  phone: DINING_PHONE,
+  name: DINING_NAME,
+})));
+assert(dup && dup.ok === true && dup.duplicate === true && dup.matchedOrderId === 'SMC100001', `重複檢查應命中 SMC100001，實際 ${JSON.stringify(dup)}`);
+assert(keysOf(dup) === 'duplicate,matchedOrderId,ok', `重複命中只能有三個欄位，實際 ${keysOf(dup)}`);
+assertNoPrivate('duplicate_check', { text: JSON.stringify(dup) });
+
+resetCalls();
+const phoneOnly = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  date: '2026-11-02',
+  meal_period: '晚上',
+  phone: '900111222',
+})));
+assert(phoneOnly && phoneOnly.duplicate === true && phoneOnly.matchedOrderId === 'SMC100003', `電話比對應命中晚場，實際 ${JSON.stringify(phoneOnly)}`);
+
+resetCalls();
+const nameOnly = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  date: '2026-11-03',
+  session: '晚上',
+  name: DINING_NAME,
+})));
+assert(nameOnly && nameOnly.duplicate === true && nameOnly.matchedOrderId === 'smc100004', `姓名比對應命中，實際 ${JSON.stringify(nameOnly)}`);
+
+resetCalls();
+const notDup = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  date: '2026-11-02',
+  session: '中午',
+  phone: OTHER_PHONE,
+  name: OTHER_NAME,
+})));
+assert(notDup && notDup.ok === true && notDup.duplicate === false, `已取消列不是重複，實際 ${JSON.stringify(notDup)}`);
+assert(keysOf(notDup) === 'duplicate,ok', `沒有重複只能有 ok/duplicate，實際 ${keysOf(notDup)}`);
+assert(notDup.error !== 'unauthorized', '沒有重複不可是 unauthorized');
+
+resetCalls();
+const bothMismatch = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  date: '2026-11-02',
+  session: '中午',
+  phone: DINING_PHONE,
+  name: OTHER_NAME,
+})));
+assert(bothMismatch && bothMismatch.duplicate === false, '電話與姓名都帶時必須兩個都中');
+
+resetCalls();
+const takeout = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'takeout_exists', token: TOKEN, orderId: 'SMC200002',
+})));
+assert(takeout && takeout.ok === true && takeout.found === true && takeout.status === '預約中', `外帶 exists 應找到，實際 ${JSON.stringify(takeout)}`);
+assert(keysOf(takeout) === 'found,ok,status', `外帶 exists 只能有 ok/found/status，實際 ${keysOf(takeout)}`);
+assertNoPrivate('takeout_exists', { text: JSON.stringify(takeout) });
+assert(calls.sheets.join(',') === '外帶訂單', `外帶 exists 只讀外帶訂單，實際 ${calls.sheets.join(',')}`);
+
+resetCalls();
+const takeoutMissingOnDining = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC200002',
+})));
+assert(takeoutMissingOnDining && takeoutMissingOnDining.found === false, '內用 exists 不讀外帶編號');
+
+resetCalls();
+failSheetRead = true;
+const broken = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC100001',
+})));
+assert(broken && broken.ok === false && broken.error === 'unavailable', `讀表失敗不可當成找不到，實際 ${JSON.stringify(broken)}`);
+assert(broken && broken.found !== false && broken.duplicate !== false, '讀表失敗不可 fail open');
+
+resetCalls();
+const badOp = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: UNKNOWN_TAB, token: TOKEN,
+})));
+assert(badOp && badOp.ok === false && badOp.error === 'bad_request', `未知查詢應為 bad_request，實際 ${JSON.stringify(badOp)}`);
+assert(JSON.stringify(badOp).indexOf(UNKNOWN_TAB) === -1, '錯誤不可回查詢字');
+assert(calls.dataReads === 0, '參數不對不應讀表');
+
+resetCalls();
+const diningBook = output(context.doPost(postEvent({
+  action: 'book', type: 'dining', date: '2026-11-02', tables: 1,
+})));
+assert(diningBook && diningBook.status === 'success' && diningBook.message === '內用預約成功！' && diningBook.orderId === 'SMC100099', `內用寫入應維持舊回應，實際 ${JSON.stringify(diningBook)}`);
+assert(calls.booking === 1 && calls.appendDining === 1 && calls.cap === 1, '內用仍走原本寫入與桌數上限');
+assert(calls.dataReads === 0, '內用寫入不應改走讀取 API');
+
+resetCalls();
+const takeoutBook = output(context.doPost(postEvent({
+  action: 'book', type: 'takeout', date: '2026-11-02',
+})));
+assert(takeoutBook && takeoutBook.status === 'success' && takeoutBook.message === '外帶預約成功！我們會儘快為您準備。' && takeoutBook.orderId === 'SMC200099', `外帶寫入應維持舊回應，實際 ${JSON.stringify(takeoutBook)}`);
+assert(calls.booking === 1 && calls.appendTakeout === 1 && calls.cap === 0 && calls.appendDining === 0, '外帶不套用內用桌數上限');
+
+resetCalls();
+const lookupWrite = context.doPost(postEvent({
+  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC199999',
+}));
+output(lookupWrite);
+assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cap === 0, '查詢不可寫表或套用桌數上限');
+
+assert(!/function\s+processBooking|function\s+dineInTableLimit_|CNY_2027_DINE_IN_TABLE_CAPS|AKfycb|script\.google\.com/.test(source), '讀取 API 不可改寫入流程，也不可寫入網址或部署編號');
+
+if (failures.length) {
+  console.error(`FAIL ${failures.length}`);
+  failures.forEach((item) => console.error(` - ${item}`));
+  process.exit(1);
+}
+console.log(`ok ${source.length} bytes`);
