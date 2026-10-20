@@ -6,8 +6,11 @@
 // 3. 指令碼屬性新增 READ_API_TOKEN。值由 Owner 自己填，不要寫進程式、不要提交。
 //    沒設、空白、或讀取失敗，讀取一律拒絕。
 // GET 不再讀表。窄查詢只收 POST JSON：action=lookup，權杖放 body.token。
+// 查詢欄位只用 lookup_order_id、lookup_date、lookup_session、lookup_phone、lookup_name。
+// 不要帶 date、phone、tel、mobile、orderId、orderID、order_id、bookingId、type、orderItems。
 
 var READ_API_TOKEN_PROPERTY = "READ_API_TOKEN";
+var READ_API_BLOCKED_KEYS = ["date", "phone", "tel", "mobile", "orderId", "orderID", "order_id", "bookingId", "type", "orderItems"];
 
 function readApiJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -28,13 +31,12 @@ function readApiExpectedToken_() {
 function readApiTokenMatches_(presented) {
   var expected = readApiExpectedToken_();
   if (!expected) return false;
-  var given = presented == null ? "" : String(presented).trim();
+  if (typeof presented !== "string") return false;
+  var given = presented.trim();
   var diff = expected.length === given.length ? 0 : 1;
-  var n = Math.max(expected.length, given.length);
-  for (var i = 0; i < n; i++) {
-    var a = i < expected.length ? expected.charCodeAt(i) : 0;
+  for (var i = 0; i < expected.length; i++) {
     var b = i < given.length ? given.charCodeAt(i) : 0;
-    diff |= (a ^ b);
+    diff |= (expected.charCodeAt(i) ^ b);
   }
   return diff === 0;
 }
@@ -44,11 +46,18 @@ function readApiBody_(e) {
     if (!e || !e.postData || e.postData.contents == null || e.postData.contents === "") return null;
     var parsed = e.postData.contents;
     if (typeof parsed === "string") parsed = JSON.parse(parsed);
-    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed || Object.prototype.toString.call(parsed) !== "[object Object]") return null;
     return parsed;
   } catch (err) {
     return null;
   }
+}
+
+function readApiHasBlockedKey_(body) {
+  for (var i = 0; i < READ_API_BLOCKED_KEYS.length; i++) {
+    if (Object.prototype.hasOwnProperty.call(body, READ_API_BLOCKED_KEYS[i])) return true;
+  }
+  return false;
 }
 
 function doGet(e) {
@@ -58,8 +67,16 @@ function doGet(e) {
 
 function handleReadLookup_(e) {
   var body = readApiBody_(e);
-  if (!body || body.action !== "lookup") return null;
+  if (!body) return null;
+  if (body.action !== "lookup") {
+    if (Object.prototype.hasOwnProperty.call(body, "op") || Object.prototype.hasOwnProperty.call(body, "token")) {
+      return readApiJson_({ ok: false, error: "bad_request" });
+    }
+    return null;
+  }
   if (!readApiTokenMatches_(body.token)) return readApiJson_({ ok: false, error: "unauthorized" });
+  if (readApiHasBlockedKey_(body)) return readApiJson_({ ok: false, error: "bad_request" });
+  if (body.op === "ping") return readApiJson_({ ok: true, api: "read-v1" });
   if (body.op === "exists") return readApiExists_(body, "工作表1", 9, 10);
   if (body.op === "takeout_exists") return readApiExists_(body, "外帶訂單", 7, 8);
   if (body.op === "duplicate_check") return readApiDuplicate_(body);
@@ -87,11 +104,16 @@ function readApiStatus_(value) {
   return String(value).trim();
 }
 
+function readApiHeaderOk_(rows, idCol, statusCol) {
+  if (!rows || !rows.length || !rows[0]) return false;
+  return readApiStatus_(rows[0][idCol]) === "訂單編號" && readApiStatus_(rows[0][statusCol]) === "狀態";
+}
+
 function readApiExists_(body, sheetName, idCol, statusCol) {
-  var want = readApiOrderKey_(body.orderId);
+  var want = readApiOrderKey_(body.lookup_order_id);
   if (!want) return readApiJson_({ ok: false, error: "bad_request" });
   var rows = readApiRows_(sheetName);
-  if (!rows) return readApiJson_({ ok: false, error: "unavailable" });
+  if (!rows || !readApiHeaderOk_(rows, idCol, statusCol)) return readApiJson_({ ok: false, error: "unavailable" });
   var found = false;
   var status = "";
   for (var i = 1; i < rows.length; i++) {
@@ -101,17 +123,6 @@ function readApiExists_(body, sheetName, idCol, statusCol) {
   }
   if (!found) return readApiJson_({ ok: true, found: false });
   return readApiJson_({ ok: true, found: true, status: status });
-}
-
-function readApiDay_(value) {
-  if (typeof sheetDayStr_ === "function") {
-    try {
-      return sheetDayStr_(value);
-    } catch (err) {
-      return "";
-    }
-  }
-  return "";
 }
 
 function readApiSession_(value) {
@@ -127,29 +138,66 @@ function readApiPhoneKey_(value) {
   return raw.replace(/\D/g, "").replace(/^0/, "");
 }
 
+function readApiCancelled_(status) {
+  return status === "已取消" || status === "取消訂位";
+}
+
 function readApiDuplicate_(body) {
-  var day = readApiDay_(body.date);
-  var session = readApiSession_(body.session);
-  if (!session) session = readApiSession_(body.meal_period);
-  var phone = readApiPhoneKey_(body.phone);
-  var name = String(body.name == null ? "" : body.name).trim();
-  if (!day || !session || (!phone && !name)) return readApiJson_({ ok: false, error: "bad_request" });
+  if (typeof sheetDayStr_ !== "function") return readApiJson_({ ok: false, error: "unavailable" });
+  var day = "";
+  try {
+    day = sheetDayStr_(body.lookup_date);
+  } catch (err) {
+    return readApiJson_({ ok: false, error: "unavailable" });
+  }
+  if (!day) return readApiJson_({ ok: false, error: "bad_request" });
+  var session = readApiSession_(body.lookup_session);
+  if (!session) return readApiJson_({ ok: false, error: "bad_request" });
+
+  var phoneRaw = body.lookup_phone == null ? "" : String(body.lookup_phone).trim();
+  var name = body.lookup_name == null ? "" : String(body.lookup_name).trim();
+  var phone = "";
+  var byPhone = false;
+  if (phoneRaw === "line訂") {
+    byPhone = false;
+  } else if (phoneRaw !== "") {
+    phone = readApiPhoneKey_(phoneRaw);
+    if (!phone) return readApiJson_({ ok: false, error: "bad_request" });
+    byPhone = true;
+  }
+  if (!byPhone && !name) return readApiJson_({ ok: false, error: "bad_request" });
+
   var rows = readApiRows_("工作表1");
-  if (!rows) return readApiJson_({ ok: false, error: "unavailable" });
+  if (!rows || !readApiHeaderOk_(rows, 9, 10)) return readApiJson_({ ok: false, error: "unavailable" });
   var hit = false;
   var matched = "";
   for (var i = 1; i < rows.length; i++) {
     var row = rows[i];
     var status = readApiStatus_(row[10]);
-    if (status === "已取消" || status === "取消") continue;
-    if (readApiDay_(row[4]) !== day || readApiSession_(row[5]) !== session) continue;
-    if (phone && readApiPhoneKey_(row[2]) !== phone) continue;
-    if (name && String(row[1] == null ? "" : row[1]).trim() !== name) continue;
+    if (readApiCancelled_(status)) continue;
+    var rowDay = "";
+    try {
+      rowDay = sheetDayStr_(row[4]);
+    } catch (err) {
+      return readApiJson_({ ok: false, error: "unavailable" });
+    }
+    if (rowDay !== day || readApiSession_(row[5]) !== session) continue;
+    if (byPhone) {
+      if (readApiPhoneKey_(row[2]) !== phone) continue;
+    } else if (String(row[1] == null ? "" : row[1]).trim() !== name) {
+      continue;
+    }
     hit = true;
-    matched = String(row[9] == null ? "" : row[9]).trim();
+    var orderId = String(row[9] == null ? "" : row[9]).trim();
+    if (orderId) matched = orderId;
   }
-  if (!hit) return readApiJson_({ ok: true, duplicate: false });
-  var out = { ok: true, duplicate: true };
-  if (matched) out.matchedOrderId = matched;
-  return readApiJson_(out);
+  if (byPhone) {
+    if (!hit) return readApiJson_({ ok: true, duplicate: false });
+    var phoneOut = { ok: true, duplicate: true };
+    if (matched) phoneOut.matchedOrderId = matched;
+    return readApiJson_(phoneOut);
+  }
+  var nameOut = { ok: true, duplicate: "possible" };
+  if (hit && matched) nameOut.matchedOrderId = matched;
+  return readApiJson_(nameOut);
 }

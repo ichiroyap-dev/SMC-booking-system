@@ -25,9 +25,15 @@ const calls = {
   appendTakeout: 0,
   booking: 0,
   cap: 0,
+  cancels: 0,
 };
 let scriptProperties = { READ_API_TOKEN: TOKEN };
 let failSheetRead = false;
+let propertyThrow = false;
+let propertyNull = false;
+const DINING_HEADER = ['時間戳記', '姓名', '電話', '人數', '日期', '時段', '抵達時間', '備註', '預訂桌數', '訂單編號', '狀態', 'email'];
+const TAKEOUT_HEADER = ['時間戳記', '姓名', '電話', '品項', '日期', '時間', '備註', '訂單編號', '狀態', 'email'];
+const BLOCKED_LOOKUP_KEYS = ['date', 'phone', 'tel', 'mobile', 'orderId', 'orderID', 'order_id', 'bookingId', 'type', 'orderItems'];
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -86,6 +92,54 @@ const diningRows = [
     orderId: 'smc100004',
     status: '已完成',
   }),
+  diningRow({
+    name: '測丁',
+    phone: '0900777888',
+    date: '2026-11-04',
+    session: '中午',
+    orderId: 'SMC100008',
+    status: '預約中',
+  }),
+  diningRow({
+    name: '測丁',
+    phone: '0900777888',
+    date: '2026-11-04',
+    session: '中午',
+    orderId: '',
+    status: '預約中',
+  }),
+  diningRow({
+    name: '測己',
+    phone: '0900666000',
+    date: '2026-11-05',
+    session: '晚上',
+    orderId: '',
+    status: '預約中',
+  }),
+  diningRow({
+    name: '測己',
+    phone: '0900666000',
+    date: '2026-11-05',
+    session: '晚上',
+    orderId: '',
+    status: '預約中',
+  }),
+  diningRow({
+    name: '測庚',
+    phone: '0900888000',
+    date: '2026-11-06',
+    session: '中午',
+    orderId: 'SMC100009',
+    status: '取消訂位',
+  }),
+  diningRow({
+    name: '測戊',
+    phone: 'line訂',
+    date: '2026-11-07',
+    session: '晚上',
+    orderId: 'SMC100010',
+    status: '預約中',
+  }),
 ];
 
 const takeoutRows = [
@@ -93,8 +147,8 @@ const takeoutRows = [
 ];
 
 const sheets = {
-  工作表1: [['時間戳記', '姓名', '電話', '人數', '日期', '時段', '抵達時間', '備註', '預訂桌數', '訂單編號', '狀態', 'email'], ...diningRows],
-  外帶訂單: [['時間戳記', '姓名', '電話', '品項', '日期', '時間', '備註', '訂單編號', '狀態', 'email'], ...takeoutRows],
+  工作表1: [DINING_HEADER.slice(), ...diningRows],
+  外帶訂單: [TAKEOUT_HEADER.slice(), ...takeoutRows],
   測試分頁: [['標記'], [TEST_TAB_SENTINEL]],
   待審: [['header'], ['ZZ_PENDING']],
   候補: [['header'], ['ZZ_WAITLIST']],
@@ -108,12 +162,17 @@ function resetCalls() {
   calls.appendTakeout = 0;
   calls.booking = 0;
   calls.cap = 0;
+  calls.cancels = 0;
   failSheetRead = false;
+  propertyThrow = false;
+  propertyNull = false;
   scriptProperties = { READ_API_TOKEN: TOKEN };
+  sheets['工作表1'][0] = DINING_HEADER.slice();
+  sheets['外帶訂單'][0] = TAKEOUT_HEADER.slice();
 }
 
 const context = vm.createContext({
-  Object, String, Number, Math, parseInt, isNaN, isFinite, Date, JSON, RegExp,
+  Array, Object, String, Number, Math, parseInt, isNaN, isFinite, Date, JSON, RegExp,
   Utilities: {
     formatDate(date, timeZone, format) {
       if (timeZone !== 'GMT+8') throw new Error('unexpected tz');
@@ -129,6 +188,8 @@ const context = vm.createContext({
     getScriptProperties() {
       return {
         getProperty(name) {
+          if (propertyThrow) throw new Error('properties down');
+          if (propertyNull) return null;
           if (!Object.prototype.hasOwnProperty.call(scriptProperties, name)) return null;
           return scriptProperties[name];
         },
@@ -281,32 +342,134 @@ function postEvent(body, parameter) {
   };
 }
 
+const existsPayload = {
+  action: 'lookup',
+  token: TOKEN,
+  op: 'exists',
+  lookup_order_id: 'smc100004',
+};
+const takeoutPayload = {
+  action: 'lookup',
+  token: TOKEN,
+  op: 'takeout_exists',
+  lookup_order_id: 'SMC200002',
+};
+const duplicatePayload = {
+  action: 'lookup',
+  token: TOKEN,
+  op: 'duplicate_check',
+  lookup_date: '2026/11/2',
+  lookup_session: '午',
+  lookup_phone: DINING_PHONE,
+  lookup_name: DINING_NAME,
+};
+
+function assertLookupShape(label, body) {
+  BLOCKED_LOOKUP_KEYS.forEach((key) => {
+    assert(!Object.prototype.hasOwnProperty.call(body, key), `${label} 不可帶 ${key}`);
+  });
+}
+
+function legacyDoPostWithoutLookup_(body) {
+  const actionStr = String(body.action || body.mode || body.type || '').toLowerCase();
+  const isCancel = actionStr.indexOf('cancel') !== -1 || actionStr.indexOf('取消') !== -1
+    || (!body.type && !body.orderItems && (body.orderId || body.orderID || body.order_id || body.bookingId));
+  if (isCancel) {
+    calls.cancels += 1;
+    return { path: 'cancel' };
+  }
+  const day = context.sheetDayStr_(body.date);
+  if (!day) return { path: 'error' };
+  if (body.type !== 'dining') {
+    calls.appendTakeout += 1;
+    return { path: 'takeout' };
+  }
+  calls.appendDining += 1;
+  calls.cap += 1;
+  return { path: 'dining' };
+}
+
 resetCalls();
-assertUnauthorized('沒帶權杖', context.handleReadLookup_(postEvent({ action: 'lookup', op: 'exists', orderId: 'SMC100001' })));
+assert(legacyDoPostWithoutLookup_({ action: 'cancel', orderId: 'SMC100001', phone: DINING_PHONE }).path === 'cancel', 'action 含 cancel 應走取消');
+assert(calls.cancels === 1 && calls.appendDining === 0 && calls.appendTakeout === 0, '取消不寫表');
+resetCalls();
+assert(legacyDoPostWithoutLookup_({ type: 'cancel-dining', date: '2026-11-02' }).path === 'cancel', 'type 含 cancel 應走取消');
+resetCalls();
+assert(legacyDoPostWithoutLookup_({ orderId: 'SMC100001' }).path === 'cancel', '沒有 type 與 orderItems 但有 orderId 應走取消');
+resetCalls();
+assert(legacyDoPostWithoutLookup_({ type: 'dining', date: '2026-02-31' }).path === 'error', '非法日期應是錯誤');
+assert(calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cancels === 0, '非法日期不寫不取消');
+resetCalls();
+assert(legacyDoPostWithoutLookup_({ type: 'dining', date: '2026-11-02' }).path === 'dining' && calls.appendDining === 1, '合法內用應寫內用');
+resetCalls();
+assert(legacyDoPostWithoutLookup_({ type: 'takeout', date: '2026-11-02' }).path === 'takeout' && calls.appendTakeout === 1, '非內用應寫外帶');
+resetCalls();
+assert(legacyDoPostWithoutLookup_({ action: 'lookup', date: '2026-11-02' }).path === 'takeout', '舊路由看到 date 且沒有 type 會寫外帶');
+
+for (const [label, payload] of [['exists', existsPayload], ['takeout_exists', takeoutPayload], ['duplicate_check', duplicatePayload]]) {
+  resetCalls();
+  assertLookupShape(label, payload);
+  const routed = legacyDoPostWithoutLookup_(payload);
+  assert(routed.path === 'error', `${label} 打到舊 doPost 應因沒有日期而拒絕，實際 ${routed.path}`);
+  assert(calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cancels === 0, `${label} 打到舊 doPost 不可寫入或取消`);
+}
+
+resetCalls();
+assertUnauthorized('沒帶權杖', context.handleReadLookup_(postEvent({ action: 'lookup', op: 'exists', lookup_order_id: 'SMC100001' })));
 assert(calls.dataReads === 0, '沒帶權杖不應讀表');
 
 resetCalls();
 assertUnauthorized('權杖錯誤', context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'exists', orderId: 'SMC100001', token: 'wrong-token',
+  action: 'lookup', op: 'exists', lookup_order_id: 'SMC100001', token: 'wrong-token',
 })));
 assert(calls.dataReads === 0, '權杖錯誤不應讀表');
 
 resetCalls();
 scriptProperties = {};
 assertUnauthorized('屬性未設定', context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'exists', orderId: 'SMC100001', token: TOKEN,
+  action: 'lookup', op: 'exists', lookup_order_id: 'SMC100001', token: TOKEN,
 })));
 assert(calls.dataReads === 0, '屬性未設定不應讀表');
 
 resetCalls();
+propertyNull = true;
+assertUnauthorized('屬性讀回 null', context.handleReadLookup_(postEvent(existsPayload)));
+assert(calls.dataReads === 0, '屬性 null 不應讀表');
+
+resetCalls();
+propertyThrow = true;
+assertUnauthorized('屬性讀取丟出例外', context.handleReadLookup_(postEvent(existsPayload)));
+assert(calls.dataReads === 0, '屬性例外不應讀表');
+assert(context.handleReadLookup_(postEvent(existsPayload)).text.indexOf('properties') === -1, '屬性例外不可把內部訊息回出去');
+
+resetCalls();
 scriptProperties = { READ_API_TOKEN: '   ' };
 assertUnauthorized('屬性是空白', context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'exists', orderId: 'SMC100001', token: '   ',
+  action: 'lookup', op: 'exists', lookup_order_id: 'SMC100001', token: '   ',
+})));
+
+resetCalls();
+assertUnauthorized('屬性有值但送出空權杖', context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'exists', lookup_order_id: 'SMC100001', token: '',
+})));
+assert(calls.dataReads === 0, '空權杖不應讀表');
+
+resetCalls();
+scriptProperties = { READ_API_TOKEN: '42' };
+assertUnauthorized('權杖不是字串', context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'ping', token: 42,
+})));
+assert(calls.dataReads === 0, '非字串權杖不應讀表');
+
+resetCalls();
+scriptProperties = { READ_API_TOKEN: 'abc' };
+assertUnauthorized('權杖比屬性長', context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'ping', token: 'abcXYZ',
 })));
 
 resetCalls();
 assertUnauthorized('權杖只放網址', context.handleReadLookup_(postEvent(
-  { action: 'lookup', op: 'exists', orderId: 'SMC100001' },
+  { action: 'lookup', op: 'exists', lookup_order_id: 'SMC100001' },
   { token: TOKEN },
 )));
 assert(calls.dataReads === 0, '網址權杖不應讀表');
@@ -335,9 +498,13 @@ assertUnauthorized('GET 帶對的權杖', authedGet);
 assert(calls.dataReads === 0, 'GET 即使權杖正確也不應讀表');
 
 resetCalls();
-const exists = output(context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'smc100004',
-})));
+const ping = output(context.handleReadLookup_(postEvent({ action: 'lookup', op: 'ping', token: TOKEN })));
+assert(ping && ping.ok === true && ping.api === 'read-v1', `ping 應為 read-v1，實際 ${JSON.stringify(ping)}`);
+assert(keysOf(ping) === 'api,ok', `ping 只能有 ok/api，實際 ${keysOf(ping)}`);
+assert(calls.dataReads === 0, 'ping 不應讀表');
+
+resetCalls();
+const exists = output(context.handleReadLookup_(postEvent(existsPayload)));
 assert(exists && exists.ok === true && exists.found === true && exists.status === '已完成', `exists 應找到狀態，實際 ${JSON.stringify(exists)}`);
 assert(keysOf(exists) === 'found,ok,status', `exists 只能有 ok/found/status，實際 ${keysOf(exists)}`);
 assertNoPrivate('exists', { text: JSON.stringify(exists) });
@@ -345,22 +512,14 @@ assert(calls.sheets.join(',') === '工作表1', `exists 只讀工作表1，實�
 
 resetCalls();
 const missing = output(context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC199999',
+  action: 'lookup', op: 'exists', token: TOKEN, lookup_order_id: 'SMC199999',
 })));
 assert(missing && missing.ok === true && missing.found === false, `找不到應是 found:false，實際 ${JSON.stringify(missing)}`);
 assert(keysOf(missing) === 'found,ok', `找不到只能有 ok/found，實際 ${keysOf(missing)}`);
 assert(missing.error !== 'unauthorized', '找不到不可是 unauthorized');
 
 resetCalls();
-const dup = output(context.handleReadLookup_(postEvent({
-  action: 'lookup',
-  op: 'duplicate_check',
-  token: TOKEN,
-  date: '2026/11/2',
-  session: '午',
-  phone: DINING_PHONE,
-  name: DINING_NAME,
-})));
+const dup = output(context.handleReadLookup_(postEvent(duplicatePayload)));
 assert(dup && dup.ok === true && dup.duplicate === true && dup.matchedOrderId === 'SMC100001', `重複檢查應命中 SMC100001，實際 ${JSON.stringify(dup)}`);
 assert(keysOf(dup) === 'duplicate,matchedOrderId,ok', `重複命中只能有三個欄位，實際 ${keysOf(dup)}`);
 assertNoPrivate('duplicate_check', { text: JSON.stringify(dup) });
@@ -370,9 +529,9 @@ const phoneOnly = output(context.handleReadLookup_(postEvent({
   action: 'lookup',
   op: 'duplicate_check',
   token: TOKEN,
-  date: '2026-11-02',
-  meal_period: '晚上',
-  phone: '900111222',
+  lookup_date: '2026-11-02',
+  lookup_session: '晚上',
+  lookup_phone: '900111222',
 })));
 assert(phoneOnly && phoneOnly.duplicate === true && phoneOnly.matchedOrderId === 'SMC100003', `電話比對應命中晚場，實際 ${JSON.stringify(phoneOnly)}`);
 
@@ -381,42 +540,40 @@ const nameOnly = output(context.handleReadLookup_(postEvent({
   action: 'lookup',
   op: 'duplicate_check',
   token: TOKEN,
-  date: '2026-11-03',
-  session: '晚上',
-  name: DINING_NAME,
+  lookup_date: '2026-11-03',
+  lookup_session: '晚上',
+  lookup_name: DINING_NAME,
 })));
-assert(nameOnly && nameOnly.duplicate === true && nameOnly.matchedOrderId === 'smc100004', `姓名比對應命中，實際 ${JSON.stringify(nameOnly)}`);
+assert(nameOnly && nameOnly.ok === true && nameOnly.duplicate === 'possible' && nameOnly.matchedOrderId === 'smc100004', `只有姓名應是 possible，實際 ${JSON.stringify(nameOnly)}`);
 
 resetCalls();
 const notDup = output(context.handleReadLookup_(postEvent({
   action: 'lookup',
   op: 'duplicate_check',
   token: TOKEN,
-  date: '2026-11-02',
-  session: '中午',
-  phone: OTHER_PHONE,
-  name: OTHER_NAME,
+  lookup_date: '2026-11-02',
+  lookup_session: '中午',
+  lookup_phone: OTHER_PHONE,
+  lookup_name: OTHER_NAME,
 })));
 assert(notDup && notDup.ok === true && notDup.duplicate === false, `已取消列不是重複，實際 ${JSON.stringify(notDup)}`);
 assert(keysOf(notDup) === 'duplicate,ok', `沒有重複只能有 ok/duplicate，實際 ${keysOf(notDup)}`);
 assert(notDup.error !== 'unauthorized', '沒有重複不可是 unauthorized');
 
 resetCalls();
-const bothMismatch = output(context.handleReadLookup_(postEvent({
+const phoneIgnoresName = output(context.handleReadLookup_(postEvent({
   action: 'lookup',
   op: 'duplicate_check',
   token: TOKEN,
-  date: '2026-11-02',
-  session: '中午',
-  phone: DINING_PHONE,
-  name: OTHER_NAME,
+  lookup_date: '2026-11-02',
+  lookup_session: '中午',
+  lookup_phone: DINING_PHONE,
+  lookup_name: OTHER_NAME,
 })));
-assert(bothMismatch && bothMismatch.duplicate === false, '電話與姓名都帶時必須兩個都中');
+assert(phoneIgnoresName && phoneIgnoresName.duplicate === true && phoneIgnoresName.matchedOrderId === 'SMC100001', '有有效電話時只比電話、日期、時段');
 
 resetCalls();
-const takeout = output(context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'takeout_exists', token: TOKEN, orderId: 'SMC200002',
-})));
+const takeout = output(context.handleReadLookup_(postEvent(takeoutPayload)));
 assert(takeout && takeout.ok === true && takeout.found === true && takeout.status === '預約中', `外帶 exists 應找到，實際 ${JSON.stringify(takeout)}`);
 assert(keysOf(takeout) === 'found,ok,status', `外帶 exists 只能有 ok/found/status，實際 ${keysOf(takeout)}`);
 assertNoPrivate('takeout_exists', { text: JSON.stringify(takeout) });
@@ -424,17 +581,134 @@ assert(calls.sheets.join(',') === '外帶訂單', `外帶 exists 只讀外帶訂
 
 resetCalls();
 const takeoutMissingOnDining = output(context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC200002',
+  action: 'lookup', op: 'exists', token: TOKEN, lookup_order_id: 'SMC200002',
 })));
 assert(takeoutMissingOnDining && takeoutMissingOnDining.found === false, '內用 exists 不讀外帶編號');
 
 resetCalls();
+const lineBooking = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-07',
+  lookup_session: '晚',
+  lookup_phone: 'line訂',
+  lookup_name: '測戊',
+})));
+assert(lineBooking && lineBooking.duplicate === 'possible' && lineBooking.matchedOrderId === 'SMC100010', `line訂 應改走姓名並標 possible，實際 ${JSON.stringify(lineBooking)}`);
+
+resetCalls();
+const badPhone = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-02',
+  lookup_session: '中午',
+  lookup_phone: 'abc',
+  lookup_name: DINING_NAME,
+})));
+assert(badPhone && badPhone.ok === false && badPhone.error === 'bad_request', `電話沒有數字應是 bad_request，實際 ${JSON.stringify(badPhone)}`);
+assert(calls.dataReads === 0, '電話正規化成空不可讀表');
+
+resetCalls();
+const cancelledWord = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-06',
+  lookup_session: '中午',
+  lookup_phone: '0900888000',
+})));
+assert(cancelledWord && cancelledWord.duplicate === false, `取消訂位不可當成重複，實際 ${JSON.stringify(cancelledWord)}`);
+
+resetCalls();
+const blankIds = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-05',
+  lookup_session: '晚上',
+  lookup_phone: '0900666000',
+})));
+assert(blankIds && blankIds.duplicate === true && !Object.prototype.hasOwnProperty.call(blankIds, 'matchedOrderId'), `訂單編號都是空的不可回 matchedOrderId，實際 ${JSON.stringify(blankIds)}`);
+
+resetCalls();
+const keepEarlierId = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-04',
+  lookup_session: '中午',
+  lookup_phone: '0900777888',
+})));
+assert(keepEarlierId && keepEarlierId.duplicate === true && keepEarlierId.matchedOrderId === 'SMC100008', `後面的空編號不可蓋掉已命中的編號，實際 ${JSON.stringify(keepEarlierId)}`);
+
+resetCalls();
 failSheetRead = true;
 const broken = output(context.handleReadLookup_(postEvent({
-  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC100001',
+  action: 'lookup', op: 'exists', token: TOKEN, lookup_order_id: 'SMC100001',
 })));
 assert(broken && broken.ok === false && broken.error === 'unavailable', `讀表失敗不可當成找不到，實際 ${JSON.stringify(broken)}`);
 assert(broken && broken.found !== false && broken.duplicate !== false, '讀表失敗不可 fail open');
+assert(broken && JSON.stringify(broken).indexOf('sheet read failed') === -1, '讀表失敗不可回內部訊息');
+
+resetCalls();
+failSheetRead = true;
+const brokenDup = output(context.handleReadLookup_(postEvent(duplicatePayload)));
+assert(brokenDup && brokenDup.error === 'unavailable' && brokenDup.duplicate !== false, `duplicate_check 讀表失敗不可當成沒有重複，實際 ${JSON.stringify(brokenDup)}`);
+
+resetCalls();
+failSheetRead = true;
+const brokenTakeout = output(context.handleReadLookup_(postEvent(takeoutPayload)));
+assert(brokenTakeout && brokenTakeout.error === 'unavailable' && brokenTakeout.found !== false, `takeout_exists 讀表失敗不可當成找不到，實際 ${JSON.stringify(brokenTakeout)}`);
+
+resetCalls();
+const missingId = output(context.handleReadLookup_(postEvent({ action: 'lookup', op: 'exists', token: TOKEN })));
+assert(missingId && missingId.error === 'bad_request', `exists 缺編號應是 bad_request，實際 ${JSON.stringify(missingId)}`);
+assert(calls.dataReads === 0, '缺編號不應讀表');
+
+resetCalls();
+const missingDate = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'duplicate_check', token: TOKEN, lookup_session: '中午', lookup_phone: DINING_PHONE,
+})));
+assert(missingDate && missingDate.error === 'bad_request', `缺日期應是 bad_request，實際 ${JSON.stringify(missingDate)}`);
+assert(calls.dataReads === 0, '缺日期不應讀表');
+
+resetCalls();
+sheets['工作表1'][0][9] = '編號';
+const badHeader = output(context.handleReadLookup_(postEvent(existsPayload)));
+assert(badHeader && badHeader.error === 'unavailable', `表頭不符應是 unavailable，實際 ${JSON.stringify(badHeader)}`);
+assertNoPrivate('表頭不符', { text: JSON.stringify(badHeader) });
+
+resetCalls();
+sheets['外帶訂單'][0][8] = '情形';
+const badTakeoutHeader = output(context.handleReadLookup_(postEvent(takeoutPayload)));
+assert(badTakeoutHeader && badTakeoutHeader.error === 'unavailable', `外帶表頭不符應是 unavailable，實際 ${JSON.stringify(badTakeoutHeader)}`);
+
+resetCalls();
+const savedDay = context.sheetDayStr_;
+context.sheetDayStr_ = undefined;
+const noDayHelper = output(context.handleReadLookup_(postEvent(duplicatePayload)));
+context.sheetDayStr_ = savedDay;
+assert(noDayHelper && noDayHelper.error === 'unavailable', `沒有 sheetDayStr_ 應是 unavailable，實際 ${JSON.stringify(noDayHelper)}`);
+assert(calls.dataReads === 0, '沒有日期函式不應讀表');
+
+resetCalls();
+const blocked = output(context.handleReadLookup_(postEvent({ ...existsPayload, orderId: 'SMC100001' })));
+assert(blocked && blocked.error === 'bad_request', `查詢不可同時帶 orderId，實際 ${JSON.stringify(blocked)}`);
+assert(calls.dataReads === 0, '帶了舊欄位不應讀表');
+
+resetCalls();
+const arrayBody = context.handleReadLookup_(postEvent(['lookup']));
+assert(arrayBody == null, '陣列 body 不是查詢物件');
+assert(calls.dataReads === 0, '陣列 body 不應讀表');
+
+resetCalls();
+const markedBook = output(context.doPost(postEvent({
+  action: 'book', type: 'dining', date: '2026-11-02', op: 'exists', token: TOKEN,
+})));
+assert(markedBook && markedBook.ok === false && markedBook.error === 'bad_request', `action 不是 lookup 但帶了 op 或 token 應拒絕，實際 ${JSON.stringify(markedBook)}`);
+assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cancels === 0, '混進查詢欄位的訂位不可寫入');
 
 resetCalls();
 const badOp = output(context.handleReadLookup_(postEvent({
@@ -461,10 +735,27 @@ assert(calls.booking === 1 && calls.appendTakeout === 1 && calls.cap === 0 && ca
 
 resetCalls();
 const lookupWrite = context.doPost(postEvent({
-  action: 'lookup', op: 'exists', token: TOKEN, orderId: 'SMC199999',
+  action: 'lookup', op: 'exists', token: 'wrong-token', lookup_order_id: 'SMC199999',
 }));
 output(lookupWrite);
-assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cap === 0, '查詢不可寫表或套用桌數上限');
+assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cap === 0 && calls.cancels === 0, '未授權查詢不可寫表');
+
+resetCalls();
+const unknownWrite = context.doPost(postEvent({
+  action: 'lookup', op: 'nope', token: TOKEN,
+}));
+output(unknownWrite);
+assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cancels === 0, '未知 op 不可寫表');
+
+const docs = readFileSync(join(root, 'docs/read-api.md'), 'utf8');
+for (const phrase of [
+  'lookup_date', 'lookup_session', 'lookup_phone', 'lookup_name', 'lookup_order_id',
+  'read-v1', '暫停上傳', 'v152', '30 天',
+  'live-upload_py.py', 'finish_takeout_verify.py', 'live_takeout_once.py', 'lineok',
+  '取消訂位', 'possible', 'duplicate: true', '沒有 matchedOrderId', '重複',
+]) {
+  assert(docs.indexOf(phrase) !== -1, `說明應寫到「${phrase}」`);
+}
 
 assert(!/function\s+processBooking|function\s+dineInTableLimit_|CNY_2027_DINE_IN_TABLE_CAPS|AKfycb|script\.google\.com/.test(source), '讀取 API 不可改寫入流程，也不可寫入網址或部署編號');
 
