@@ -541,7 +541,7 @@ function assertSourceMatches(row, expected, label) {
   for (const [column, value] of Object.entries(expected.columns)) {
     assert(row[column] === value, `${label}：表格${column}應為 ${value}，實際 ${row[column]}`);
   }
-  assert(row['姓名'] === '測試同學' && row['電話'] === '0900000000' && row['備註'] === NOTE, `${label}：訂位欄仍是假資料`);
+  assert(row['姓名'] === '測試王小明' && row['電話'] === '0900-000-001' && row['備註'] === NOTE, `${label}：訂位欄仍是假資料`);
   assert(row['收到時間'] === FIXED_TIME, `${label}：收到時間要寫入`);
 }
 
@@ -561,8 +561,8 @@ function previewPayload(query, extra) {
   const payload = attr.payloadIfAttributionEnabled({
     action: 'book',
     type: 'dining',
-    name: '測試同學',
-    phone: '0900000000',
+    name: '測試王小明',
+    phone: '0900-000-001',
     email: 'test@example.com',
     people: '2',
     tables: '1',

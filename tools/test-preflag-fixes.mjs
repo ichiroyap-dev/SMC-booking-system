@@ -92,6 +92,7 @@ function memorySpreadsheet() {
   };
   function make(name) {
     const cache = [];
+    let reportedLastRow = null;
     const server = [];
     const pending = [];
     const formats = [];
@@ -103,7 +104,8 @@ function memorySpreadsheet() {
     return {
       formats,
       getMaxRows() { return 1000; },
-      getLastRow() { return cache.length; },
+      getLastRow() { return reportedLastRow == null ? cache.length : reportedLastRow; },
+      setReportedLastRow(n) { reportedLastRow = n; },
       padFormattedTail(n) {
         for (let i = 0; i < n; i += 1) cache.push([]);
       },
@@ -476,7 +478,7 @@ function item2() {
     for (const name of ['訂單', '郵件預覽']) {
       const sheet = book.getSheetByName(name);
       const valueRows = sheet.rows().length;
-      sheet.getLastRow = () => valueRows + 8;
+      sheet.setReportedLastRow(valueRows + 8);
       sheet.padFormattedTail(5);
       assert(sheet.getLastRow() > sheet.rows().length, '表尾格式要讓 getLastRow 比有值的列還多');
       isolated.sandbox.writeRow_(sheet, ['SMC910072']);
@@ -593,7 +595,7 @@ function itemLive() {
   const path = join(root, unpublished, 'production-live-port-verification.md');
   const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   assert(text.length > 0, '要有正式上線驗證清單');
-  for (const phrase of ['讀回', '回滾', 'force push', 'revert', '0900-000-001', '測試王小明', 'check-pages-unpublished.mjs', '404', '/tools/isolated-', '/.github/pages-unpublished/', 'Owner GO', 'MailApp.getRemainingDailyQuota', '日曆', 'BLOCKED']) {
+  for (const phrase of ['讀回', '回滾', 'force push', 'revert', '0900-000-001', '測試王小明', 'check-pages-unpublished.mjs', '404', '/tools/isolated-', '/.github/pages-unpublished/', 'Owner GO', 'MailApp.getRemainingDailyQuota', '日曆', 'BLOCKED', '確認實際寄給客人與店家的信內容', '不要改動正式部署的存取權限', '11 欄寫入仍然正確']) {
     assert(text.includes(phrase), '上線清單要寫到 ' + phrase);
   }
   assert(text.includes('先把旗標') || text.includes('旗標維持或改回關閉'), '回滾要先關旗標');
