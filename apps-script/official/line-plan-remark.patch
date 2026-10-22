@@ -1,0 +1,111 @@
+--- a/程式碼.js
++++ b/程式碼.js
+@@ -187,6 +187,9 @@
+   if (parsed.time)   state.time   = parsed.time;
+   if (parsed.people) state.people = parsed.people;
+   if (parsed.note)   state.note   = state.note ? (state.note + "、" + parsed.note) : parsed.note;
++  // LINE 方案線索（LinePlanRemark.js）：累積每則訊息的桌菜價位／代碼；2 個以上不同 → 方案待確認，不寫確定價
++  lineApplyPlanClues_(state, parsed);
++  if (parsed.tables) state.tables = parsed.tables;
+   state.awaitingConfirmation = false;
+ 
+   // 記錄「手機 → userId」「userId → 姓名電話」對照，供老闆指令與通知使用（保留 6 小時）
+@@ -262,7 +265,9 @@
+     "📅 日期：" + formatDateWithWeekday(state.date) + "\n" +
+     "⏰ 時間：" + state.time + "（" + v.session + "）\n" +
+     "👥 人數：" + state.people + " 位\n" +
+-    (state.note ? "📝 備註：" + state.note + "\n" : "") +
++    // 客人看不到方案代碼：方案改友善文字（每桌 5000 元、2 桌），備註去代碼（LinePlanRemark.js）；工作表 H 欄仍存完整備註
++    (lineCustomerPlanText_(state) ? "🍽️ " + lineCustomerPlanLine_(lineCustomerPlanText_(state)) + "\n" : "") +
++    (lineCustomerNote_(state.note) ? "📝 備註：" + lineCustomerNote_(state.note) + "\n" : "") +
+     "\n✅ 正確無誤，請回覆「確認」即可完成訂位\n" +
+     "✏️ 需要修改，直接告訴管家新的資訊就好";
+   sendLineReply(replyToken, confirmMsg);
+@@ -532,7 +537,10 @@
+     } catch (e) { Logger.log("【新訂位通知老闆失敗】" + e.toString()); }
+ 
+     if (isLineSource) {
+-      var successMsg = "🎉 內用預約成功！\n【專屬訂單編號】" + orderId + "\n姓名：" + params.name + "\n日期：" + params.date + " (" + session + " " + params.time + ")\n桌數：" + requestedTables + " 桌 (" + params.people + "人)\n備註：" + (params.note || "無") + "\n\n系統已為您保留座位，期待您的光臨！";
++      // 客人看不到方案代碼：方案用友善文字、備註只留客人原話（LinePlanRemark.js）
++      var custPlanText = params.customerPlan != null ? params.customerPlan : linePlanFriendly_(params.note);
++      var custNoteText = params.customerNote != null ? params.customerNote : customerNoteText_(params.note);
++      var successMsg = "🎉 內用預約成功！\n【專屬訂單編號】" + orderId + "\n姓名：" + params.name + "\n日期：" + params.date + " (" + session + " " + params.time + ")\n桌數：" + requestedTables + " 桌 (" + params.people + "人)\n" + (custPlanText ? lineCustomerPlanLine_(custPlanText) + "\n" : "") + "備註：" + (custNoteText || "無") + "\n\n系統已為您保留座位，期待您的光臨！";
+       sendLineReply(replyToken, successMsg);
+     }
+ 
+@@ -1051,6 +1059,9 @@
+     if (!data.email) return; 
+     var subject = "【水美土雞城】預訂申請成功確認 - " + data.name + " 先生/小姐 (編號：" + orderId + ")";
+     var typeText = (data.type === "dining") ? "內用訂位" : "外帶預約";
++    // 客人看不到方案代碼（LinePlanRemark.js）：內用備註的 5k1a／散客／大型Na 改成友善方案文字＋客人原話；外帶備註不變
++    var custPlanText = (data.type === "dining") ? linePlanFriendly_(data.note) : "";
++    var custNoteText = (data.type === "dining") ? customerNoteText_(data.note) : (data.note || "");
+     var detailText = (data.type === "dining") 
+       ? "<li><strong>人數桌數：</strong>" + data.people + " 人 / " + data.tables + " 桌</li>"
+       : "<li><strong>訂購明細：</strong><br>" + data.orderItems.replace(/\n/g, "<br>") + "</li>";
+@@ -1069,7 +1080,8 @@
+                    '<li><strong>抵達/取餐時間：</strong>' + data.time + '</li>' +
+                    detailText +
+                    '<li><strong>聯絡電話：</strong>' + data.phone + '</li>' +
+-                   '<li><strong>備註事項：</strong>' + (data.note || "無") + '</li>' +
++                   (custPlanText ? (custPlanText === LINE_PLAN_PENDING_TEXT_ ? '<li><strong>' + custPlanText + '</strong></li>' : '<li><strong>方案：</strong>' + custPlanText + '</li>') : '') +
++                   '<li><strong>備註事項：</strong>' + (custNoteText || "無") + '</li>' +
+                    '</ul>' +
+                    '<hr style="border: 0; border-top: 1px solid #f3f4f6; margin: 24px 0;">' +
+                    '<p style="font-size: 14px; color: #78716c;">💡 提醒您：若需修改或於時限內取消，可直接至官網填寫編號辦理。</p>' +
+@@ -1177,13 +1189,21 @@
+     return ContentService.createTextOutput("OK");
+   }
+   var people = parseInt(state.people) || 1;
+-  var tables = Math.max(1, Math.ceil(people / SEAT_PER_TABLE));
++  // 客人明講桌數（或 4.5k2a 簡寫）時採用；否則沿用人數推估
++  var explicitTables = parseInt(state.tables, 10);
++  var tables = explicitTables >= 1 ? explicitTables : Math.max(1, Math.ceil(people / SEAT_PER_TABLE));
++  // 方案代碼（例 5k1a，a = 桌數）只寫進備註 H 欄；預估金額 M 欄不寫（Option B）
++  // 方案線索（本段對話＋備註）只有 1 個 → 代碼；2 個以上不同 → 「方案待確認；原備註」，客人看到「方案將由店家確認」
++  var planInfo = lineResolvePlan_(state);
++  var note = composeLineRemark_({ plan: planInfo.plan, tables: tables, note: state.note || "", ambiguous: planInfo.ambiguous, clues: planInfo.clues });
+   var params = {
+     action: "booking", type: "dining",
+     name: state.name, phone: state.phone,
+     date: state.date, time: state.time,
+     people: String(people), tables: String(tables),
+-    note: state.note || "", email: state.email || "",
++    note: note, email: state.email || "",
++    customerNote: lineCustomerNote_(state.note || ""), // 回給客人的成功訊息只顯示客人原本備註（去代碼）
++    customerPlan: linePlanFriendly_(note),              // 與 H 欄代碼同源的友善文字（例：每桌 5000 元、1 桌）
+     orderItems: "", orderId: ""
+   };
+   cache.remove(userId); // 清除草稿，避免干擾下一次訂位
+@@ -1195,13 +1215,19 @@
+  */
+ function parseBookingMessage(msg) {
+   var phone = (msg.match(/09\d{8}/) || [null])[0];
++  var plan = parseLinePlan_(msg); // 同一則有 2 個以上不同方案 → null（planClues 會標成待確認）
+   return {
+     name:   parseName(msg),
+     phone:  phone,
+     date:   parseDate(msg),
+     time:   parseTime(msg),
+-    people: parsePeople(msg),
+-    note:   parseNote(msg)
++    // 唯一修正：「大人8位小孩2位」「8大2小」加總成 10（原本只算到 8）；其他情況 lineCategoryPeople_ 回 null → 原本 parsePeople
++    people: lineCategoryPeople_(msg) || parsePeople(msg),
++    note:   parseNote(msg),
++    plan:   plan,
++    planClues: lineFindPlanClues_(msg), // 方案線索（k 代碼、桌菜／每桌 NNNN），handleLineWebhook 累積判斷是否待確認
++    // 明講桌數（「兩桌」）優先於代碼裡的 a（「5k1a」），finalizeBooking 會把 a 改成最終桌數
++    tables: parseLineTables_(msg) || ((plan && plan.tables) ? plan.tables : null)
+   };
+ }
+ 
+@@ -1411,7 +1437,8 @@
+   if (s.date)   parts.push("📅 日期：" + s.date.replace(/-/g, "/"));
+   if (s.time)   parts.push("⏰ 時間：" + s.time);
+   if (s.people) parts.push("👥 人數：" + s.people + " 位");
+-  if (s.note)   parts.push("📝 備註：" + s.note);
++  if (lineCustomerPlanText_(s)) parts.push("🍽️ " + lineCustomerPlanLine_(lineCustomerPlanText_(s))); // 方案友善文字或「方案將由店家確認」，不顯示代碼
++  if (lineCustomerNote_(s.note)) parts.push("📝 備註：" + lineCustomerNote_(s.note)); // 客人看不到方案代碼
+   return parts.join("\n");
+ }
+ 
