@@ -673,9 +673,9 @@ assert(!existsSync(join(root, 'docs/booking-attribution-isolated-runbook.md')), 
 assert(!existsSync(join(root, 'tools/isolated-check-guard.js')), 'guard 不可留在會被 Pages 發布的 tools');
 assert(unpublishedDir.startsWith('.github/'), '未公開檔必須放在目前建置會排除的 .github');
 assert(runbook.includes('http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html'), '手冊要寫明不要再開已移除的本機驗收網址');
-assert(runbook.includes('已移除'), '手冊要寫明本機驗收頁已移除');
-assert(runbook.includes('.github/pages-unpublished/booking-attribution-isolated.gs'), '手冊要指向未公開的隔離腳本');
-assert(runbook.includes('.github/pages-unpublished/isolated-check-guard.js'), '手冊要寫明 guard 已移除');
+assert(runbook.includes('已移除'), '手冊要含「已移除」');
+assert(runbook.includes('.github/pages-unpublished/booking-attribution-isolated.gs'), '手冊要含 .github/pages-unpublished/booking-attribution-isolated.gs');
+assert(runbook.includes('.github/pages-unpublished/isolated-check-guard.js'), '手冊要含 .github/pages-unpublished/isolated-check-guard.js');
 assert(runbook.includes('目前的建置方式會排除'), '手冊要寫明排除只適用目前的建置方式');
 assert(runbook.includes('upload-pages-artifact'), '手冊要提醒 action 換版本後再檢查');
 assert(runbook.includes('404'), '手冊要寫公開測試頁應為 404');

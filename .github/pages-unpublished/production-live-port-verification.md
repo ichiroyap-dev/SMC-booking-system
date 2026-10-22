@@ -13,12 +13,14 @@
 
 ## 步驟
 
-1. 只搬寫入和來源那一段，不貼整支隔離腳本，也不要新增第二個 `doPost`。對照 `.github/pages-unpublished/production-port-checklist.md`。
-2. 送一筆：姓名「測試王小明」、電話 `0900-000-001`。
-3. 讀回同一列，對下面的讀回檢查。
-4. 再送一筆電話 `0900-000-002`。兩筆各佔一列，中間不因表尾只有格式而空一列，也不互相蓋掉。
-5. 用同一編號再送一次。必須沒有新增、沒有再寄信、沒有重跑整欄格式。
-6. 執行 `node tools/check-pages-unpublished.mjs`。它只對下面網址做 curl，預期每一列都是 `404`，最後一行是 `pages unpublished check: pass`。這代表 `/tools/isolated-*` 與 `/.github/pages-unpublished/*` 沒有被 GitHub Pages 提供：
+1. 先查寄信配額，再做後面任何會寄信的步驟。在 Apps Script 編輯器執行 `MailApp.getRemainingDailyQuota()`，看今日剩餘。這次最多兩筆新單，每筆客人信加店內信共 2 封，剩餘至少要有 4。不夠就停。不要送、不要補寄。重複那筆不寄信。
+2. 只搬寫入和來源那一段，不貼整支隔離腳本，也不要新增第二個 `doPost`。對照 `.github/pages-unpublished/production-port-checklist.md`。這次移植不新增日曆功能。若授權畫面出現新的日曆範圍，停下來。
+3. 送一筆：姓名「測試王小明」、電話 `0900-000-001`。
+4. 讀回同一列，對下面的讀回檢查。
+5. 再送一筆電話 `0900-000-002`。兩筆各佔一列，中間不因表尾只有格式而空一列，也不互相蓋掉。
+6. 用同一編號再送一次。必須沒有新增、沒有再寄信、沒有重跑整欄格式。
+7. 核對日曆，再清掉測試活動。打開店用日曆，看這兩筆假資料有沒有被建成活動（日期、時段對得上，標題或說明含「測試王小明」）。有活動就只刪這兩筆，不要刪其他客人的活動；刪完再看一次，確認測試活動不在。沒有活動就記下來，不要為了驗收去加日曆權限。
+8. 執行 `node tools/check-pages-unpublished.mjs`。下面網址都要是 `404`。腳本還會核對 Pages 來源是 `main` 的 `/`、最近一次成功建置的 tar 有 `--exclude=.github`、repo 沒有自訂 workflow。全部通過才印 `pages unpublished check: pass`。連不到網站，或 gh 讀不到 Pages 設定與 `pages-build-deployment`，要印 `BLOCKED`、結束碼 2，不算通過：
    - `/tools/isolated-dining-check.html`
    - `/tools/isolated-check-guard.js`
    - `/.github/pages-unpublished/isolated-dining-check.html`
@@ -49,4 +51,4 @@
 
 ## 這輪不做
 
-不部署、不開旗標、不寫真表、不寄信、不合併。上面的步驟要等 Owner GO。
+不部署、不開旗標、不寫真表、不寄信、不查正式配額、不建日曆、不刪日曆、不合併。上面的步驟要等 Owner GO。

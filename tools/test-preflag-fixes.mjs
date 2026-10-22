@@ -593,7 +593,7 @@ function itemLive() {
   const path = join(root, unpublished, 'production-live-port-verification.md');
   const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   assert(text.length > 0, '要有正式上線驗證清單');
-  for (const phrase of ['讀回', '回滾', 'force push', 'revert', '0900-000-001', '測試王小明', 'check-pages-unpublished.mjs', '404', '/tools/isolated-', '/.github/pages-unpublished/', 'Owner GO']) {
+  for (const phrase of ['讀回', '回滾', 'force push', 'revert', '0900-000-001', '測試王小明', 'check-pages-unpublished.mjs', '404', '/tools/isolated-', '/.github/pages-unpublished/', 'Owner GO', 'MailApp.getRemainingDailyQuota', '日曆', 'BLOCKED']) {
     assert(text.includes(phrase), '上線清單要寫到 ' + phrase);
   }
   assert(text.includes('先把旗標') || text.includes('旗標維持或改回關閉'), '回滾要先關旗標');

@@ -508,31 +508,29 @@ function itemNitDoc() {
 }
 
 function itemNitPages() {
-  const dir = '/tmp/pr47-fakebin';
-  mkdirSync(dir, { recursive: true });
   const script = join(root, 'tools/check-pages-unpublished.mjs');
   const source = readFileSync(script, 'utf8');
-  assert(source.includes('/tools/isolated-') && source.includes('/.github/pages-unpublished/'), 'Pages 檢查要含測試頁路徑');
-  assert(!source.includes('pages-build-deployment'), 'Pages 檢查只 curl，不再讀建置紀錄');
+  assert(source.includes('/tools/isolated-dining-check.html') && source.includes('/tools/isolated-check-guard.js'), 'Pages 檢查要含已移除的公開測試頁');
+  assert(source.includes('/.github/pages-unpublished/isolated-dining-check.html') && source.includes('/.github/pages-unpublished/isolated-check-guard.js'), 'Pages 檢查要含已移除的未公開測試頁');
+  assert(source.includes('pages-build-deployment'), 'Pages 檢查要讀 pages-build-deployment');
+  assert(source.includes("pages.source.branch !== 'main'"), 'Pages 檢查要核對來源分支');
+  assert(source.includes('--exclude=.github'), 'Pages 檢查要確認建置排除 .github');
+  assert(source.includes('.github/workflows'), 'Pages 檢查要偵測自訂 workflow');
+  const dir = '/tmp/pr47-fakebin';
+  mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'curl'), '#!/bin/sh\necho 404\n');
+  writeFileSync(join(dir, 'gh'), '#!/bin/sh\necho not logged in >&2\nexit 1\n');
   chmodSync(join(dir, 'curl'), 0o755);
-  const ok = spawnSync(process.execPath, [script], {
+  chmodSync(join(dir, 'gh'), 0o755);
+  const ran = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     env: { ...process.env, PATH: dir },
   });
-  const okOut = (ok.stdout || '') + (ok.stderr || '');
-  assert(ok.status === 0, 'curl 回 404 要通過，實際 ' + ok.status + '\n' + okOut);
-  assert(okOut.includes('pages unpublished check: pass'), '404 要印 pass');
-  writeFileSync(join(dir, 'curl'), '#!/bin/sh\necho 200\n');
-  chmodSync(join(dir, 'curl'), 0o755);
-  const bad = spawnSync(process.execPath, [script], {
-    encoding: 'utf8',
-    env: { ...process.env, PATH: dir },
-  });
-  const badOut = (bad.stdout || '') + (bad.stderr || '');
-  assert(bad.status === 1, '不是 404 要失敗，實際 ' + bad.status + '\n' + badOut);
-  assert(badOut.includes('應為 404'), '失敗要寫明應為 404');
-  assert(!/pages unpublished check: pass/.test(badOut), '不是 404 不可印 pass');
+  const output = (ran.stdout || '') + (ran.stderr || '');
+  assert(ran.status === 2, 'gh 沒登入要結束碼 2，實際 ' + ran.status + '\n' + output);
+  assert(output.includes('BLOCKED'), '環境不足要寫 BLOCKED，不可當成通過或一般失敗');
+  assert(!/pages unpublished check: pass/.test(output), '環境不足不可印 PASS');
+  assert(output.includes('需要的環境'), '要列出需要的環境');
 }
 
 const items = { f1: itemF1, f2: itemF2, f6: itemF6, checklist: itemChecklist, 'nit-doc': itemNitDoc, 'nit-pages': itemNitPages };
