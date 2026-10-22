@@ -108,7 +108,7 @@ function textStore_(value) {
 }
 
 function phoneStore_(value) {
-  // 一律文字。保留開頭的 0，也不刪客人打的單引號。
+  // 與官網 plainSheetText 同一條：一律文字，不加前導單引號，也不刪客人打的單引號。開頭的 0 要留著。
   return formulaGuard_(value);
 }
 
@@ -406,7 +406,7 @@ function applyColumnFormats_(sheet, headers) {
   }
 }
 
-function ensureSheet_(ss, name, headers) {
+function ensureSheet_(ss, name, headers, applyFormats) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
@@ -423,7 +423,8 @@ function ensureSheet_(ss, name, headers) {
       { valueInputOption: 'RAW' }
     );
   }
-  applyColumnFormats_(sheet, headers);
+  // 重複送出會傳 false，避免每次重設整欄格式。省略時仍套用（報告分頁）。
+  if (applyFormats !== false) applyColumnFormats_(sheet, headers);
   return sheet;
 }
 
@@ -806,7 +807,7 @@ function acceptBooking_(payload) {
   var orderSheet = null;
   var outcome = { response: { status: 'error', message: '隔離腳本無法完成寫入。' }, wrote: false, mailed: false };
   try {
-    var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS);
+    var sheet = ensureSheet_(opened.ss, '訂單', ORDER_HEADERS, false);
     orderSheet = sheet;
     var ids = readColumn_(sheet, 1).slice(1);
     orderId = orderIdFor_(payload, ids);
@@ -815,10 +816,11 @@ function acceptBooking_(payload) {
     } else {
       var zone = spreadsheetZone_(opened.ss);
       if (!zone) {
-        throw new Error('找不到試算表時區。這筆訂單沒有寫入，也沒有寄信。訂單分頁若是這次新建，表頭可能已寫上，整欄格式也可能已設過。');
+        throw new Error('找不到試算表時區。這筆訂單沒有寫入，也沒有寄信。訂單分頁若是這次新建，表頭可能已寫上。這次沒有重設整欄格式。');
       }
       var result = buildBookingResult_(payload, orderId, nowIso_(), shopTo, shopTo, zone);
       if (ids.indexOf(orderId) !== -1) {
+        // 重複編號不寫列、不寄信，也不重跑 applyColumnFormats_。下一筆新單仍會設格式。
         result.response.mailed = false;
         result.response.duplicate = true;
         result.response.wrote = false;
@@ -826,8 +828,10 @@ function acceptBooking_(payload) {
         outcome = { response: result.response, wrote: false, mailed: false };
       } else {
         attemptedWrite = true;
+        applyColumnFormats_(sheet, ORDER_HEADERS);
         writeRow_(sheet, result.row);
-        var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS);
+        var mailSheet = ensureSheet_(opened.ss, '郵件預覽', MAIL_HEADERS, false);
+        applyColumnFormats_(mailSheet, MAIL_HEADERS);
         writeRow_(mailSheet, mailPreviewRow_(result));
         result.response.mailed = false;
         result.response.wrote = true;
