@@ -31,7 +31,7 @@
    - **實測第一步：** 先不要部署。私人網頁維持既有版本，這輪不要重新部署。函數選單選 `runIsolatedEightCases`，按執行。獨立專案從編輯器執行；onOpen 選單僅適用綁定專案。編輯器入口只記執行紀錄，設計上沒有彈窗。編輯器執行，無彈窗，以執行紀錄為準。不要等彈窗。這一輪沒有彈窗，以執行記錄的最後一行為準；分頁寫 success，不等於整輪通過。執行紀錄沒有完整摘要就停，不算通過。沒有看到這段結果、還在執行，或出現錯誤，就停止回報，不要重跑。客人的信寄失敗後，仍然會寄店內的信。`sendEmail` 丟錯記成未確認寄出，不要補寄。任一案例結果未知、錯誤、寄信未確認，或案例 8 不是重複，八案例就停在那個案例，後面的案例不跑、不再寄信。摘要會寫「停在」哪個案例和原因，不會寫四種前綴都通過。首次執行可能再授權。同意畫面只會列出還沒給過的項目，也可能不再詢問。進階服務用的範圍是 `https://www.googleapis.com/auth/spreadsheets`（查看、編輯、建立及刪除您所有的 Google 試算表）。它不能改成「只限目前這張試算表」。寄信權限是原本的「以您的名義傳送電子郵件」。存取仍是「只有我」，不要改成「任何人」。若出現雲端硬碟、Gmail 或日曆的新範圍，就停下來，不要繼續。
    - 全成功的執行記錄要寫「確認寄出 14 封。未確認寄出 0 封」（7 筆新單各 2 封，重複那筆不寄）。網頁驗收每一筆新單再 2 封。封數不同時，以「驗收結果」的寄信欄和執行記錄的最後一行為準，不要只靠信箱封數。
    - 核對「訂單」「郵件預覽」「驗收結果」「公式核對」。訂單分頁案例 6 的四格，讀回值必須完全等於原值 `=1+1`、`+1+1`、`-1+1`、`@cmd`，而且 `getFormula` 為空。`+1+1` 不能變成 `=+1+1`。「公式核對」分頁的原值與讀回值是 JSON 字串，例如 `"+1+1"`。任何 unknown、讀回不符或公式異常，就停止，不部署、不要開網頁驗收，先回報原列。結果未知時，不可以重新整理後重送。
-3. **這輪不要開私人頁。** 私人網頁維持 `355da77` 版本 1。之後若 Owner 另決要開，才新增網路應用程式部署，執行身分「我」、存取「只有我」，**不可**改成「任何人」。不要覆寫正式部署。用同帳號開新網址，按鈕經 `google.script.run` 送一次品牌欄位。核對新編號、原列及兩封信。未知或沒有回應就停，不可以重新整理後重送。不要用 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 送這個部署；那頁只留給模擬測試。
+3. **這輪不要開私人頁。** 私人網頁維持 `355da77` 版本 1。之後若 Owner 另決要開，才新增網路應用程式部署，執行身分「我」、存取「只有我」，**不可**改成「任何人」。不要覆寫正式部署。用同帳號開新網址，按鈕經 `google.script.run` 送一次品牌欄位。核對新編號、原列及兩封信。未知或沒有回應就停，不可以重新整理後重送。`isolated-dining-check.html` 已移除。不要用 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 送這個部署；公開網址應為 404，也不能拿來送私人部署。
 
 4. **表尾三筆用編輯器單筆入口。需 Owner GO。** 沒有這句授權，不要跑。人工確認測試表 ID 和收件信箱是測試用。訂單分頁至少1000列、欄擴至 AAA。不要開網頁，不要新增 doGet／doPost，也不要重新部署。函數選單只選 `runIsolatedOneBooking201`、`runIsolatedOneBooking202` 或 `runIsolatedOneBooking203`，每次只送一筆。不要從選單跑帶編號的函式。編號只能是 `SMC900201`、`SMC900202`、`SMC900203`。這三個入口也只記執行紀錄，設計上沒有彈窗。回傳摘要與執行紀錄同一句。結果以執行紀錄為準。
 
@@ -205,12 +205,11 @@
 3. 點「送到隔離後端」。成功時畫面列出 `status`、`orderId`、`message`、`mailed`、`duplicate`、`wrote`。用那個編號到「訂單」、客人信、店內信對同一個編號。兩封信都在 `SMC_SHOP_EMAIL`。店內信要有 `ag_brand` 與 `品牌`。客人信不要有這些代碼。
 4. 若 `status` 是 `unknown`，或訊息要你核對原列，就停下。結果未知時，不可以重新整理後重送。訊息會寫明欄位、原值、讀回值。先看試算表那一列。以 `=`、`+`、`-`、`@` 開頭的格子，讀回值要等於原值字串，而且 `getFormula` 為空，不可變成數字。網頁每一筆新單是 2 封信。
 
-## 本機頁面不能拿來送私人部署
+## 本機驗收頁已移除
 
-`http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html` 只測瀏覽器鎖。私人部署是「只有我」時，這頁用跨來源方式呼叫部署網址會被導到登入頁，然後 CORS 失敗。不能拿來送私人部署。
+`.github/pages-unpublished/isolated-dining-check.html` 與 `.github/pages-unpublished/isolated-check-guard.js` 已移除，`tools/test-isolated-dining-check.mjs` 也已移除。不要再開 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html`，也不要再跑本機 http.server 來送單。那個網址在 GitHub Pages 上應為 404。不能拿來送私人部署。
 
-1. 在專案資料夾執行 `python3 -m http.server 8765`，用瀏覽器開 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html`。這個檔放在 `.github/pages-unpublished/`，目前的建置方式會排除 `.github`，所以正式官網打不開；本機這個位址仍可開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查這個目錄裡的驗收頁、隔離腳本、手冊和 guard 是否又被公開。鎖只在同一個來源之間共用。請固定用這個 `127.0.0.1`，不要改開 `file://`，也不要改用別的連接埠或主機。不同來源看不到彼此的鎖。這一段不能拿來送私人部署。
-這頁的「已寄出」或「未全部寄出，請核對信箱」只存在模擬測試裡。模擬用的 guard 在 `.github/pages-unpublished/isolated-check-guard.js`。Owner 不要改它，也不要用這頁送單。結果未知時，不可以重新整理後重送。
+公開網站是否仍把測試頁擋在外面，用 `node tools/check-pages-unpublished.mjs`。它只 curl，預期 `/tools/isolated-*` 與 `/.github/pages-unpublished/*` 都是 404。步驟與讀回、回滾見 `.github/pages-unpublished/production-live-port-verification.md`。結果未知時，不可以重新整理後重送。
 
 ## 固定版本
 
