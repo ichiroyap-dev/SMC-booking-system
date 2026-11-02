@@ -40,7 +40,7 @@
 
 `direct/unknown` 只表示這筆官網預約沒有廣告參數。不要把它算成 Google 廣告。`有點擊識別碼、來源待核對` 要另列，等人對過再決定算不算廣告。
 
-外來參數寫進試算表前要當純文字。`cleanToken` 只去掉控制字元，**不是**公式防護。公式防護只做在 RAW 寫入：官網 `plainSheetText` 送原文，不再在 `=`、`+`、`-`、`@` 前面加單引號。隔離腳本用 Sheets API `valueInputOption=RAW` 原樣儲存，也不刪姓名、備註開頭客人自己打的單引號。`SEND_ATTRIBUTION_TO_BACKEND` 維持 `false`。逐欄存文字還是數字、日期，見 `docs/booking-sheet-columns.md`。本機模擬會重現試算表把 `=` 算掉、把 `+` 補成 `=+` 的行為，不能代替真表驗收。
+外來參數寫進試算表前要當純文字。`cleanToken` 只去掉控制字元，**不是**公式防護。公式防護只做在 RAW 寫入。電話、姓名、信箱、備註、品項與來源欄共用 `plainSheetText`：送原文，不在 `=`、`+`、`-`、`@` 前面加單引號。官網組訂位物件時用同一個 `bookingSheetText`。隔離腳本的 `phoneStore_`、`textStore_` 也不加單引號，也不刪客人自己打在開頭的 `'`。`SEND_ATTRIBUTION_TO_BACKEND` 維持 `false`。逐欄存文字還是數字、日期，見 `docs/booking-sheet-columns.md`。本機模擬會重現試算表把 `=` 算掉、把 `+` 補成 `=+` 的行為，不能代替真表驗收。
 
 ## 品牌／非品牌網址
 
@@ -117,7 +117,7 @@
 
 沒有現行 Apps Script 的去識別化程式，因此後端會不會收下新欄位、會不會改到寫表或寄信，都還沒有證據。狀態就是待驗證。這份 PR 不把新欄位送進正式請求。
 
-正式腳本的原始碼不在這個 repo，隔離腳本**不是**正式腳本的補丁。`.github/pages-unpublished/booking-attribution-isolated.gs` 依前端看得到的 11 欄 POST 契約，另外寫一支只給隔離專案用的實作：缺來源、多來源或格式不對時仍收單，備註原樣寫入，來源欄空白或改成純文字。客人信不放活動代碼；店內信才放來源對帳。步驟與預期的表、信在 `.github/pages-unpublished/booking-attribution-isolated-runbook.md`。本機對帳腳本是 `tools/test-booking-reconciliation.mjs`。兩個會開瀏覽器的測試是 `node tools/test-booking-attribution.mjs` 和 `node tools/test-isolated-dining-check.mjs`。Node 20 要加 `--experimental-websocket`，Node 22 不用。
+正式腳本的原始碼不在這個 repo，隔離腳本**不是**正式腳本的補丁。`.github/pages-unpublished/booking-attribution-isolated.gs` 依前端看得到的 11 欄 POST 契約，另外寫一支只給隔離專案用的實作：缺來源、多來源或格式不對時仍收單，備註原樣寫入，來源欄空白或改成純文字。客人信不放活動代碼；店內信才放來源對帳。步驟與預期的表、信在 `.github/pages-unpublished/booking-attribution-isolated-runbook.md`。本機對帳腳本是 `tools/test-booking-reconciliation.mjs`。會開瀏覽器的測試是 `node tools/test-booking-attribution.mjs`。`tools/test-isolated-dining-check.mjs` 已移除，不要再跑。Node 20 要加 `--experimental-websocket`，Node 22 不用。
 
 隔離環境要做的檢查（不要用正式試算表、不要部署到正式 web app、不要寫正式訂單）：
 

@@ -21,7 +21,7 @@
  * 閒置超過 30 分鐘，讀取時清除。
  *
  * 九個來源欄位一律是字串。群組分類只允許「品牌」「非品牌」或空白。
- * 來源送原文。試算表用 RAW 原樣保存 = + - @，這裡不再加單引號。cleanToken 只去掉控制字元。
+ * 來源、電話、姓名、信箱、備註、品項共用 plainSheetText：送原文，不加前導單引號。cleanToken 只去掉控制字元。
  * SEND_ATTRIBUTION_TO_BACKEND 預設 false：來源只留在這次分頁，正式 POST 不加新欄位。
  * 送出當下的 9 欄快照綁到回傳的訂單編號；同一編號不覆寫、不重複計。快照不進正式 POST。
  * 正式 Apps Script 不在本 repo。本機契約測試不能證明後端相容。見 docs/booking-attribution.md。
@@ -73,8 +73,10 @@
         return text;
     }
 
+    // 電話、姓名、信箱、備註、品項與來源欄共用這一條。
+    // 不加前導單引號。RAW 會把加上去的 ' 原樣留下，格子和店內信會多一個字。
+    // 客人自己打的開頭 ' 要留著，這裡不刪。
     function plainSheetText(value) {
-        // 防護只放在 RAW 寫入。這裡再加單引號，格子會多一個字。
         return value == null ? '' : String(value);
     }
 
@@ -537,7 +539,12 @@
         var payload = {};
         var source = base && typeof base === 'object' ? base : {};
         ORIGINAL_PAYLOAD_KEYS.forEach(function (key) {
-            if (Object.prototype.hasOwnProperty.call(source, key)) payload[key] = source[key];
+            if (!Object.prototype.hasOwnProperty.call(source, key)) return;
+            if (key === 'name' || key === 'phone' || key === 'email' || key === 'note' || key === 'orderItems') {
+                payload[key] = plainSheetText(source[key]);
+            } else {
+                payload[key] = source[key];
+            }
         });
         return payload;
     }

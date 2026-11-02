@@ -92,6 +92,7 @@ function memorySpreadsheet() {
   };
   function make(name) {
     const cache = [];
+    let reportedLastRow = null;
     const server = [];
     const pending = [];
     const formats = [];
@@ -103,7 +104,8 @@ function memorySpreadsheet() {
     return {
       formats,
       getMaxRows() { return 1000; },
-      getLastRow() { return cache.length; },
+      getLastRow() { return reportedLastRow == null ? cache.length : reportedLastRow; },
+      setReportedLastRow(n) { reportedLastRow = n; },
       padFormattedTail(n) {
         for (let i = 0; i < n; i += 1) cache.push([]);
       },
@@ -384,6 +386,43 @@ function item1() {
     assert(quotedRes.response && quotedRes.response.status === 'success', '客人打了單引號加公式字元仍要收單');
     assert(quotedRow && quotedRow['姓名'] === "'=1+1" && quotedRow['備註'] === "'+1+1", '後端不可一律刪掉使用者欄位開頭的單引號');
   });
+  assert(indexHtml.includes("bookingSheetText(document.getElementById('phone').value)"), '官網電話要走與來源欄相同的文字規則');
+  assert(source.includes('payload[key] = plainSheetText(source[key])'), '電話、姓名、信箱、備註、品項送出前要走 plainSheetText');
+  const shaped = attr.payloadForBooking(basePayload({
+    name: "'測試王小明",
+    phone: '0900-000-001',
+    email: 'shop-test@example.com',
+    note: "'靠窗",
+    orderItems: '=不要算',
+  }), fields);
+  assert(shaped.phone === '0900-000-001' && !String(shaped.phone).startsWith("'"), '電話不加前導單引號，並保留開頭 0');
+  assert(shaped.name === "'測試王小明" && shaped.note === "'靠窗", '姓名和備註自己的單引號要留著');
+  assert(shaped.orderItems === '=不要算' && !String(shaped.orderItems).startsWith("='"), '品項公式開頭不加單引號');
+  const formulaPhone = attr.payloadForBooking(basePayload({
+    phone: '=0900-000-002',
+    name: '+測試王小明',
+    note: '@靠窗',
+  }), fields);
+  assert(formulaPhone.phone === '=0900-000-002' && formulaPhone.name === '+測試王小明' && formulaPhone.note === '@靠窗', '電話與文字欄的 = + @ 不加單引號');
+  guard(() => {
+    const isolated = loadIsolated();
+    const payload = attr.payloadIfAttributionEnabled(basePayload({
+      name: "'測試王小明",
+      phone: '0900-000-001',
+      note: '=靠窗',
+      orderItems: '+品項',
+      email: '@shop-test@example.com',
+    }), fields);
+    payload._testOrderId = 'SMC910003';
+    const res = isolated.sandbox.acceptBooking_(payload);
+    const row = rowById(isolated, 'SMC910003');
+    assert(res.response && res.response.status === 'success', '文字規則整合要能收單');
+    assert(row && row['電話'] === '0900-000-001' && typeof row['電話'] === 'string', '整合：電話是文字且不加單引號');
+    assert(row && row['姓名'] === "'測試王小明", '整合：姓名的單引號與後端一致');
+    assert(row && row['備註'] === '=靠窗' && row['品項'] === '+品項', '整合：備註和品項不加單引號');
+    assert(row && row['信箱'] === '@shop-test@example.com', '整合：信箱的 @ 開頭原樣留下');
+    assert(row && row['utm來源'] === '=1+1', '整合：來源欄與文字欄同一條規則');
+  });
 }
 
 function item2() {
@@ -431,6 +470,25 @@ function item2() {
     const orders = sheetRows(isolated, '訂單');
     assert(orders[0] && orders[0][0] === '訂單編號' && orders[1] && orders[1][0] === 'SMC910031', '表頭先落地，資料列接在表頭下一列');
   });
+  guard(() => {
+    const isolated = loadIsolated();
+    const first = isolated.sandbox.acceptBooking_(basePayload({ _testOrderId: 'SMC910071' }));
+    assert(first.response && first.response.status === 'success', '掃描列號的第一筆要成功');
+    const book = isolated.box.byId['isolated-test-sheet'];
+    for (const name of ['訂單', '郵件預覽']) {
+      const sheet = book.getSheetByName(name);
+      const valueRows = sheet.rows().length;
+      sheet.setReportedLastRow(valueRows + 8);
+      sheet.padFormattedTail(5);
+      assert(sheet.getLastRow() > sheet.rows().length, '表尾格式要讓 getLastRow 比有值的列還多');
+      isolated.sandbox.writeRow_(sheet, ['SMC910072']);
+    }
+    const orderIds = sheetRows(isolated, '訂單').map((row) => row[0]);
+    const mailIds = sheetRows(isolated, '郵件預覽').map((row) => row[0]);
+    assert(orderIds.indexOf('SMC910072') === orderIds.indexOf('SMC910071') + 1, '格式列不計，訂單第二筆要接在上一筆下一列');
+    assert(mailIds.indexOf('SMC910072') === mailIds.indexOf('SMC910071') + 1, '郵件預覽也要接在下一筆有值的列');
+    assert(!orderIds.slice(orderIds.indexOf('SMC910071') + 1, orderIds.indexOf('SMC910072')).some((cell) => cell), '兩筆訂單中間不可空一列');
+  });
 }
 
 function item3() {
@@ -475,6 +533,20 @@ function item3() {
     assert(weirdRow && weirdRow['電話'] === '0123' && typeof weirdRow['電話'] === 'string', '較短的電話也要保留開頭的 0');
     const formats = isolated.box.byId['isolated-test-sheet'].getSheetByName('訂單').formats.map((item) => item.fmt);
     assert(formats.includes('@') && formats.includes('yyyy-mm-dd') && formats.includes('hh:mm') && formats.includes('0'), '電話、日期、時間、人數要設對應的儲存格格式');
+    assert(columnDoc.includes('全文字 RAW') && columnDoc.includes('儲存格型別'), '契約要寫全文字 RAW 的儲存格型別');
+    assert(columnDoc.includes('不能當日期篩選') && columnDoc.includes('加總會漏掉文字'), '契約要寫全文字對加總和日期篩選的影響');
+    const book = isolated.box.byId['isolated-test-sheet'];
+    book.insertSheet('全文字');
+    isolated.sandbox.Sheets.Spreadsheets.Values.update(
+      { values: [['2', '1', '2026-10-22', '12:00', FIXED_TIME]] },
+      'isolated-test-sheet',
+      "'全文字'!A1:E1",
+      { valueInputOption: 'RAW' }
+    );
+    const textRow = book.getSheetByName('全文字').rows()[0];
+    assert(textRow && textRow.length === 5 && textRow.every((cell) => typeof cell === 'string'), '全文字 RAW 後人數、桌數、日期、時間、收到時間都是文字');
+    assert(textRow[0] === '2' && textRow[1] === '1' && textRow[2] === '2026-10-22' && textRow[3] === '12:00' && textRow[4] === FIXED_TIME, '全文字 RAW 要留下原字串，不可變成序號');
+    assert(typeof row['人數'] === 'number' && typeof row['桌數'] === 'number' && typeof row['日期'] === 'number' && typeof row['時間'] === 'number' && typeof row['收到時間'] === 'number', '現行程式的這五欄不可是全文字');
   });
 }
 
@@ -489,6 +561,47 @@ function item4() {
   assert(source.includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '這輪不可打開旗標');
   assert(indexHtml.includes(LIVE_ID), '正式 web app 網址不可改');
   assert(!/^function doPost\s*\(/m.test(gs), '隔離腳本不可新增 doPost');
+}
+
+function itemDupFormat() {
+  guard(() => {
+    const isolated = loadIsolated();
+    const first = isolated.sandbox.acceptBooking_(basePayload({
+      _testOrderId: 'SMC910061',
+      name: '測試王小明',
+      phone: '0900-000-001',
+    }));
+    assert(first.response && first.response.status === 'success', '第一筆要成功');
+    const sheet = isolated.box.byId['isolated-test-sheet'].getSheetByName('訂單');
+    const before = sheet.formats.length;
+    assert(before > 0, '新單要設過欄格式');
+    const second = isolated.sandbox.acceptBooking_(basePayload({
+      _testOrderId: 'SMC910061',
+      name: '測試王小明',
+      phone: '0900-000-001',
+    }));
+    assert(second.response && second.response.duplicate === true && second.response.wrote === false, '重複要標成沒有新增');
+    assert(sheet.formats.length === before, '重複送出不可再跑 applyColumnFormats_');
+    const third = isolated.sandbox.acceptBooking_(basePayload({
+      _testOrderId: 'SMC910062',
+      phone: '0900-000-002',
+    }));
+    assert(third.response && third.response.status === 'success', '下一筆新單仍要收單');
+    assert(sheet.formats.length === before * 2, '新單仍會設一次格式');
+  });
+}
+
+function itemLive() {
+  const path = join(root, unpublished, 'production-live-port-verification.md');
+  const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
+  assert(text.length > 0, '要有正式上線驗證清單');
+  for (const phrase of ['讀回', '回滾', 'force push', 'revert', '0900-000-001', '測試王小明', 'check-pages-unpublished.mjs', '404', '/tools/isolated-', '/.github/pages-unpublished/', 'Owner GO', 'MailApp.getRemainingDailyQuota', '日曆', 'BLOCKED', '確認實際寄給客人與店家的信內容', '不要改動正式部署的存取權限', '11 欄寫入仍然正確']) {
+    assert(text.includes(phrase), '上線清單要寫到 ' + phrase);
+  }
+  assert(text.includes('先把旗標') || text.includes('旗標維持或改回關閉'), '回滾要先關旗標');
+  assert(text.includes('上一個版本') || text.includes('上一版本'), '回滾要選回上一個部署版本');
+  assert(!/AKfycb/.test(text), '上線清單不可寫部署編號');
+  assert(source.includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '這輪不可打開旗標');
 }
 
 function item5() {
@@ -558,7 +671,7 @@ function nit4() {
   assert(verification.includes('只換腳本') || verification.includes('只換 .gs') || verification.includes('新文件'), '要寫明只換腳本、文件留在新版');
 }
 
-const items = { 1: item1, 2: item2, 3: item3, 4: item4, 5: item5, nit1, nit2, nit3, nit4 };
+const items = { 1: item1, 2: item2, 3: item3, 4: item4, 5: item5, dup: itemDupFormat, live: itemLive, nit1, nit2, nit3, nit4 };
 const asked = process.argv.includes('--item') ? process.argv[process.argv.indexOf('--item') + 1] : 'all';
 const selected = asked === 'all' ? Object.keys(items) : [asked];
 if (selected.some((name) => !items[name])) {

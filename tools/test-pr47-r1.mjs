@@ -508,13 +508,21 @@ function itemNitDoc() {
 }
 
 function itemNitPages() {
+  const script = join(root, 'tools/check-pages-unpublished.mjs');
+  const source = readFileSync(script, 'utf8');
+  assert(source.includes('/tools/isolated-dining-check.html') && source.includes('/tools/isolated-check-guard.js'), 'Pages 檢查要含已移除的公開測試頁');
+  assert(source.includes('/.github/pages-unpublished/isolated-dining-check.html') && source.includes('/.github/pages-unpublished/isolated-check-guard.js'), 'Pages 檢查要含已移除的未公開測試頁');
+  assert(source.includes('pages-build-deployment'), 'Pages 檢查要讀 pages-build-deployment');
+  assert(source.includes("pages.source.branch !== 'main'"), 'Pages 檢查要核對來源分支');
+  assert(source.includes('--exclude=.github'), 'Pages 檢查要確認建置排除 .github');
+  assert(source.includes('.github/workflows'), 'Pages 檢查要偵測自訂 workflow');
   const dir = '/tmp/pr47-fakebin';
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'curl'), '#!/bin/sh\necho 404\n');
   writeFileSync(join(dir, 'gh'), '#!/bin/sh\necho not logged in >&2\nexit 1\n');
   chmodSync(join(dir, 'curl'), 0o755);
   chmodSync(join(dir, 'gh'), 0o755);
-  const ran = spawnSync(process.execPath, [join(root, 'tools/check-pages-unpublished.mjs')], {
+  const ran = spawnSync(process.execPath, [script], {
     encoding: 'utf8',
     env: { ...process.env, PATH: dir },
   });

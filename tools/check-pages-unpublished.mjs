@@ -1,13 +1,21 @@
 #!/usr/bin/env node
-// Re-check that GitHub Pages does not publish .github/pages-unpublished.
+// Re-check that GitHub Pages does not publish .github/pages-unpublished
+// or the removed isolated test pages.
 // Reads the live site and the latest Pages build log. Does not deploy or write a sheet.
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 
 const repo = 'ichiroyap-dev/SMC-booking-system';
-const urls = [
-  'https://www.sweetmeichicken.com/.github/pages-unpublished/booking-attribution-isolated.gs',
-  'https://www.sweetmeichicken.com/.github/pages-unpublished/IsolatedCheck.html',
+const origin = 'https://www.sweetmeichicken.com';
+// Deleted harness paths plus the unpublished files the build must keep off the site.
+const paths = [
+  '/tools/isolated-dining-check.html',
+  '/tools/isolated-check-guard.js',
+  '/.github/pages-unpublished/isolated-dining-check.html',
+  '/.github/pages-unpublished/isolated-check-guard.js',
+  '/.github/pages-unpublished/booking-attribution-isolated.gs',
+  '/.github/pages-unpublished/IsolatedCheck.html',
+  '/.github/pages-unpublished/booking-attribution-isolated-runbook.md',
 ];
 const failures = [];
 const blocked = [];
@@ -39,7 +47,8 @@ function gh(args) {
   return ran.stdout || '';
 }
 
-for (const url of urls) {
+for (const path of paths) {
+  const url = origin + path;
   const status = curlStatus(url);
   if (!status) {
     block(url + ' 連不到，不能當成 404');

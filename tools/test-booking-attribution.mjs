@@ -421,7 +421,7 @@ const receiptFn = extractFn(html, 'showReceipt');
 assert(receiptFn && !/utm|gclid|attribution|direct\/unknown|adgroup/i.test(receiptFn), '收件畫面不可帶來源');
 assert(html.includes('src="js/booking-attribution.js"'), '首頁要載入來源腳本');
 assert(faq.includes('src="js/booking-attribution.js"'), '常見問題頁也要記住進站參數');
-assert(/note: currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value/.test(html), '備註仍只含餐點內容');
+assert(/note: bookingSheetText\(currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value\)/.test(html), '備註仍只含餐點內容');
 assert(html.includes('payloadForBooking(data, attribution)'), '送出要經過來源旗標');
 assert(!html.includes('source: attribution.source'), '預設的送出物件不可直接帶來源欄');
 assert(readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '旗標預設必須關閉');
