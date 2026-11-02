@@ -207,7 +207,7 @@
 
 ## 本機驗收頁已移除
 
-`.github/pages-unpublished/isolated-dining-check.html` 與 `.github/pages-unpublished/isolated-check-guard.js` 已移除，`tools/test-isolated-dining-check.mjs` 也已移除。不要再開 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html`，也不要再跑本機 http.server 來送單。那個網址在 GitHub Pages 上應為 404。不能拿來送私人部署。
+`.github/pages-unpublished/isolated-dining-check.html` 與 `.github/pages-unpublished/isolated-check-guard.js` 已移除，`tools/test-isolated-dining-check.mjs` 也已移除。不要再開 `http://127.0.0.1:8765/.github/pages-unpublished/isolated-dining-check.html`，也不要再跑本機 http.server 來送單。那個網址在 GitHub Pages 上應為 404。不能拿來送私人部署。這些檔在 `.github` 裡，目前的建置方式會排除 `.github`，所以正式官網打不開。以後如果換建置流程，或 `upload-pages-artifact` 換版本，要重新檢查驗收頁、隔離腳本、手冊和 guard 是否又被公開。
 
 公開網站是否仍把測試頁擋在外面，用 `node tools/check-pages-unpublished.mjs`。它會 curl `/tools/isolated-*` 與 `/.github/pages-unpublished/*`，預期 404，並核對 Pages 來源分支、建置排除 `.github`、沒有自訂 workflow。連不到網站或 gh 讀不到建置紀錄時印 `BLOCKED`、結束碼 2，不算通過。步驟與讀回、回滾見 `.github/pages-unpublished/production-live-port-verification.md`。結果未知時，不可以重新整理後重送。
 
