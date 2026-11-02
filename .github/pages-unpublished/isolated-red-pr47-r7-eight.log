@@ -1,0 +1,5 @@
+pr47 r7 item eight failed: 4
+ - 八案例：編輯器 getUi 失敗不可降成結果未知，實際 結果未知。試算表分頁的 alert 沒有彈出。錯誤：Cannot call SpreadsheetApp.getUi() from this context.。不要把成功摘要當成通過。不要重跑，不要部署。
+ - 八案例：編輯器無彈窗不可改寫摘要，實際 結果未知。試算表分頁的 alert 沒有彈出。錯誤：Cannot call SpreadsheetApp.getUi() from this context.。不要把成功摘要當成通過。不要重跑，不要部署。
+ - 八案例：回傳仍是成功摘要，實際 結果未知。試算表分頁的 alert 沒有彈出。錯誤：Cannot call SpreadsheetApp.getUi() from this context.。不要把成功摘要當成通過。不要重跑，不要部署。
+ - 八案例：執行紀錄要寫「編輯器執行，無彈窗，以執行紀錄為準」

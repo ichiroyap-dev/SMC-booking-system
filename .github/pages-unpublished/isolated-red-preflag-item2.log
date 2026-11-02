@@ -1,0 +1,9 @@
+preflag item 2 failed: 8
+ - 資料列要改走 values.append
+ - append 要用 INSERT_ROWS
+ - 不可再使用 getLastRow()+1 決定寫入列
+ - 並發或快取停住時，兩筆不可寫進同一列
+ - 兩筆都要 RAW + INSERT_ROWS
+ - 表尾有空列或格式時，新列要接在最後一筆有值的列後面
+ - 新列和上一筆中間不可空一列
+ - append 時要握著 LockService

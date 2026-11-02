@@ -1,0 +1,8 @@
+preflag item 1 failed: 7
+ - plainSheetText(=1+1) 要原樣送出，不可加單引號
+ - plainSheetText(+1+1) 要原樣送出，不可加單引號
+ - plainSheetText(-1+1) 要原樣送出，不可加單引號
+ - plainSheetText(@1+1) 要原樣送出，不可加單引號
+ - 前端四種前綴要是原文
+ - 前端不可在 = 前面加單引號
+ - 整合：四種前綴要原樣存回

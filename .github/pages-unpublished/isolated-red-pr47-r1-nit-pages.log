@@ -1,0 +1,10 @@
+pr47 item nit-pages failed: 3
+ - gh 沒登入要結束碼 2，實際 1
+404 https://www.sweetmeichicken.com/.github/pages-unpublished/booking-attribution-isolated.gs
+404 https://www.sweetmeichicken.com/.github/pages-unpublished/IsolatedCheck.html
+pages unpublished check failed: 2
+ - gh api repos/ichiroyap-dev/SMC-booking-system/pages 結束碼 1
+ - gh run list --repo ichiroyap-dev/SMC-booking-system --workflow pages-build-deployment --limit 1 --json databaseId,conclusion,headSha,status 結束碼 1
+
+ - 環境不足要寫 BLOCKED，不可當成通過或一般失敗
+ - 要列出需要的環境

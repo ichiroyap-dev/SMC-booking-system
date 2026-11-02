@@ -1,0 +1,31 @@
+test 正式環境未改: pass
+prod SEND_ATTRIBUTION_TO_BACKEND=false liveKeys=11 deployment=AKfycbyQd8zmDyDt74tziKSyrr9h4PiPoxaQzUfVze6hpPHUv47GWGUG82mKxGIVhzJljYc37Q
+test 正式網址停住: pass
+flow 成功: lock -> flush-held -> release -> mail-free -> mail-free -> lock -> flush-held -> release -> mail-free -> mail-free
+sheet 品牌 SMC900001 gclid= utm內容=ag_brand
+sheet gclid SMC900002 gclid=TESTGCLID9000 utm關鍵字=family-table
+ui 成功: ok | 已送到隔離後端。訂單編號：SMC900001 寄信：已寄出。 請到隔離試算表、客人信、店內信核對這個編號。回應沒有備註；備註對照上面送出的 note、試算表與兩封信。
+test 成功: FAIL
+mail 成功: mocked 4（沒有實際寄出）
+flow 結果未知: lock -> flush-held -> release -> mail-free -> mail-free
+ui 結果未知: ok | 已送到隔離後端。訂單編號：SMC900001 寄信：已寄出。 請到隔離試算表、客人信、店內信核對這個編號。回應沒有備註；備註對照上面送出的 note、試算表與兩封信。
+test 結果未知: FAIL
+flow 重複編號: lock -> release
+ui 重複編號: bad | 這個編號已經收過，這次沒有新增。
+test 重複編號: FAIL
+flow 逾時: fetch hung -> page unknown（後端未被呼叫）
+ui 逾時: warn | 結果未知，先核對試算表、勿重送
+test 逾時: pass
+flow 寄信部分失敗: lock -> flush-held -> release -> mail-free
+ui 寄信部分失敗: ok | 已送到隔離後端。訂單編號：SMC900001 寄信：未全部寄出，請核對信箱。 請到隔離試算表、客人信、店內信核對這個編號。回應沒有備註；備註對照上面送出的 note、試算表與兩封信。
+test 寄信部分失敗: FAIL
+isolated e2e failed: 9
+ - 品牌單：flush 之後、放鎖之前要讀回訂單列
+ - gclid 單：flush 之後、放鎖之前要讀回訂單列
+ - 讀回對不上要回 unknown，且不可宣稱已寄信
+ - 結果未知要提醒勿重送
+ - 結果未知之前要真的讀過訂單列
+ - 讀回失敗不可寄信
+ - 驗收頁要把未知結果和編號一起顯示
+ - 重複編號的第一筆：flush 之後、放鎖之前要讀回訂單列
+ - 部分寄信：flush 之後、放鎖之前要讀回訂單列

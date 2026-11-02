@@ -1,0 +1,6 @@
+pr47 r6 item nit failed: 5
+ - 帶編號的函式要是 runIsolatedFixedBooking_
+ - 不可再公開 runIsolatedFixedBooking
+ - 不可再公開讀常數的 runIsolatedOneBooking
+ - 不可再用物件鍵查白名單
+ - wrote/mailed 不對時不可只報已經收過，實際 這個編號已經收過，這次沒有新增。duplicate=true、wrote=true、mailed=true。確認寄出 2 封。未確認寄出 0 封。

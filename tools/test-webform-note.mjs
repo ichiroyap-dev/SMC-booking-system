@@ -81,7 +81,7 @@ if (existsSync(basePath)) {
 } else {
     console.log('SKIP payload-vs-baseline check: baseline not found');
 }
-ok(/note: currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value/.test(html), 'note wiring changed');
+ok(/note: bookingSheetText\(currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value\)/.test(html), 'note wiring changed');
 
 if (failures.length) { console.error('FAIL\n- ' + failures.join('\n- ')); process.exit(1); }
 console.log('PASS webform Option 甲 note: a = tables, people in full words, ；customer text kept');

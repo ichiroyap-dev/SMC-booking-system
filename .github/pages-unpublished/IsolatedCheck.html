@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>隔離驗收</title>
+  <style>
+    body { font-family: sans-serif; line-height: 1.5; margin: 24px auto; max-width: 720px; padding: 0 16px; color: #1a1a1a; }
+    .warn { background: #fff4e5; border: 1px solid #e0b15a; padding: 12px; }
+    .bad { background: #fde8e8; border: 1px solid #d26a6a; padding: 12px; }
+    .ok { background: #eef6ee; border: 1px solid #7aab7a; padding: 12px; }
+    label { display: block; margin: 12px 0 4px; }
+    input, textarea { width: 100%; box-sizing: border-box; font: inherit; padding: 8px; }
+    button { font: inherit; margin: 8px 8px 0 0; padding: 8px 12px; }
+    pre { white-space: pre-wrap; word-break: break-word; background: #f6f6f6; padding: 12px; }
+  </style>
+</head>
+<body>
+  <h1>隔離驗收（私人頁面）</h1>
+  <p class="warn">這頁只從「只有我」的部署網址開啟。不要改成「任何人」。不要用 127.0.0.1 跨來源送單。信一律寄到指令碼屬性 SMC_SHOP_EMAIL，這頁填的信箱只寫進表格，不會拿來當收件人。</p>
+  <p>
+    <button type="button" id="use-brand">帶入品牌欄位</button>
+    <button type="button" id="use-geo">帶入非品牌欄位</button>
+  </p>
+  <form id="booking-form">
+    <label for="name">姓名</label>
+    <input id="name" value="測試同學" required>
+    <label for="phone">電話</label>
+    <input id="phone" value="0900000000" required>
+    <label for="email">表格信箱（不是收件人）</label>
+    <input id="email" type="email" value="test@example.com">
+    <label for="people">人數</label>
+    <input id="people" value="2">
+    <label for="tables">桌數</label>
+    <input id="tables" value="1">
+    <label for="date">日期</label>
+    <input id="date" value="2026-10-22">
+    <label for="time">時間</label>
+    <input id="time" value="12:00">
+    <label for="note">備註</label>
+    <textarea id="note" rows="2">散客 大人2位；靠窗</textarea>
+    <button type="submit" id="submit">送到隔離後端</button>
+  </form>
+  <h2>即將送出的內容</h2>
+  <pre id="payload-preview"></pre>
+  <div id="result"></div>
+  <script>
+    var BRAND = {
+      source: 'google', utmSource: 'google', utmMedium: 'cpc', utmCampaign: 'launch_202610',
+      utmContent: 'ag_brand', utmTerm: '', utmAdgroup: '', adgroupBucket: '品牌', gclid: ''
+    };
+    var GEO = {
+      source: 'google', utmSource: 'google', utmMedium: 'cpc', utmCampaign: 'launch_202610',
+      utmContent: 'ag_geo_dining', utmTerm: '', utmAdgroup: '', adgroupBucket: '非品牌', gclid: ''
+    };
+    var extra = {};
+
+    function value(id) { return document.getElementById(id).value; }
+
+    function payload() {
+      var body = {
+        action: 'book',
+        type: 'dining',
+        name: value('name'),
+        phone: value('phone'),
+        email: value('email'),
+        people: value('people'),
+        tables: value('tables'),
+        date: value('date'),
+        time: value('time'),
+        note: value('note'),
+        orderItems: ''
+      };
+      var key;
+      for (key in extra) {
+        if (Object.prototype.hasOwnProperty.call(extra, key)) body[key] = extra[key];
+      }
+      return body;
+    }
+
+    function refresh() {
+      document.getElementById('payload-preview').textContent = JSON.stringify(payload(), null, 2);
+    }
+
+    function show(kind, text) {
+      var box = document.getElementById('result');
+      box.className = kind;
+      box.textContent = text;
+    }
+
+    function describe(res) {
+      var lines = [];
+      lines.push('status：' + (res && res.status ? res.status : ''));
+      lines.push('orderId：' + (res && res.orderId ? res.orderId : '（沒有）'));
+      lines.push('message：' + (res && res.message ? res.message : ''));
+      lines.push('mailed：' + (res && res.mailed === true ? 'true' : 'false'));
+      lines.push('duplicate：' + (res && res.duplicate === true ? 'true' : 'false'));
+      lines.push('wrote：' + (res && res.wrote === true ? 'true' : 'false'));
+      if (res && res.status === 'unknown') lines.push('讀回不一致就停下。請核對原列，不要重送。');
+      if (res && res.duplicate === true) lines.push('這個編號已經收過，這次沒有新增。');
+      return lines.join('\n');
+    }
+
+    document.getElementById('use-brand').addEventListener('click', function () {
+      extra = BRAND;
+      refresh();
+    });
+    document.getElementById('use-geo').addEventListener('click', function () {
+      extra = GEO;
+      refresh();
+    });
+    ['name', 'phone', 'email', 'people', 'tables', 'date', 'time', 'note'].forEach(function (id) {
+      document.getElementById(id).addEventListener('input', refresh);
+    });
+    document.getElementById('booking-form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      if (typeof google === 'undefined' || !google.script || !google.script.run) {
+        show('bad', '請從部署網址開啟這頁。不要用本機檔案或 127.0.0.1 送單。');
+        return;
+      }
+      document.getElementById('submit').disabled = true;
+      show('', '送出中…');
+      google.script.run
+        .withSuccessHandler(function (res) {
+          var unknown = res && res.status === 'unknown';
+          var ok = res && res.status === 'success' && res.orderId && res.duplicate !== true && res.wrote !== false;
+          show(unknown ? 'warn' : (ok ? 'ok' : 'bad'), describe(res));
+        })
+        .withFailureHandler(function () {
+          show('warn', '結果未知，先核對試算表、勿重送。讀回與寫入不一致就停下，請核對原列，不要重送');
+        })
+        .submitIsolatedFromPage(payload());
+    });
+    refresh();
+  </script>
+</body>
+</html>

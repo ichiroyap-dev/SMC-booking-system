@@ -1,0 +1,10 @@
+pr47 r6 item allow failed: 9
+ - toString 不可寄信，實際 2 封
+ - toString 不可寫入訂單，實際 訂單編號,SMC900001
+ - toString 要被擋下，實際 單筆 toString 已收單。確認寄出 2 封。未確認寄出 0 封。
+ - constructor 不可寄信，實際 2 封
+ - constructor 不可寫入訂單，實際 訂單編號,SMC900001
+ - constructor 要被擋下，實際 單筆 constructor 已收單。確認寄出 2 封。未確認寄出 0 封。
+ - __proto__ 不可寄信，實際 2 封
+ - __proto__ 不可寫入訂單，實際 訂單編號,SMC900001
+ - __proto__ 要被擋下，實際 單筆 __proto__ 已收單。確認寄出 2 封。未確認寄出 0 封。

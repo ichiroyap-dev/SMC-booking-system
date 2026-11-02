@@ -2254,6 +2254,16 @@
             }
         }
 
+        function bookingSheetText(value) {
+            // 與 js/booking-attribution.js 的 plainSheetText 同一條：不加前導單引號。
+            try {
+                if (window.SmcAttribution && typeof window.SmcAttribution.plainSheetText === 'function') {
+                    return window.SmcAttribution.plainSheetText(value);
+                }
+            } catch (err) {}
+            return value == null ? '' : String(value);
+        }
+
         function emptyAttributionFields() {
             return {
                 source: 'direct/unknown',
@@ -2520,17 +2530,17 @@
             const data = {
                 action: 'book',
                 type: currentMode,
-                name: document.getElementById('name').value,
-                phone: document.getElementById('phone').value,
-                email: document.getElementById('email').value, 
+                name: bookingSheetText(document.getElementById('name').value),
+                phone: bookingSheetText(document.getElementById('phone').value),
+                email: bookingSheetText(document.getElementById('email').value),
                 people: currentMode === 'dining'
                     ? document.getElementById('people').value
                     : (document.getElementById('people').value || '1'),
                 tables: document.getElementById('tables').value || '1',
                 date: document.getElementById('date').value,
                 time: selectedTime,
-                note: currentMode === 'dining' ? buildDiningNote() : document.getElementById('note').value,
-                orderItems: itemsStr
+                note: bookingSheetText(currentMode === 'dining' ? buildDiningNote() : document.getElementById('note').value),
+                orderItems: bookingSheetText(itemsStr)
             };
             let outbound = data;
             try {
