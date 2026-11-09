@@ -1,0 +1,24 @@
+*** Isolate patch — NOT live. Do not clasp push / deploy until Owner GO. ***
+*** Target: Apps Script 程式碼.js (v146 dump SHA ca881a2971e07e4fa3aa20e74a00baf03840f6ffed47f8a0548e1db74a26a06a) ***
+*** Do not apply to 店務通知 / OpenClaw webhook. ***
+
+Two surgical edits in 程式碼.js:
+
+1) sendLineReply — log non-200 like pushToLine already does (token/chatMode failures stop being silent).
+
+    var resp = UrlFetchApp.fetch(url, options);
+    var code = resp.getResponseCode();
+    if (code !== 200) {
+      Logger.log("【LINE 回覆未成功】HTTP " + code + " → " + resp.getContentText());
+    }
+
+   Replace the current `UrlFetchApp.fetch(url, options);` line inside sendLineReply.
+
+2) handleOwnerCommand — after the 指令/help return, before the silent fallthrough:
+
+  if (/訂位|預約|我要訂/.test(msg)) {
+    sendLineReply(replyToken, "此 LINE 是老闆管理帳號，不會走客人自動訂位。\n請用另一支 LINE 傳「我要訂位」測試；本帳號可輸入「ID」或「指令」。");
+    return;
+  }
+
+Keep MY_USER_ID skip. Do not route Owner into parseBookingMessage / finalizeBooking.
