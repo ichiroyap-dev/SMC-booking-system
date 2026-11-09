@@ -724,8 +724,29 @@ resetCalls();
 const missingDate = output(context.handleReadLookup_(postEvent({
   action: 'lookup', op: 'duplicate_check', token: TOKEN, lookup_session: '中午', lookup_phone: DINING_PHONE,
 })));
-assert(missingDate && missingDate.error === 'bad_request', `缺日期應是 bad_request，實際 ${JSON.stringify(missingDate)}`);
+assert(missingDate && missingDate.ok === false && missingDate.error === 'unavailable' && missingDate.duplicate !== false, `缺日期應是 unavailable，實際 ${JSON.stringify(missingDate)}`);
 assert(calls.dataReads === 0, '缺日期不應讀表');
+
+resetCalls();
+const missingSession = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'duplicate_check', token: TOKEN, lookup_date: '2026-11-02', lookup_phone: DINING_PHONE,
+})));
+assert(missingSession && missingSession.error === 'unavailable' && missingSession.duplicate !== false, `缺時段應是 unavailable，實際 ${JSON.stringify(missingSession)}`);
+assert(calls.dataReads === 0, '缺時段不應讀表');
+
+resetCalls();
+const blankDateText = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'duplicate_check', token: TOKEN, lookup_date: '   ', lookup_session: '中午', lookup_phone: DINING_PHONE,
+})));
+assert(blankDateText && blankDateText.error === 'unavailable' && blankDateText.duplicate !== false, `空白日期應是 unavailable，實際 ${JSON.stringify(blankDateText)}`);
+assert(calls.dataReads === 0, '空白日期不應讀表');
+
+resetCalls();
+const blankSessionText = output(context.handleReadLookup_(postEvent({
+  action: 'lookup', op: 'duplicate_check', token: TOKEN, lookup_date: '2026-11-02', lookup_session: ' \u3000 ', lookup_phone: DINING_PHONE,
+})));
+assert(blankSessionText && blankSessionText.error === 'unavailable' && blankSessionText.duplicate !== false, `空白時段應是 unavailable，實際 ${JSON.stringify(blankSessionText)}`);
+assert(calls.dataReads === 0, '空白時段不應讀表');
 
 resetCalls();
 sheets['工作表1'][0][9] = '編號';
@@ -963,6 +984,46 @@ sheets['工作表1'].pop();
 assert(blankRow && blankRow.duplicate === false, `空白列不可讓查詢失敗，實際 ${JSON.stringify(blankRow)}`);
 
 resetCalls();
+sheets['工作表1'].push(diningRow({
+  name: '測癸',
+  phone: '0900777001',
+  date: '',
+  session: '中午',
+  orderId: 'SMC100013',
+  status: '預約中',
+}));
+const blankPersonDate = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-10',
+  lookup_session: '中午',
+  lookup_phone: '0900777001',
+})));
+sheets['工作表1'].pop();
+assert(blankPersonDate && blankPersonDate.error === 'unavailable' && blankPersonDate.duplicate !== false, `同一客人的空白日期不可當成沒有重複，實際 ${JSON.stringify(blankPersonDate)}`);
+
+resetCalls();
+sheets['工作表1'].push(diningRow({
+  name: '測癸',
+  phone: '0900777002',
+  date: '2026-11-10',
+  session: '',
+  orderId: 'SMC100014',
+  status: '預約中',
+}));
+const blankPersonSession = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-10',
+  lookup_session: '中午',
+  lookup_phone: '0900777002',
+})));
+sheets['工作表1'].pop();
+assert(blankPersonSession && blankPersonSession.error === 'unavailable' && blankPersonSession.duplicate !== false, `同一客人的空白時段不可當成沒有重複，實際 ${JSON.stringify(blankPersonSession)}`);
+
+resetCalls();
 const plus886 = output(context.handleReadLookup_(postEvent({
   action: 'lookup',
   op: 'duplicate_check',
@@ -1007,6 +1068,42 @@ const wideName = output(context.handleReadLookup_(postEvent({
   lookup_name: '測\u3000甲',
 })));
 assert(wideName && wideName.duplicate === 'possible' && wideName.matchedOrderId === 'smc100004', `姓名全形空白應比到，實際 ${JSON.stringify(wideName)}`);
+
+resetCalls();
+const halfSpaceName = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-03',
+  lookup_session: '晚上',
+  lookup_name: '測 甲',
+})));
+assert(halfSpaceName && halfSpaceName.duplicate === 'possible' && halfSpaceName.matchedOrderId === 'smc100004', `姓名中間半形空白應比到，實際 ${JSON.stringify(halfSpaceName)}`);
+
+resetCalls();
+const savedHalfName = sheets['工作表1'][4][1];
+sheets['工作表1'][4][1] = '測 甲';
+const halfSpaceRow = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-03',
+  lookup_session: '晚上',
+  lookup_name: '測甲',
+})));
+sheets['工作表1'][4][1] = savedHalfName;
+assert(halfSpaceRow && halfSpaceRow.duplicate === 'possible' && halfSpaceRow.matchedOrderId === 'smc100004', `表內姓名的半形空白應比到，實際 ${JSON.stringify(halfSpaceRow)}`);
+
+resetCalls();
+const differentCjk = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-03',
+  lookup_session: '晚上',
+  lookup_name: '測乙',
+})));
+assert(differentCjk && differentCjk.duplicate === false, `不同中文姓名不可被空白正規化併在一起，實際 ${JSON.stringify(differentCjk)}`);
 
 resetCalls();
 const wideSession = output(context.handleReadLookup_(postEvent({

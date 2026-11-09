@@ -215,7 +215,7 @@ function readApiPhoneKey_(value) {
 }
 
 function readApiNameKey_(value) {
-  return String(value == null ? "" : value).replace(/\u3000/g, "").trim();
+  return String(value == null ? "" : value).replace(/\u3000/g, "").replace(/ /g, "").trim();
 }
 
 function readApiRowDay_(value) {
@@ -242,6 +242,9 @@ function readApiDuplicate_(body) {
   var nameRaw = readApiRequestText_(body.lookup_name);
   if (dateRaw === null || sessionRaw === null || phoneRaw === null || nameRaw === null) {
     return readApiJson_({ ok: false, error: "bad_request" });
+  }
+  if (readApiCellBlank_(dateRaw) || readApiCellBlank_(sessionRaw)) {
+    return readApiJson_({ ok: false, error: "unavailable" });
   }
   if (typeof sheetDayStr_ !== "function") return readApiJson_({ ok: false, error: "unavailable" });
   var day = "";
@@ -278,6 +281,9 @@ function readApiDuplicate_(body) {
       ? readApiPhoneKey_(row[2]) === phone
       : readApiNameKey_(row[1]) === name;
     if (!samePerson) continue;
+    if (readApiCellBlank_(row[4]) || readApiCellBlank_(row[5])) {
+      return readApiJson_({ ok: false, error: "unavailable" });
+    }
     var rowDay = readApiRowDay_(row[4]);
     if (rowDay === null) return readApiJson_({ ok: false, error: "unavailable" });
     if (rowDay !== day) continue;
