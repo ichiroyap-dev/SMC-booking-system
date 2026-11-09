@@ -1,0 +1,23 @@
+{
+  "note": "Fake guests only. Phones are 0900000000-style placeholders. No tokens.",
+  "booking": {
+    "text": "我要訂位，我是測試一，電話0900000000，明天12:00，4位",
+    "category": "booking",
+    "reason": "booking_keyword"
+  },
+  "cancel": {
+    "text": "取消訂單 SMC900001，手機0900000000",
+    "category": "cancel",
+    "reason": "cancel_keyword"
+  },
+  "chitchat": {
+    "text": "你好，請問營業到幾點？",
+    "category": "chitchat",
+    "reason": "chitchat_info"
+  },
+  "unknown": {
+    "text": "今天天氣真好",
+    "category": "unknown",
+    "reason": "no_rule"
+  }
+}
