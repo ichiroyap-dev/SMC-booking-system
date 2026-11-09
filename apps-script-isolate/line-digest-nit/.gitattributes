@@ -1,0 +1,9 @@
+# Apps Script and the offline runner in this folder stay LF.
+*.gs text eol=lf
+*.mjs text eol=lf
+
+# Trailing spaces here are the 09-27 snapshot (frozen functions stay
+# byte-identical to original/) and unified-diff blank lines. Do not strip them.
+LineDailyRemind.gs text eol=lf whitespace=-blank-at-eol
+original/LineDailyRemind.gs text eol=lf whitespace=-blank-at-eol
+LineDailyRemind.diff text whitespace=-blank-at-eol

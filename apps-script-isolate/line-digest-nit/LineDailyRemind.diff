@@ -1,0 +1,305 @@
+--- original/LineDailyRemind.gs	2026-10-11 00:57:12.895796109 +0000
++++ LineDailyRemind.gs	2026-10-12 02:53:59.561462132 +0000
+@@ -1,3 +1,14 @@
++/**
++ * 隔離稿（NO_DEPLOY），對 2026-09-27 快照只改印尼文。
++ * 中文總覽、讀表、寫表、LINE 發送都沒改。
++ * 回滾點是部署前對同一個專案的完整 pull，不是 original/ 的 09-27 快照。
++ * 結構句用固定字串，只認中文總覽實際組出的整行：☀️ 午餐、🌙 晚餐、內用三種「共 N」標題、外帶「共 N 筆」、總計三種（含 0 桌）。行首尾空白先去掉。其他寫法留中文並加一次提示。方案代碼留在原位。不把備註送去翻譯。
++ * 客人列只在內用／外帶區裡拆。其他行留中文原文並加一次提示。稱謂只看姓名欄。
++ * 「共」不留在印尼文計數。
++ * 備註、多段備註、店務自由文字整段留中文原文。不切段、不對照、不改標點。
++ * 金額照來源留下（$1,000 仍是 $1,000，不改成 $1.000）。
++ * 每一則非空白備註後面加同一句 REMARK_CONFIRM_NOTICE_。已知的整句營運警示不加。
++ */
+ function checkAndSendDailyReminders() {
+   // ======= 1. 系統安全性憑證設定 =======
+   var LINE_ACCESS_TOKEN = PropertiesService.getScriptProperties().getProperty("LINE_ACCESS_TOKEN");
+@@ -202,6 +213,33 @@
+   return out.join("\n");
+ }
+ 
++function isBookingHeaderLine_(line) {
++  return /^\[[A-Za-z]{3} \d{4}-\d{2}-\d{2} \d{2}:\d{2} GMT\+8\] \[\d{4}-\d{2}-\d{2} 預約總覽\]$/.test(line);
++}
++
++function isLunchSlotHeading_(line) {
++  return line === "☀️ 午餐";
++}
++
++function isDinnerSlotHeading_(line) {
++  return line === "🌙 晚餐";
++}
++
++function isDineHeading_(line) {
++  // formatSessionHeading_：0 桌、N 桌、N 筆桌數待確認、N 桌另 M 筆。沒有不帶計數的「🍽️ 內用」。
++  return /^🍽️ 內用 \(共 (?:\d+ 桌(?:，另 \d+ 筆桌數待確認)?|\d+ 筆，桌數待確認)\)$/.test(line);
++}
++
++function isTakeoutHeading_(line) {
++  // formatTakeoutHeading_ 只用「筆」，不用「桌」。
++  return /^🥡 外帶 \(共 \d+ 筆\)$/.test(line);
++}
++
++function isGrandTotalLine_(line) {
++  // formatGrandTotal_ / formatDineInTotalPart_ 的四種整行。行首尾空白已在呼叫前 trim。
++  return /^\(總計 內用 (?:\d+ 桌(?:，另 \d+ 筆桌數待確認)?|\d+ 筆桌數待確認)＋外帶 \d+ 筆\)$/.test(line);
++}
++
+ /**
+  * 智慧型逐行翻譯解譯器 (確保印尼文格式與中文百分之百對齊)
+  */
+@@ -209,9 +247,10 @@
+   if (!taskCn) return "Tidak ada terjemahan";
+   var lines = taskCn.split("\n");
+   var translatedLines = [];
+-  
++
+   var daysMap = { 'Sun': 'Minggu', 'Mon': 'Senin', 'Tue': 'Selasa', 'Wed': 'Rabu', 'Thu': 'Kamis', 'Fri': 'Jumat', 'Sat': 'Sabtu' };
+   var monthsMap = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
++  var inCustomerSection = false;
+ 
+   for (var i = 0; i < lines.length; i++) {
+     var line = lines[i].trim();
+@@ -220,50 +259,50 @@
+       continue;
+     }
+ 
+-    // 1. 解析並轉換時間標頭 [Wed 2026-07-01 13:52 GMT+8]
+-    if (line.indexOf("[") === 0 && line.indexOf("預約總覽]") !== -1) {
++    // 1. 時間標頭必須整行符合中文總覽格式。
++    if (isBookingHeaderLine_(line)) {
++      inCustomerSection = false;
+       var headerMatch = line.match(/\[([A-Za-z]+)\s+(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2})\s+GMT\+8\]/);
+-      if (headerMatch) {
+-        var dayEN = headerMatch[1];
+-        var year = headerMatch[2];
+-        var monthIdx = parseInt(headerMatch[3], 10) - 1;
+-        var dayStr = parseInt(headerMatch[4], 10).toString();
+-        var timeStr = headerMatch[5];
+-
+-        var dayID = daysMap[dayEN] || dayEN;
+-        var monthID = monthsMap[monthIdx] || headerMatch[3];
+-        var dateStrID = dayStr + " " + monthID + " " + year;
+-
+-        translatedLines.push("[" + dayID + " " + dateStrID + " " + timeStr + " GMT+8] [Ringkasan Reservasi " + dateStrID + "]");
+-      } else {
+-        translatedLines.push(line);
+-      }
++      var dayEN = headerMatch[1];
++      var year = headerMatch[2];
++      var monthIdx = parseInt(headerMatch[3], 10) - 1;
++      var dayStr = parseInt(headerMatch[4], 10).toString();
++      var timeStr = headerMatch[5];
++      var dayID = daysMap[dayEN] || dayEN;
++      var monthID = monthsMap[monthIdx] || headerMatch[3];
++      var dateStrID = dayStr + " " + monthID + " " + year;
++      translatedLines.push("[" + dayID + " " + dateStrID + " " + timeStr + " GMT+8] [Ringkasan Reservasi " + dateStrID + "]");
+       continue;
+     }
+ 
+-    // 2a. 內用／外帶分區標題（20260927）
+-    if (line.indexOf("🍽️ 內用") === 0) {
++    // 2a. 內用／外帶分區標題必須是行首的「共 N」格式。這兩區裡面才拆客人列。
++    if (isDineHeading_(line)) {
++      inCustomerSection = true;
+       translatedLines.push(translateSessionHeadingLine_(line, "🍽️ Makan di tempat"));
+       continue;
+     }
+-    if (line.indexOf("🥡 外帶") === 0) {
++    if (isTakeoutHeading_(line)) {
++      inCustomerSection = true;
+       var takeoutN = line.match(/\d+/);
+-      translatedLines.push("🥡 Bawa pulang (共 " + (takeoutN ? takeoutN[0] : "0") + " pesanan)");
++      translatedLines.push("🥡 Bawa pulang (total " + (takeoutN ? takeoutN[0] : "0") + " pesanan)");
+       continue;
+     }
+ 
+-    // 2. 轉換時段標題
+-    if (line.indexOf("☀️ 午餐") !== -1) {
++    // 2. 時段標題只認整行 ☀️ 午餐／🌙 晚餐。中文總覽不在這兩行後面加計數。
++    if (isLunchSlotHeading_(line)) {
++      inCustomerSection = false;
+       translatedLines.push(translateSessionHeadingLine_(line, "☀️ Makan Siang"));
+       continue;
+     }
+-    if (line.indexOf("🌙 晚餐") !== -1) {
++    if (isDinnerSlotHeading_(line)) {
++      inCustomerSection = false;
+       translatedLines.push(translateSessionHeadingLine_(line, "🌙 Makan Malam"));
+       continue;
+     }
+ 
+-    // 3. 轉換結尾總計
+-    if (line.indexOf("(總計") !== -1) {
++    // 3. 總計只認 formatGrandTotal_ 的四種整行。
++    if (isGrandTotalLine_(line)) {
++      inCustomerSection = false;
+       translatedLines.push(translateTotalLine_(line));
+       continue;
+     }
+@@ -274,53 +313,37 @@
+       continue;
+     }
+ 
+-    // 5. 轉換客戶明細行（含無備註、但人數待確認的列）
+-    // 20260927：外帶區明細不再帶「(外帶)」且可能無備註 → 以時間開頭也走逐行規則，不整行丟機翻
+-    if (line.indexOf("|") !== -1 || line.indexOf("人數待確認") !== -1 || /^\d{2}:\d{2}\s+\S/.test(line)) {
++    // 5. 客人列只在內用／外帶區。店務提醒即使以時間開頭，也留原文。
++    if (inCustomerSection && (line.indexOf("|") !== -1 || line.indexOf("人數待確認") !== -1 || /^\d{2}:\d{2}\s+\S/.test(line))) {
+       var hadPipe = line.indexOf("|") !== -1;
+       var parts = line.split("|");
+       var frontPart = parts[0].trim();
+-      var backPart = parts[1] || "";
++      // 備註裡的 | 是內容，不是欄位分隔。只拿 parts[1] 會把後面整段丟掉。
++      var backPart = parts.slice(1).join("|");
+ 
+       var timePrefix = frontPart.match(/^\d{2}:\d{2}\s+/);
+       var timePrefixStr = timePrefix ? timePrefix[0] : "";
+       var nameAndCode = frontPart.replace(/^\d{2}:\d{2}\s+/, "");
+ 
+       var titleID = "Bapak/Ibu ";
+-      if (line.indexOf("先生") !== -1) titleID = "Bapak ";
+-      if (line.indexOf("小姐") !== -1 || line.indexOf("女士") !== -1) titleID = "Ibu ";
++      if (nameAndCode.indexOf("小姐") !== -1 || nameAndCode.indexOf("女士") !== -1 || nameAndCode.indexOf("太太") !== -1) titleID = "Ibu ";
++      else if (nameAndCode.indexOf("先生") !== -1) titleID = "Bapak ";
+ 
+-      nameAndCode = nameAndCode.replace("先生", "").replace("小姐", "").replace("女士", "");
++      nameAndCode = nameAndCode.replace("先生", "").replace("小姐", "").replace("女士", "").replace("太太", "");
+       nameAndCode = nameAndCode.replace("(外帶)", "(Bawa pulang)");
+       nameAndCode = nameAndCode.replace(/人數待確認/g, "Jumlah orang menunggu konfirmasi");
+ 
+       var translatedFront = timePrefixStr + titleID + nameAndCode;
+ 
+-      var translatedBack = backPart.trim();
+-      translatedBack = translatedBack.replace("備註：", "Catatan: ");
+-      translatedBack = translatedBack.replace("預估金額", "Perkiraan biaya");
+-      translatedBack = translatedBack.replace(/人數待確認/g, "Jumlah orang menunggu konfirmasi");
+-      translatedBack = translatedBack.replace(/,(\d{3})/g, '.$1');
+-
+-      var chineseRegex = /[\u4e00-\u9fa5]+/g;
+-      if (chineseRegex.test(translatedBack)) {
+-        try {
+-          var rawChinese = translatedBack.match(chineseRegex).join(" ");
+-          var transChinese = LanguageApp.translate(rawChinese, 'zh-TW', 'id');
+-          translatedBack = translatedBack.replace(rawChinese, transChinese);
+-        } catch (e) {}
+-      }
++      var translatedBack = renderBookingRemark_(backPart);
+ 
+       if (!hadPipe) translatedLines.push(translatedFront);
+       else translatedLines.push(translatedFront + " | " + translatedBack);
+       continue;
+     }
+ 
+-    try {
+-      translatedLines.push(LanguageApp.translate(line, 'zh-TW', 'id'));
+-    } catch(e) {
+-      translatedLines.push(line);
+-    }
++    // 不是結構句的整行（店務維護、自由文字）留中文，後面加同一句提示。
++    translatedLines.push(appendRemarkNotice_(line));
+   }
+   return translatedLines.join("\n");
+ }
+@@ -328,17 +351,33 @@
+ function translateSessionHeadingLine_(line, idName) {
+   var pendingTail = "jumlah meja menunggu konfirmasi";
+   // 20260927：分區後時段標題本身不帶數字（☀️ 午餐／🌙 晚餐）
++  // NIT1：「共」不可留在印尼文計數。與總計列的 Total 用同一個詞。
+   if (line.indexOf("(") === -1) return idName;
+   if (line.indexOf("另") !== -1 && line.indexOf("桌數待確認") !== -1) {
+     var nums = line.match(/\d+/g) || [];
+-    return idName + " (共 " + (nums[0] || "?") + " meja, " + (nums[1] || "?") + " pesanan " + pendingTail + ")";
++    return idName + " (total " + (nums[0] || "?") + " meja, " + (nums[1] || "?") + " pesanan " + pendingTail + ")";
+   }
+   if (line.indexOf("筆") !== -1 && line.indexOf("桌數待確認") !== -1) {
+     var n = line.match(/\d+/);
+-    return idName + " (共 " + (n ? n[0] : "?") + " pesanan, " + pendingTail + ")";
++    return idName + " (total " + (n ? n[0] : "?") + " pesanan, " + pendingTail + ")";
+   }
+   var tables = line.match(/\d+/);
+-  return idName + " (共 " + (tables ? tables[0] : "0") + " meja)";
++  return idName + " (total " + (tables ? tables[0] : "0") + " meja)";
++}
++
++var REMARK_CONFIRM_NOTICE_ = "(Mohon konfirmasi dulu ke penanggung jawab)";
++
++function appendRemarkNotice_(text) {
++  return String(text) + " " + REMARK_CONFIRM_NOTICE_;
++}
++
++function renderBookingRemark_(backPart) {
++  var raw = String(backPart || "").replace(/^\s+/, "");
++  if (!raw) return "";
++  if (raw.indexOf("備註：") !== 0) return appendRemarkNotice_(raw);
++  var body = raw.substring("備註：".length);
++  if (!String(body).trim()) return "Catatan:";
++  return appendRemarkNotice_("Catatan: " + body);
+ }
+ 
+ function translateTotalLine_(line) {
+@@ -373,31 +412,41 @@
+   return "(Total " + (tables ? tables[0] : "0") + " meja)";
+ }
+ 
+-/**
+- * C欄營運警示專屬精準對照翻譯
+- */
++function operationalNoteParts_(trans) {
++  // 只有整句就是已知警示才用固定句。後面的自由文字留原文，標點不改。
++  var src = String(trans || "");
++  var takeout = src.match(/^(🛵 純外帶日，無內用桌)([\s\S]*)$/);
++  if (takeout) {
++    return {
++      fixed: "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.",
++      tail: String(takeout[2] || "").trim() ? takeout[2] : ""
++    };
++  }
++  var group = src.match(/^(⚠️ 注意：包含 (\d+) 人大組訂位！)([\s\S]*)$/);
++  if (group) {
++    return {
++      fixed: "⚠️ Perhatian: Termasuk reservasi grup besar " + group[2] + " orang!",
++      tail: String(group[3] || "").trim() ? group[3] : ""
++    };
++  }
++  // 舊列若仍帶此句，整句相符才翻譯；新組字與推播外殼都不再送出。
++  var normal = src.match(/^(✅\s*今日預約正常(?:\s*\(共\s*(\d+)\s*桌\))?)([\s\S]*)$/);
++  if (normal) {
++    return {
++      fixed: "✅ Reservasi hari ini normal (Total " + (normal[2] || "0") + " meja)",
++      tail: String(normal[3] || "").trim() ? normal[3] : ""
++    };
++  }
++  return null;
++}
++
+ function translateNoteCnToId(noteCn) {
+   var trans = String(noteCn || "").trim();
+   if (!trans || trans === "無") return "Tidak ada keterangan";
+-  
+-  if (trans.indexOf("🛵 純外帶日") !== -1) {
+-    return "🛵 Hari khusus bawa pulang (Antaran), tidak ada meja di tempat.";
+-  }
+-  if (trans.indexOf("⚠️ 注意：包含") !== -1) {
+-    var digits = trans.match(/\d+/);
+-    return "⚠️ Perhatian: Termasuk reservasi grup besar " + (digits ? digits[0] : "X") + " orang!";
+-  }
+-  // 舊列若仍帶此句，翻譯保留；新組字與推播外殼都不再送出。
+-  if (trans.indexOf("✅ 今日預約正常") !== -1) {
+-    var tables = trans.match(/\d+/);
+-    return "✅ Reservasi hari ini normal (Total " + (tables ? tables[0] : "0") + " meja)";
+-  }
+-  
+-  try {
+-    return LanguageApp.translate(trans, 'zh-TW', 'id');
+-  } catch (e) {
+-    return "Tidak ada keterangan";
+-  }
++  var known = operationalNoteParts_(trans);
++  if (known && !known.tail) return known.fixed;
++  if (known) return known.fixed + known.tail + " " + REMARK_CONFIRM_NOTICE_;
++  return appendRemarkNotice_(trans);
+ }
+ 
+ // LINE Messaging API 底層標準發送技術
