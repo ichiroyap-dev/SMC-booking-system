@@ -8,9 +8,12 @@
 // GET 不再讀表。窄查詢只收 POST JSON：action=lookup，權杖放 body.token。
 // 查詢欄位只用 lookup_order_id、lookup_date、lookup_session、lookup_phone、lookup_name。
 // 不要帶 date、phone、tel、mobile、orderId、orderID、order_id、bookingId、type、orderItems。
+// action 不是 lookup 時，單獨的 token 或其他 op 要放行。只有 lookup_* 或查詢 op 才拒絕。
 
 var READ_API_TOKEN_PROPERTY = "READ_API_TOKEN";
 var READ_API_BLOCKED_KEYS = ["date", "phone", "tel", "mobile", "orderId", "orderID", "order_id", "bookingId", "type", "orderItems"];
+var READ_API_LOOKUP_FIELDS = ["lookup_order_id", "lookup_date", "lookup_session", "lookup_phone", "lookup_name"];
+var READ_API_LOOKUP_OPS = ["ping", "exists", "takeout_exists", "duplicate_check"];
 var READ_API_DINING_HEADERS = [
   [1, "姓名"],
   [2, "電話"],
@@ -68,6 +71,27 @@ function readApiHasBlockedKey_(body) {
   return false;
 }
 
+function readApiHasLookupField_(body) {
+  for (var i = 0; i < READ_API_LOOKUP_FIELDS.length; i++) {
+    if (Object.prototype.hasOwnProperty.call(body, READ_API_LOOKUP_FIELDS[i])) return true;
+  }
+  return false;
+}
+
+function readApiIsLookupOp_(value) {
+  if (typeof value !== "string") return false;
+  for (var i = 0; i < READ_API_LOOKUP_OPS.length; i++) {
+    if (value === READ_API_LOOKUP_OPS[i]) return true;
+  }
+  return false;
+}
+
+function readApiRequestText_(value) {
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  return null;
+}
+
 function doGet(e) {
   // 不讀參數。網址上的分頁名稱與權杖都不能換成資料。
   return readApiJson_({ ok: false, error: "unauthorized" });
@@ -77,7 +101,7 @@ function handleReadLookup_(e) {
   var body = readApiBody_(e);
   if (!body) return null;
   if (body.action !== "lookup") {
-    if (Object.prototype.hasOwnProperty.call(body, "op") || Object.prototype.hasOwnProperty.call(body, "token")) {
+    if (readApiHasLookupField_(body) || readApiIsLookupOp_(body.op)) {
       return readApiJson_({ ok: false, error: "bad_request" });
     }
     return null;
@@ -137,7 +161,9 @@ function readApiDiningHeaderOk_(rows) {
 }
 
 function readApiExists_(body, sheetName, idCol, statusCol) {
-  var want = readApiOrderKey_(body.lookup_order_id);
+  var rawId = readApiRequestText_(body.lookup_order_id);
+  if (rawId === null) return readApiJson_({ ok: false, error: "bad_request" });
+  var want = readApiOrderKey_(rawId);
   if (!want) return readApiJson_({ ok: false, error: "bad_request" });
   var rows = readApiRows_(sheetName);
   if (!rows || !readApiHeaderOk_(rows, idCol, statusCol)) return readApiJson_({ ok: false, error: "unavailable" });
@@ -152,17 +178,57 @@ function readApiExists_(body, sheetName, idCol, statusCol) {
   return readApiJson_({ ok: true, found: true, status: status });
 }
 
+function readApiCellBlank_(value) {
+  if (value == null) return true;
+  if (typeof value === "string" && value.replace(/\u3000/g, "").trim() === "") return true;
+  return false;
+}
+
 function readApiSession_(value) {
-  var text = String(value == null ? "" : value).trim();
+  if (readApiCellBlank_(value)) return "";
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  var text = String(value).replace(/\u3000/g, "").trim();
   if (text === "午" || text === "中午") return "中午";
   if (text === "晚" || text === "晚上") return "晚上";
-  return "";
+  if (!text) return "";
+  return null;
+}
+
+function readApiFold_(value) {
+  var text = String(value == null ? "" : value);
+  try {
+    text = text.normalize("NFKC");
+  } catch (err) {}
+  return text.replace(/[\s\u3000]+/g, "").toLowerCase();
+}
+
+function readApiIsLineBookingPhone_(value) {
+  return readApiFold_(value) === "line訂";
 }
 
 function readApiPhoneKey_(value) {
-  var raw = String(value == null ? "" : value).trim();
-  if (raw === "line訂") return "";
-  return raw.replace(/\D/g, "").replace(/^0/, "");
+  var folded = readApiFold_(value);
+  if (folded === "line訂") return "";
+  var digits = folded.replace(/\D/g, "");
+  if (digits.indexOf("886") === 0 && digits.length > 9) digits = digits.substring(3);
+  return digits.replace(/^0/, "");
+}
+
+function readApiNameKey_(value) {
+  return String(value == null ? "" : value).replace(/\u3000/g, "").trim();
+}
+
+function readApiRowDay_(value) {
+  if (readApiCellBlank_(value)) return "";
+  var input = value;
+  if (typeof value === "string") input = value.replace(/\u3000/g, "").trim();
+  try {
+    var day = sheetDayStr_(input);
+    if (day) return day;
+  } catch (err) {
+    return null;
+  }
+  return null;
 }
 
 function readApiCancelled_(status) {
@@ -170,24 +236,30 @@ function readApiCancelled_(status) {
 }
 
 function readApiDuplicate_(body) {
+  var dateRaw = readApiRequestText_(body.lookup_date);
+  var sessionRaw = readApiRequestText_(body.lookup_session);
+  var phoneRaw = readApiRequestText_(body.lookup_phone);
+  var nameRaw = readApiRequestText_(body.lookup_name);
+  if (dateRaw === null || sessionRaw === null || phoneRaw === null || nameRaw === null) {
+    return readApiJson_({ ok: false, error: "bad_request" });
+  }
   if (typeof sheetDayStr_ !== "function") return readApiJson_({ ok: false, error: "unavailable" });
   var day = "";
   try {
-    day = sheetDayStr_(body.lookup_date);
+    day = sheetDayStr_(dateRaw);
   } catch (err) {
     return readApiJson_({ ok: false, error: "unavailable" });
   }
   if (!day) return readApiJson_({ ok: false, error: "bad_request" });
-  var session = readApiSession_(body.lookup_session);
-  if (!session) return readApiJson_({ ok: false, error: "bad_request" });
+  var session = readApiSession_(sessionRaw);
+  if (session === null || !session) return readApiJson_({ ok: false, error: "bad_request" });
 
-  var phoneRaw = body.lookup_phone == null ? "" : String(body.lookup_phone).trim();
-  var name = body.lookup_name == null ? "" : String(body.lookup_name).trim();
+  var name = readApiNameKey_(nameRaw);
   var phone = "";
   var byPhone = false;
-  if (phoneRaw === "line訂") {
+  if (readApiIsLineBookingPhone_(phoneRaw)) {
     byPhone = false;
-  } else if (phoneRaw !== "") {
+  } else if (String(phoneRaw).trim() !== "") {
     phone = readApiPhoneKey_(phoneRaw);
     if (!phone) return readApiJson_({ ok: false, error: "bad_request" });
     byPhone = true;
@@ -202,18 +274,16 @@ function readApiDuplicate_(body) {
     var row = rows[i];
     var status = readApiStatus_(row[10]);
     if (readApiCancelled_(status)) continue;
-    var rowDay = "";
-    try {
-      rowDay = sheetDayStr_(row[4]);
-    } catch (err) {
-      return readApiJson_({ ok: false, error: "unavailable" });
-    }
-    if (rowDay !== day || readApiSession_(row[5]) !== session) continue;
-    if (byPhone) {
-      if (readApiPhoneKey_(row[2]) !== phone) continue;
-    } else if (String(row[1] == null ? "" : row[1]).trim() !== name) {
-      continue;
-    }
+    var samePerson = byPhone
+      ? readApiPhoneKey_(row[2]) === phone
+      : readApiNameKey_(row[1]) === name;
+    if (!samePerson) continue;
+    var rowDay = readApiRowDay_(row[4]);
+    if (rowDay === null) return readApiJson_({ ok: false, error: "unavailable" });
+    if (rowDay !== day) continue;
+    var rowSession = readApiSession_(row[5]);
+    if (rowSession === null) return readApiJson_({ ok: false, error: "unavailable" });
+    if (rowSession !== session) continue;
     hit = true;
     var orderId = String(row[9] == null ? "" : row[9]).trim();
     if (orderId) matched = orderId;

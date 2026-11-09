@@ -787,8 +787,43 @@ resetCalls();
 const markedBook = output(context.doPost(postEvent({
   action: 'book', type: 'dining', date: '2026-11-02', op: 'exists', token: TOKEN,
 })));
-assert(markedBook && markedBook.ok === false && markedBook.error === 'bad_request', `action 不是 lookup 但帶了 op 或 token 應拒絕，實際 ${JSON.stringify(markedBook)}`);
-assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cancels === 0, '混進查詢欄位的訂位不可寫入');
+assert(markedBook && markedBook.ok === false && markedBook.error === 'bad_request', `訂位夾帶查詢 op 應拒絕，實際 ${JSON.stringify(markedBook)}`);
+assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cancels === 0, '混進查詢 op 的訂位不可寫入');
+
+resetCalls();
+const tokenBook = output(context.doPost(postEvent({
+  action: 'book', type: 'dining', date: '2026-11-02', token: 'recaptcha-like',
+})));
+assert(tokenBook && tokenBook.status === 'success' && tokenBook.orderId === 'SMC100099', `頂層 token 不可擋住訂位，實際 ${JSON.stringify(tokenBook)}`);
+assert(calls.booking === 1 && calls.appendDining === 1, '頂層 token 的訂位仍要寫入');
+
+resetCalls();
+const otherOp = context.handleReadLookup_(postEvent({
+  action: 'book', type: 'dining', date: '2026-11-02', op: 'submit', token: 'recaptcha-like',
+}));
+assert(otherOp == null, `非查詢 op 應穿過攔截，實際 ${otherOp && otherOp.text}`);
+
+resetCalls();
+const pendingWithToken = context.handleReadLookup_(postEvent({
+  action: 'pending_update', token: 'admin-token',
+}));
+assert(pendingWithToken == null, `pending_update 帶 token 應穿過攔截，實際 ${pendingWithToken && pendingWithToken.text}`);
+
+for (const op of ['ping', 'exists', 'takeout_exists', 'duplicate_check']) {
+  resetCalls();
+  const blockedOp = output(context.doPost(postEvent({
+    action: 'book', type: 'dining', date: '2026-11-02', op,
+  })));
+  assert(blockedOp && blockedOp.error === 'bad_request', `訂位不可夾帶查詢 op ${op}，實際 ${JSON.stringify(blockedOp)}`);
+  assert(calls.booking === 0 && calls.appendDining === 0, `查詢 op ${op} 不可寫入`);
+}
+
+resetCalls();
+const lookupOnBook = output(context.doPost(postEvent({
+  action: 'book', type: 'dining', date: '2026-11-02', lookup_phone: DINING_PHONE,
+})));
+assert(lookupOnBook && lookupOnBook.error === 'bad_request', `訂位夾帶 lookup_ 欄位應拒絕，實際 ${JSON.stringify(lookupOnBook)}`);
+assert(calls.booking === 0 && calls.appendDining === 0, 'lookup_ 欄位不可寫入');
 
 resetCalls();
 const badOp = output(context.handleReadLookup_(postEvent({
@@ -827,6 +862,163 @@ const unknownWrite = context.doPost(postEvent({
 output(unknownWrite);
 assert(calls.booking === 0 && calls.appendDining === 0 && calls.appendTakeout === 0 && calls.cancels === 0, '未知 op 不可寫表');
 
+function callLookup(body) {
+  try {
+    return { threw: false, body: output(context.handleReadLookup_(postEvent(body))) };
+  } catch (err) {
+    return { threw: true, body: null };
+  }
+}
+
+const hostile = { toString: null };
+resetCalls();
+const hostileId = callLookup({ ...existsPayload, lookup_order_id: hostile });
+assert(!hostileId.threw && hostileId.body && hostileId.body.error === 'bad_request', `訂單編號物件應是 bad_request，實際 ${hostileId.threw ? 'throw' : JSON.stringify(hostileId.body)}`);
+assert(calls.dataReads === 0, '訂單編號物件不應讀表');
+
+for (const key of ['lookup_date', 'lookup_session', 'lookup_phone', 'lookup_name']) {
+  resetCalls();
+  const body = {
+    action: 'lookup',
+    op: 'duplicate_check',
+    token: TOKEN,
+    lookup_date: '2026-11-02',
+    lookup_session: '中午',
+    lookup_phone: DINING_PHONE,
+    lookup_name: DINING_NAME,
+  };
+  body[key] = hostile;
+  const hostileField = callLookup(body);
+  assert(!hostileField.threw && hostileField.body && hostileField.body.error === 'bad_request', `${key} 物件應是 bad_request，實際 ${hostileField.threw ? 'throw' : JSON.stringify(hostileField.body)}`);
+  assert(calls.dataReads === 0, `${key} 物件不應讀表`);
+}
+
+resetCalls();
+const savedSession = sheets['工作表1'][1][5];
+sheets['工作表1'][1][5] = '午餐';
+const lunchRow = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-02',
+  lookup_session: '中午',
+  lookup_phone: DINING_PHONE,
+})));
+sheets['工作表1'][1][5] = savedSession;
+assert(lunchRow && lunchRow.ok === false && lunchRow.error === 'unavailable', `時段午餐不可回 duplicate:false，實際 ${JSON.stringify(lunchRow)}`);
+assert(lunchRow && lunchRow.duplicate !== false && lunchRow.duplicate !== true, '時段午餐不可當成有或沒有重複');
+
+resetCalls();
+sheets['工作表1'].push(diningRow({
+  name: '測壬',
+  phone: '0900555000',
+  date: '2026-11-02',
+  session: '午餐',
+  orderId: 'SMC100012',
+  status: '預約中',
+}));
+const otherLunch = output(context.handleReadLookup_(postEvent(duplicatePayload)));
+sheets['工作表1'].pop();
+assert(otherLunch && otherLunch.duplicate === true && otherLunch.matchedOrderId === 'SMC100001', `別的客人時段午餐不可擋掉這次查重，實際 ${JSON.stringify(otherLunch)}`);
+
+resetCalls();
+const savedDate = sheets['工作表1'][1][4];
+sheets['工作表1'][1][4] = '11/2';
+const oddDate = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-02',
+  lookup_session: '中午',
+  lookup_phone: DINING_PHONE,
+})));
+sheets['工作表1'][1][4] = savedDate;
+assert(oddDate && oddDate.error === 'unavailable' && oddDate.duplicate !== false, `日期無法正規化不可回 duplicate:false，實際 ${JSON.stringify(oddDate)}`);
+
+resetCalls();
+const savedCancelSession = sheets['工作表1'][2][5];
+sheets['工作表1'][2][5] = '午餐';
+const cancelledLunch = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-09',
+  lookup_session: '晚上',
+  lookup_phone: '0900123000',
+})));
+sheets['工作表1'][2][5] = savedCancelSession;
+assert(cancelledLunch && cancelledLunch.duplicate === false, `已取消列的怪時段不可讓整次查詢失敗，實際 ${JSON.stringify(cancelledLunch)}`);
+
+resetCalls();
+sheets['工作表1'].push(new Array(12).fill(''));
+const blankRow = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-09',
+  lookup_session: '晚上',
+  lookup_phone: '0900123000',
+})));
+sheets['工作表1'].pop();
+assert(blankRow && blankRow.duplicate === false, `空白列不可讓查詢失敗，實際 ${JSON.stringify(blankRow)}`);
+
+resetCalls();
+const plus886 = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-02',
+  lookup_session: '中午',
+  lookup_phone: '+886 900-111-222',
+})));
+assert(plus886 && plus886.duplicate === true && plus886.matchedOrderId === 'SMC100001', `+886 應比到同一支電話，實際 ${JSON.stringify(plus886)}`);
+
+resetCalls();
+const lineVariant = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-07',
+  lookup_session: '晚上',
+  lookup_phone: 'Line 訂',
+  lookup_name: '測戊',
+})));
+assert(lineVariant && lineVariant.duplicate === 'possible' && lineVariant.matchedOrderId === 'SMC100010', `Line 訂 應走姓名，實際 ${JSON.stringify(lineVariant)}`);
+
+resetCalls();
+const lineWide = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-07',
+  lookup_session: '晚上',
+  lookup_phone: 'line\u3000訂',
+  lookup_name: '測戊',
+})));
+assert(lineWide && lineWide.duplicate === 'possible' && lineWide.matchedOrderId === 'SMC100010', `line訂 全形空白應走姓名，實際 ${JSON.stringify(lineWide)}`);
+
+resetCalls();
+const wideName = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-03',
+  lookup_session: '晚上',
+  lookup_name: '測\u3000甲',
+})));
+assert(wideName && wideName.duplicate === 'possible' && wideName.matchedOrderId === 'smc100004', `姓名全形空白應比到，實際 ${JSON.stringify(wideName)}`);
+
+resetCalls();
+const wideSession = output(context.handleReadLookup_(postEvent({
+  action: 'lookup',
+  op: 'duplicate_check',
+  token: TOKEN,
+  lookup_date: '2026-11-02',
+  lookup_session: '中\u3000午',
+  lookup_phone: DINING_PHONE,
+})));
+assert(wideSession && wideSession.duplicate === true && wideSession.matchedOrderId === 'SMC100001', `時段全形空白應仍是中午，實際 ${JSON.stringify(wideSession)}`);
+
 const docs = readFileSync(join(root, 'docs/read-api.md'), 'utf8');
 for (const phrase of [
   'lookup_date', 'lookup_session', 'lookup_phone', 'lookup_name', 'lookup_order_id',
@@ -835,6 +1027,8 @@ for (const phrase of [
   '取消訂位', 'possible', 'duplicate: true', '沒有 matchedOrderId', '重複',
   '已取消、取消、取消訂位', '只有姓名沒有對到列', 'Executions', '看不出呼叫端', 'doGet 為 0', '進行中的工作',
   '一起改回', '只可短暫', '事前檢查', '轉人工', '不算成功',
+  '編輯原部署', '封存舊部署', '不要把權杖', '+886', '全形空白', 'HtmlService',
+  '恢復上傳前', '單獨的 token', '午餐',
 ]) {
   assert(docs.indexOf(phrase) !== -1, `說明應寫到「${phrase}」`);
 }
