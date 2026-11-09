@@ -1,0 +1,48 @@
+test 交錯取號: pass
+test 寄信在放鎖之後: pass
+test 編號耗盡: pass
+test 寫入後郵件預覽失敗: pass
+test 寫入後 flush 失敗: pass
+case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected
+廣告／品牌 | google | ag_brand | 品牌 | no | google | ag_brand | 品牌 | no | yes
+廣告／非品牌 | google | ag_geo_dining | 非品牌 | no | google | ag_geo_dining | 非品牌 | no | yes
+非廣告 | direct/unknown | - | - | no | direct/unknown | - | - | no | yes
+來源不明 | 有點擊識別碼、來源待核對 | - | - | no | 有點擊識別碼、來源待核對 | - | - | no | yes
+reconciliation failed:
+ - SMC900105 隔離腳本要回同一個編號
+ - SMC900105 試算表utm內容要是固定預期值
+ - SMC900105 寄出的客人信要與固定預期一致，收件人固定為測試信箱，且只一封
+ - SMC900105 寄出的店內信要與固定預期一致，且只一封
+ - SMC911002 空白加公式仍要收單
+ - SMC911002 utm活動要留下原值字串，不可變成算式結果
+ - SMC911002 原訂位文字寫入後仍是去掉空白後的原值
+ - SMC911006 空白加公式仍要收單
+ - SMC911006 utm活動要留下原值字串，不可變成算式結果
+ - SMC911006 原訂位文字寫入後仍是去掉空白後的原值
+ - SMC911010 空白加公式仍要收單
+ - SMC911010 utm活動要留下原值字串，不可變成算式結果
+ - SMC911010 原訂位文字寫入後仍是去掉空白後的原值
+ - 按鈕要回報已送出 8 筆
+ - 8 筆裡同一編號只佔一列，加上表頭是 8 列
+ - 按鈕結果應有一列 SMC900106
+ - 八案例全成功是 14 封：七筆新單各兩封，重複那筆不寄
+ - 驗收結果要有表頭加 8 列
+ - 第 8 筆不可再寫入或再寄信
+ - 按鈕送出的公式列要留下原值字串，加號不可變成 =+，訂位欄不變
+ - 寫入必須走 Sheets API 的 RAW
+ - 隔離腳本要用 Sheets API，而且 valueInputOption 是 RAW
+ - 四種前綴通過才可以部署
+ - utm活動 原值要用 JSON 字串原樣呈現
+ - utm活動 讀回值要用 JSON 字串原樣呈現
+ - utm內容 原值要用 JSON 字串原樣呈現
+ - utm內容 讀回值要用 JSON 字串原樣呈現
+ - utm內容 報告分頁不可把 + 補成 =+
+ - utm內容 不符就不可算通過
+ - utm關鍵字 原值要用 JSON 字串原樣呈現
+ - utm關鍵字 讀回值要用 JSON 字串原樣呈現
+ - utm廣告群組 原值要用 JSON 字串原樣呈現
+ - utm廣告群組 讀回值要用 JSON 字串原樣呈現
+ - 驗收結果裡以 + 開頭的內容要原樣呈現
+ - 沒啟用進階服務要在寫入前回錯誤，不可標成已寄出
+ - 沒啟用進階服務不可寫表或寄信
+ - 沒啟用進階服務時八案例要停住

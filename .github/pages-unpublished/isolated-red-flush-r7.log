@@ -1,0 +1,26 @@
+test 交錯取號: pass
+test 寄信在放鎖之後: pass
+test 編號耗盡: pass
+test 寫入後郵件預覽失敗: pass
+test 寫入後 flush 失敗: pass
+case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected
+廣告／品牌 | google | ag_brand | 品牌 | no | google | ag_brand | 品牌 | no | yes
+廣告／非品牌 | google | ag_geo_dining | 非品牌 | no | google | ag_geo_dining | 非品牌 | no | yes
+非廣告 | direct/unknown | - | - | no | direct/unknown | - | - | no | yes
+來源不明 | 有點擊識別碼、來源待核對 | - | - | no | 有點擊識別碼、來源待核對 | - | - | no | yes
+reconciliation failed:
+ - 最後讀回報告的開頭要先 flush
+ - 讀回前先 flush，延後的 clear 要報結果未知，並列出 0 列和預期 9 列
+ - 延後的 clear 把報告洗掉時不可說四種前綴都通過
+ - notify_ 要把訊息寫進 console.log
+ - alert 的錯誤要寫進 console.log，不可吞掉
+ - 內容不符要寫出實際值和預期值
+ - 公式核對寫入失敗要寫明停在哪一步，以及已經寄出幾封信
+ - 列尾空欄被 API 省略時要補齊再比對
+ - 文件要刪掉不再默默留下空白
+ - 案例 8 是重複編號，不會 flush
+ - 文件要寫移植到正式腳本要另外驗證
+ - 開旗標前的三項要在文件裡寫清楚
+ - 說明要寫 Node 20 的瀏覽器測試要加 --experimental-websocket，Node 22 不用
+ - 要點名兩個瀏覽器測試
+ - 手冊要寫執行記錄也有同一段結果

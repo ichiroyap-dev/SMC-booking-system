@@ -1,0 +1,23 @@
+test 交錯取號: pass
+test 寄信在放鎖之後: pass
+test 編號耗盡: pass
+test 寫入後郵件預覽失敗: pass
+test 寫入後 flush 失敗: pass
+case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected
+廣告／品牌 | google | ag_brand | 品牌 | no | google | ag_brand | 品牌 | no | yes
+廣告／非品牌 | google | ag_geo_dining | 非品牌 | no | google | ag_geo_dining | 非品牌 | no | yes
+非廣告 | direct/unknown | - | - | no | direct/unknown | - | - | no | yes
+來源不明 | 有點擊識別碼、來源待核對 | - | - | no | 有點擊識別碼、來源待核對 | - | - | no | yes
+reconciliation failed:
+ - 驗收結果要有表頭加 8 列
+ - 第 8 筆不可再寫入或再寄信
+ - 檔頭要註明前導單引號那句是舊寫法
+ - 報告分頁要用 API 清除，最後再用 API 讀回
+ - 不可再呼叫會延後的 sheet.clear
+ - 公式核對要有表頭與四格
+ - 驗收結果裡以 + 開頭的內容要原樣呈現
+ - 報告被延後的 clear 洗掉：腳本結束的 flush 之後，驗收結果應仍有 9 列
+ - 報告被延後的 clear 洗掉：腳本結束的 flush 之後，公式核對應仍有 5 列
+ - 讀回列數不對要標成未知，並寫明兩張分頁
+ - 讀回失敗要寫明實際列數和預期列數
+ - 報告讀回是空白時不可說可以部署

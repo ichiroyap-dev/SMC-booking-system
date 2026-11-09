@@ -1,0 +1,7 @@
+pr47 r2 item checklist failed: 6
+ - 清單要寫列數快滿時用 insertRowsAfter
+ - 清單要寫列數快滿時也可以 appendDimension
+ - 清單要寫不要假設快到列數上限還會自動長高
+ - 清單要寫 LockService 只擋這支腳本
+ - 清單要寫寫入後再讀回目標列
+ - 清單要寫對不上就回未知，而且不寄信

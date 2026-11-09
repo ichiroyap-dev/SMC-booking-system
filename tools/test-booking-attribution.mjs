@@ -106,9 +106,9 @@ assert(badGroup.utmAdgroup === 'br!and' && badGroup.adgroupBucket === '', `錯�
 const formula = attr.memoryStorage();
 attr.capture('?utm_source=' + encodeURIComponent('=IMPORTDATA("http://example.test")') + '&utm_campaign=' + encodeURIComponent('+cmd') + '&utm_adgroup=' + encodeURIComponent('@brand'), formula, t0, 'navigate');
 const safe = attr.bookingFields(formula, t0);
-assert(safe.source.startsWith("'") && safe.utmSource.startsWith("'") && !safe.utmSource.startsWith('='), '公式開頭要加單引號');
-assert(safe.utmCampaign.startsWith("'") && safe.utmAdgroup.startsWith("'") && safe.adgroupBucket === '', '@brand 不是白名單，分類留白');
-assert(attr.plainSheetText('=1+1').startsWith("'") && attr.plainSheetText('brand') === 'brand', '公式防護不改一般文字');
+assert(safe.source === '=IMPORTDATA("http://example.test")' && safe.utmSource === '=IMPORTDATA("http://example.test")', '公式開頭送原文，不加單引號');
+assert(safe.utmCampaign === '+cmd' && safe.utmAdgroup === '@brand' && safe.adgroupBucket === '', '@brand 不是白名單，分類留白，原文不加單引號');
+assert(attr.plainSheetText('=1+1') === '=1+1' && attr.plainSheetText("'靠窗") === "'靠窗" && attr.plainSheetText('brand') === 'brand', 'RAW 已防護，前端送原文，一般單引號保留');
 
 function assertStringFields(fields, label) {
     const round = JSON.parse(JSON.stringify(fields));
@@ -421,7 +421,7 @@ const receiptFn = extractFn(html, 'showReceipt');
 assert(receiptFn && !/utm|gclid|attribution|direct\/unknown|adgroup/i.test(receiptFn), '收件畫面不可帶來源');
 assert(html.includes('src="js/booking-attribution.js"'), '首頁要載入來源腳本');
 assert(faq.includes('src="js/booking-attribution.js"'), '常見問題頁也要記住進站參數');
-assert(/note: currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value/.test(html), '備註仍只含餐點內容');
+assert(/note: bookingSheetText\(currentMode === 'dining' \? buildDiningNote\(\) : document\.getElementById\('note'\)\.value\)/.test(html), '備註仍只含餐點內容');
 assert(html.includes('payloadForBooking(data, attribution)'), '送出要經過來源旗標');
 assert(!html.includes('source: attribution.source'), '預設的送出物件不可直接帶來源欄');
 assert(readFileSync(join(root, 'js/booking-attribution.js'), 'utf8').includes('SEND_ATTRIBUTION_TO_BACKEND = false'), '旗標預設必須關閉');

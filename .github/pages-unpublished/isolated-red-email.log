@@ -1,0 +1,17 @@
+test 交錯取號: pass
+test 寄信在放鎖之後: pass
+test 編號耗盡: pass
+test 寫入後郵件預覽失敗: pass
+test 寫入後 flush 失敗: pass
+case | browser source | browser content | browser bucket | live POST has source | sheet source | sheet content | sheet bucket | guest has code | shop matches expected
+廣告／品牌 | google | ag_brand | 品牌 | no | google | ag_brand | 品牌 | no | yes
+廣告／非品牌 | google | ag_geo_dining | 非品牌 | no | google | ag_geo_dining | 非品牌 | no | yes
+非廣告 | direct/unknown | - | - | no | direct/unknown | - | - | no | yes
+來源不明 | 有點擊識別碼、來源待核對 | - | - | no | 有點擊識別碼、來源待核對 | - | - | no | yes
+reconciliation failed:
+ - 信箱空白要直接回錯誤，不寫表、不寄信，也不可標成已寄出
+ - 信箱空白不可寫表或寄信
+ - 信箱空白時八案例要停住
+ - 八案例在信箱空白時仍不可寫表或寄信
+ - 信箱格式錯誤要直接回錯誤，不寫表、不寄信
+ - 信箱格式錯誤不可寫表或寄信
