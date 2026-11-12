@@ -2158,6 +2158,69 @@
             msg.textContent = `目前無法確認${action}結果，系統可能已收到資料。請勿重複送出，請致電 04-26887895 確認。`
                 + (typeof responseMessage === 'string' && responseMessage ? `\n系統回覆：${responseMessage}` : '');
         }
+
+        // B1：姓名、電話只加格式檢查。送出的欄位與內容不變。
+        // 後端取消時怎麼比對電話不在這個 repo，所以這裡不改送出的號碼格式。
+        function phoneDigits(raw) {
+            let text = String(raw == null ? '' : raw);
+            try { text = text.normalize('NFKC'); } catch (err) {}
+            let digits = text.replace(/[\s\-().]/g, '');
+            if (digits.indexOf('+886') === 0) digits = '0' + digits.slice(4);
+            return digits;
+        }
+
+        function phoneProblem(raw) {
+            const digits = phoneDigits(raw);
+            if (!digits) return '請填寫聯絡電話。';
+            if (!/^\d+$/.test(digits)) return '電話只能填數字，例如 0912345678。';
+            if (/^09\d{8}$/.test(digits)) return '';
+            if (/^0[2-8]\d{7,8}$/.test(digits)) return '';
+            return '電話號碼格式不對。手機請填 10 碼（09 開頭），市話請加區碼。';
+        }
+
+        function nameProblem(raw) {
+            const text = String(raw == null ? '' : raw).trim();
+            if (!text) return '請填寫聯絡姓名。';
+            if (text.length > 30) return '姓名請勿超過 30 個字。';
+            return '';
+        }
+
+        // 用瀏覽器內建的欄位提示：訊息出現在欄位旁，焦點移到該欄位。
+        function fieldPasses(input, problem) {
+            if (!input || typeof input.setCustomValidity !== 'function') return !problem;
+            input.setCustomValidity(problem || '');
+            if (!problem) return true;
+            if (typeof input.reportValidity === 'function') input.reportValidity();
+            return false;
+        }
+
+        ['name', 'phone', 'cancelPhone'].forEach((id) => {
+            const input = document.getElementById(id);
+            if (!input) return;
+            input.addEventListener('input', () => {
+                if (typeof input.setCustomValidity === 'function') input.setCustomValidity('');
+            });
+        });
+
+        // B2：送出最多等 30 秒。逾時時伺服器可能已收到，所以走「無法確認結果」訊息，不讓客人重送。
+        const SUBMIT_TIMEOUT_MS = 30000;
+
+        function postWithTimeout(payload) {
+            const options = { method: 'POST', body: JSON.stringify(payload) };
+            let timer = null;
+            if (typeof AbortController === 'function') {
+                const controller = new AbortController();
+                options.signal = controller.signal;
+                timer = setTimeout(() => controller.abort(), SUBMIT_TIMEOUT_MS);
+            }
+            const stopTimer = () => { if (timer) clearTimeout(timer); };
+            return fetch(scriptURL, options)
+                .then((res) => res.json())
+                .then(
+                    (json) => { stopTimer(); return json; },
+                    (err) => { stopTimer(); throw err; }
+                );
+        }
         
         const dateInput = document.getElementById('date');
         const timeSelect = document.getElementById('time');
@@ -2497,6 +2560,11 @@
                 }
             }
 
+            const nameInput = document.getElementById('name');
+            const phoneInput = document.getElementById('phone');
+            if (!fieldPasses(nameInput, nameProblem(nameInput.value))) return;
+            if (!fieldPasses(phoneInput, phoneProblem(phoneInput.value))) return;
+
             btn.disabled = true;
             btn.innerText = '正在傳送資料...';
             msg.className = 'mt-8 p-5 rounded-xl text-center text-blue-700 bg-blue-50 border border-blue-100';
@@ -2539,8 +2607,7 @@
                 }
             } catch (err) {}
 
-            fetch(scriptURL, { method: 'POST', body: JSON.stringify(outbound)})
-            .then(res => res.json())
+            postWithTimeout(outbound)
             .then(res => {
                 if (res && res.status === 'success') {
                     msg.className = 'mt-8 p-6 rounded-xl text-left text-green-800 bg-green-50 border border-green-100 leading-relaxed whitespace-pre-line';
@@ -2605,7 +2672,10 @@
         cancelForm.addEventListener('submit', e => {
             e.preventDefault();
             if (cancelBtn.disabled) return;
-            
+
+            const cancelPhoneInput = document.getElementById('cancelPhone');
+            if (!fieldPasses(cancelPhoneInput, phoneProblem(cancelPhoneInput.value))) return;
+
             cancelBtn.disabled = true;
             cancelBtn.innerText = '正在處理取消程序...';
             msg.className = 'mt-8 p-5 rounded-xl text-center text-white bg-red-800 border border-red-900';
@@ -2618,8 +2688,7 @@
                 orderId: document.getElementById('cancelOrderId').value.trim().toUpperCase()
             };
 
-            fetch(scriptURL, { method: 'POST', body: JSON.stringify(data)})
-            .then(res => res.json())
+            postWithTimeout(data)
             .then(res => {
                 if (res && res.status === 'success') {
                     cancelBtn.disabled = false;
