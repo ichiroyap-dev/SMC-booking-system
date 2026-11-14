@@ -12,13 +12,14 @@ const html = readFileSync(join(root, 'index.html'), 'utf8');
 const failures = [];
 const assert = (cond, message) => { if (!cond) failures.push(message); };
 
+// [檔名, 菜名, 快取版本]；燜筍已停售（2026-10-29 Owner 拍板），第 4 道改為傳統滷白菜
 const dishes = [
-    ['dish_01', '雞汁炒米粉'],
-    ['dish_02', '飄香甕窯雞'],
-    ['dish_03', '剝皮辣椒雞湯'],
-    ['dish_04', '客家嫩燜筍'],
-    ['dish_05', '清蒸石斑魚'],
-    ['dish_06', '客家炸婆菜'],
+    ['dish_01', '雞汁炒米粉', '20261014'],
+    ['dish_02', '飄香甕窯雞', '20261014'],
+    ['dish_03', '剝皮辣椒雞湯', '20261014'],
+    ['dish_braised_cabbage', '傳統滷白菜', '20261114'],
+    ['dish_05', '清蒸石斑魚', '20261014'],
+    ['dish_06', '客家炸婆菜', '20261014'],
 ];
 
 const start = html.indexOf('<section id="featured-dishes"');
@@ -34,11 +35,13 @@ const priceScan = section.replace(note, '');
 assert(!priceScan.includes(note), 'price scan excludes only that note');
 assert(!/NT\$|\$\d|\d元|價格/.test(priceScan), 'section does not show a price');
 
+assert(!/燜筍|dish_04/.test(section), 'section does not show the discontinued 燜筍 or dish_04 photo');
+
 let cursor = 0;
-for (const [file, name] of dishes) {
-    const pictureAt = section.indexOf(`<source srcset="${file}.webp?v=20261014" type="image/webp">`, cursor);
+for (const [file, name, ver] of dishes) {
+    const pictureAt = section.indexOf(`<source srcset="${file}.webp?v=${ver}" type="image/webp">`, cursor);
     assert(pictureAt > cursor, `${file} webp source is in order`);
-    const imgAt = section.indexOf(`<img src="${file}.jpg?v=20261014" alt="水美土雞城 ${name}" width="800" height="600" loading="lazy">`, pictureAt);
+    const imgAt = section.indexOf(`<img src="${file}.jpg?v=${ver}" alt="水美土雞城 ${name}" width="800" height="600" loading="lazy">`, pictureAt);
     assert(imgAt > pictureAt, `${name} jpg fallback, alt, size, and lazy load`);
     const captionAt = section.indexOf(`<figcaption class="featured-dish-name">${name}</figcaption>`, imgAt);
     assert(captionAt > imgAt, `${name} caption is the dish name only`);
